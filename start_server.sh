@@ -1,0 +1,1 @@
+NODE_ENV="production" PORT=3004 npm run start

@@ -1,0 +1,450 @@
+2026-02-11T10:20:56: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:20:56: @ECHO off
+2026-02-11T10:20:56: ^
+2026-02-11T10:20:56: 
+2026-02-11T10:20:56: SyntaxError: Invalid or unexpected token
+2026-02-11T10:20:56:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:20:56:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:20:56:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:20:56:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:20:56:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:20:56:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:20:56:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:20:56:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:20:56:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:20:56:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:00: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:00: @ECHO off
+2026-02-11T10:21:00: ^
+2026-02-11T10:21:00: 
+2026-02-11T10:21:00: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:00:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:00:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:00:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:00:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:00:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:00:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:00:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:00:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:00:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:00:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:05: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:05: @ECHO off
+2026-02-11T10:21:05: ^
+2026-02-11T10:21:05: 
+2026-02-11T10:21:05: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:05:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:05:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:05:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:05:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:05:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:05:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:05:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:05:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:05:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:05:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:09: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:09: @ECHO off
+2026-02-11T10:21:09: ^
+2026-02-11T10:21:09: 
+2026-02-11T10:21:09: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:09:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:09:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:09:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:09:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:09:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:09:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:09:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:09:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:09:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:09:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:13: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:13: @ECHO off
+2026-02-11T10:21:13: ^
+2026-02-11T10:21:13: 
+2026-02-11T10:21:13: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:13:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:13:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:13:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:13:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:13:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:13:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:13:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:13:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:13:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:13:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:18: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:18: @ECHO off
+2026-02-11T10:21:18: ^
+2026-02-11T10:21:18: 
+2026-02-11T10:21:18: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:18:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:18:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:18:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:18:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:18:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:18:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:18:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:18:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:18:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:18:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:22: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:22: @ECHO off
+2026-02-11T10:21:22: ^
+2026-02-11T10:21:22: 
+2026-02-11T10:21:22: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:22:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:22:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:22:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:22:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:22:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:22:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:22:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:22:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:22:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:22:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:26: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:26: @ECHO off
+2026-02-11T10:21:26: ^
+2026-02-11T10:21:26: 
+2026-02-11T10:21:26: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:26:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:26:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:26:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:26:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:26:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:26:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:26:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:26:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:26:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:26:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:31: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:31: @ECHO off
+2026-02-11T10:21:31: ^
+2026-02-11T10:21:31: 
+2026-02-11T10:21:31: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:31:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:31:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:31:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:31:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:31:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:31:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:31:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:31:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:31:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:31:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:35: C:\USERS\ADMINISTRATOR.RPPHOSP\APPDATA\ROAMING\NPM\NPM.CMD:1
+2026-02-11T10:21:35: @ECHO off
+2026-02-11T10:21:35: ^
+2026-02-11T10:21:35: 
+2026-02-11T10:21:35: SyntaxError: Invalid or unexpected token
+2026-02-11T10:21:35:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:21:35:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:21:35:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:35:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:35:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:21:35:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:21:35:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:21:35:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:21:35:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:21:35:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:24: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:24: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:24: ^
+2026-02-11T10:39:24: 
+2026-02-11T10:39:24: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:24:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:24:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:24:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:24:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:24:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:24:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:24:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:24:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:24:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:24:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:29: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:29: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:29: ^
+2026-02-11T10:39:29: 
+2026-02-11T10:39:29: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:29:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:29:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:29:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:29:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:29:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:29:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:29:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:29:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:29:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:29:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:33: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:33: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:33: ^
+2026-02-11T10:39:33: 
+2026-02-11T10:39:33: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:33:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:33:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:33:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:33:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:33:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:33:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:33:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:33:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:33:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:33:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:37: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:37: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:37: ^
+2026-02-11T10:39:37: 
+2026-02-11T10:39:37: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:37:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:37:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:37:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:37:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:37:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:37:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:37:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:37:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:37:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:37:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:42: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:42: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:42: ^
+2026-02-11T10:39:42: 
+2026-02-11T10:39:42: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:42:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:42:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:42:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:42:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:42:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:42:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:42:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:42:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:42:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:42:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:46: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:46: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:46: ^
+2026-02-11T10:39:46: 
+2026-02-11T10:39:46: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:46:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:46:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:46:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:46:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:46:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:46:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:46:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:46:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:46:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:46:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:50: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:50: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:50: ^
+2026-02-11T10:39:50: 
+2026-02-11T10:39:50: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:50:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:50:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:50:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:50:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:50:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:50:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:50:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:50:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:50:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:50:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:54: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:54: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:54: ^
+2026-02-11T10:39:54: 
+2026-02-11T10:39:54: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:54:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:54:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:54:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:54:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:54:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:54:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:54:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:54:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:54:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:54:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:59: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:39:59: :: Created by npm, please don't edit manually.
+2026-02-11T10:39:59: ^
+2026-02-11T10:39:59: 
+2026-02-11T10:39:59: SyntaxError: Unexpected token ':'
+2026-02-11T10:39:59:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:39:59:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:39:59:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:59:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:59:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:39:59:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:39:59:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:39:59:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:39:59:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:39:59:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:40:03: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:40:03: :: Created by npm, please don't edit manually.
+2026-02-11T10:40:03: ^
+2026-02-11T10:40:03: 
+2026-02-11T10:40:03: SyntaxError: Unexpected token ':'
+2026-02-11T10:40:03:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:40:03:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:40:03:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:40:03:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:40:03:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:40:03:     at Object.<anonymous> (C:\Users\administrator.RPPHOSP\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:40:03:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:40:03:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:40:03:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:40:03:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:48:58: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:48:58: :: Created by npm, please don't edit manually.
+2026-02-11T10:48:58: ^
+2026-02-11T10:48:58: 
+2026-02-11T10:48:58: SyntaxError: Unexpected token ':'
+2026-02-11T10:48:58:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:48:58:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:48:58:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:48:58:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:48:58:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:48:58:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:48:58:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:48:58:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:48:58:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:48:58:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:02: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:02: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:02: ^
+2026-02-11T10:49:02: 
+2026-02-11T10:49:02: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:02:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:02:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:02:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:02:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:02:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:02:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:02:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:02:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:02:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:02:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:06: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:06: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:06: ^
+2026-02-11T10:49:06: 
+2026-02-11T10:49:06: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:06:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:06:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:06:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:06:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:06:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:06:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:06:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:06:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:06:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:06:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:11: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:11: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:11: ^
+2026-02-11T10:49:11: 
+2026-02-11T10:49:11: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:11:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:11:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:11:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:11:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:11:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:11:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:11:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:11:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:11:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:11:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:15: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:15: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:15: ^
+2026-02-11T10:49:15: 
+2026-02-11T10:49:15: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:15:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:15:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:15:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:15:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:15:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:15:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:15:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:15:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:15:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:15:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:19: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:19: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:19: ^
+2026-02-11T10:49:19: 
+2026-02-11T10:49:19: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:19:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:19:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:19:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:19:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:19:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:19:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:19:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:19:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:19:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:19:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:24: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:24: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:24: ^
+2026-02-11T10:49:24: 
+2026-02-11T10:49:24: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:24:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:24:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:24:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:24:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:24:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:24:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:24:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:24:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:24:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:24:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:28: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:28: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:28: ^
+2026-02-11T10:49:28: 
+2026-02-11T10:49:28: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:28:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:28:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:28:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:28:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:28:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:28:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:28:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:28:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:28:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:28:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:32: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:32: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:32: ^
+2026-02-11T10:49:32: 
+2026-02-11T10:49:32: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:32:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:32:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:32:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:32:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:32:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:32:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:32:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:32:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:32:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:32:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:37: C:\PROGRAM FILES\NODEJS\NPM.CMD:1
+2026-02-11T10:49:37: :: Created by npm, please don't edit manually.
+2026-02-11T10:49:37: ^
+2026-02-11T10:49:37: 
+2026-02-11T10:49:37: SyntaxError: Unexpected token ':'
+2026-02-11T10:49:37:     at wrapSafe (node:internal/modules/cjs/loader:1662:18)
+2026-02-11T10:49:37:     at Module._compile (node:internal/modules/cjs/loader:1704:20)
+2026-02-11T10:49:37:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:37:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:37:     at Function._load (node:internal/modules/cjs/loader:1282:12)
+2026-02-11T10:49:37:     at Object.<anonymous> (C:\Users\Administrator\AppData\Roaming\npm\node_modules\pm2\lib\ProcessContainerFork.js:33:23)
+2026-02-11T10:49:37:     at Module._compile (node:internal/modules/cjs/loader:1730:14)
+2026-02-11T10:49:37:     at Object..js (node:internal/modules/cjs/loader:1895:10)
+2026-02-11T10:49:37:     at Module.load (node:internal/modules/cjs/loader:1465:32)
+2026-02-11T10:49:37:     at Function._load (node:internal/modules/cjs/loader:1282:12)
