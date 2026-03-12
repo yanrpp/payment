@@ -15,10 +15,9 @@ type PatientCostRow = {
   CARDNO: string | null;
   DSPNAME: string | null;
   VSTDATE: string;
-  CLINICLCT: string | null;
-  CLINICNAME: string | null;
-  PTTYPENAME: string | null;
   TOTAL_AMOUNT: number;
+  /** รวมค่าใช้จ่าย Lab (incgrp=70 พยาธิวิทยา) */
+  LAB_AMOUNT: number;
 };
 
 /** รายละเอียดต้นทุนต่อเคส แยกตามหมวดค่าใช้จ่าย — จาก API patient-cost-detail */
@@ -30,6 +29,45 @@ type PatientCostDetailRow = {
   KON: number;
   TOTAL: number;
   [key: string]: string | number;
+};
+
+type PatientDrugSummaryRow = {
+  CLINIC_LCT: string | null;
+  ORDER_DATE: string;
+  MEDITEM: string;
+  MEDTYPE: string | null;
+  ACCNATION: string | null;
+  DRUG_NAME: string | null;
+  TOTAL_QTY: number;
+  TOTAL_COST: number;
+  TOTAL_SALE: number;
+  TOTAL_PROFIT: number;
+};
+
+/** ค่าใช้จ่ายต่อรายการ Lab (จาก patient-lab-summary) */
+type LabCostItemRow = {
+  INCOME: string | null;
+  INCOMENAME: string | null;
+  QTY: number | null;
+  PRICE: number | null;
+  INCAMT: number;
+};
+
+type PatientLabSummaryRow = {
+  HN: string;
+  VSTDATE: string;
+  LAB_COST_ITEMS: LabCostItemRow[];
+  TOTAL_LAB_AMOUNT: number;
+};
+
+/** สรุป X-ray / Vaccine (จาก patient-xray-summary) */
+type PatientXraySummaryRow = {
+  HN: string;
+  VSTDATE: string;
+  HAS_XRAY: number;
+  HAS_HPV4: number;
+  HAS_HPV9: number;
+  HAS_FLU_VACCINE: number;
 };
 
 export default function PatientCostPage() {
@@ -54,6 +92,15 @@ export default function PatientCostPage() {
   const [detailData, setDetailData] = useState<PatientCostDetailRow[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [drugSummary, setDrugSummary] = useState<PatientDrugSummaryRow[] | null>(null);
+  const [drugSummaryLoading, setDrugSummaryLoading] = useState(false);
+  const [drugSummaryError, setDrugSummaryError] = useState<string | null>(null);
+  const [labSummary, setLabSummary] = useState<PatientLabSummaryRow | null>(null);
+  const [labSummaryLoading, setLabSummaryLoading] = useState(false);
+  const [labSummaryError, setLabSummaryError] = useState<string | null>(null);
+  const [xraySummary, setXraySummary] = useState<PatientXraySummaryRow | null>(null);
+  const [xraySummaryLoading, setXraySummaryLoading] = useState(false);
+  const [xraySummaryError, setXraySummaryError] = useState<string | null>(null);
 
   const handleSearch = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -102,14 +149,30 @@ export default function PatientCostPage() {
   const endIndex = startIndex + pageSize;
   const pagedRows = rows.slice(startIndex, endIndex);
 
-  const vstdateToIso = (v: string | Date | null | undefined): string => {
-    if (v == null) return "";
-    const s = typeof v === "string" ? v : (v as Date).toISOString?.() ?? String(v);
-    return s.slice(0, 10);
+  /**
+   * แปลงวันที่จาก API (ซึ่งถูก serialize เป็น ISO UTC จาก Oracle)
+   * ให้เป็นวันที่ตามเวลาเครื่อง (local) แล้วคืนค่าเป็น YYYY-MM-DD
+   */
+  const apiDateToIsoLocal = (value: string | Date | null | undefined): string => {
+    if (value == null) return "";
+    // ถ้าเป็น string จาก JSON (เช่น 2026-03-12T00:00:00.000Z)
+    const d =
+      typeof value === "string"
+        ? new Date(value)
+        : value instanceof Date
+          ? value
+          : new Date(String(value));
+    if (Number.isNaN(d.getTime())) return "";
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1; // 0-11
+    const day = d.getDate();
+    return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day
+      .toString()
+      .padStart(2, "0")}`;
   };
 
   const handleRowClick = async (row: PatientCostRow) => {
-    const iso = vstdateToIso(row.VSTDATE);
+    const iso = apiDateToIsoLocal(row.VSTDATE);
     if (!iso) return;
     setSelectedVisit({
       hn: row.HN,
@@ -118,6 +181,12 @@ export default function PatientCostPage() {
     });
     setDetailData(null);
     setDetailError(null);
+    setDrugSummary(null);
+    setDrugSummaryError(null);
+    setLabSummary(null);
+    setLabSummaryError(null);
+    setXraySummary(null);
+    setXraySummaryError(null);
     setDetailLoading(true);
     try {
       const res = await fetch(
@@ -133,6 +202,64 @@ export default function PatientCostPage() {
       setDetailError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
     } finally {
       setDetailLoading(false);
+    }
+
+    // โหลดสรุปค่ายาต่อเคส (ตาม HN+วันที่)
+    try {
+      setDrugSummaryLoading(true);
+      const resDrug = await fetch(
+        `/api/db/patient-drug-summary?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
+      );
+      const jsonDrug = await resDrug.json();
+      if (!resDrug.ok || !jsonDrug.success) {
+        setDrugSummaryError(jsonDrug.message ?? "โหลดรายละเอียดค่ายาไม่สำเร็จ");
+      } else {
+        setDrugSummary(Array.isArray(jsonDrug.data) ? jsonDrug.data : []);
+      }
+    } catch (err) {
+      setDrugSummaryError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดค่ายา");
+    } finally {
+      setDrugSummaryLoading(false);
+    }
+
+    // โหลดสรุป Lab (ค่าใช้จ่าย) ต่อเคส
+    try {
+      setLabSummaryLoading(true);
+      const resLab = await fetch(
+        `/api/db/patient-lab-summary?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
+      );
+      const jsonLab = await resLab.json();
+      if (!resLab.ok || !jsonLab.success) {
+        setLabSummaryError(jsonLab.message ?? "โหลดสรุป Lab ไม่สำเร็จ");
+      } else {
+        const data = Array.isArray(jsonLab.data) ? jsonLab.data : [];
+        setLabSummary(data[0] ?? null);
+      }
+    } catch (err) {
+      setLabSummaryError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดสรุป Lab");
+    } finally {
+      setLabSummaryLoading(false);
+    }
+
+    // โหลดสรุป X-ray / Vaccine ต่อเคส
+    try {
+      setXraySummaryLoading(true);
+      const resXray = await fetch(
+        `/api/db/patient-xray-summary?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
+      );
+      const jsonXray = await resXray.json();
+      if (!resXray.ok || !jsonXray.success) {
+        setXraySummaryError(jsonXray.message ?? "โหลดสรุป X-ray/Vaccine ไม่สำเร็จ");
+      } else {
+        const data = Array.isArray(jsonXray.data) ? jsonXray.data : [];
+        setXraySummary(data[0] ?? null);
+      }
+    } catch (err) {
+      setXraySummaryError(
+        err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดสรุป X-ray/Vaccine"
+      );
+    } finally {
+      setXraySummaryLoading(false);
     }
   };
 
@@ -315,21 +442,18 @@ export default function PatientCostPage() {
                     <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
                       ชื่อผู้ป่วย
                     </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
-                      คลินิก
-                    </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
-                      สิทธิ
-                    </th>
                     <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap text-right">
                       SUM(INCAMT)
+                    </th>
+                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap text-right">
+                      ค่า Lab
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {pagedRows.map((row, index) => (
                     <tr
-                      key={`${row.HN}-${row.VSTDATE}-${row.CLINICLCT ?? ""}`}
+                      key={`${row.HN}-${row.VSTDATE}`}
                       role="button"
                       tabIndex={0}
                       onClick={() => handleRowClick(row)}
@@ -345,7 +469,7 @@ export default function PatientCostPage() {
                         {startIndex + index + 1}
                       </td>
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                        {isoToThaiDisplay(row.VSTDATE?.toString().slice(0, 10))}
+                        {isoToThaiDisplay(apiDateToIsoLocal(row.VSTDATE))}
                       </td>
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{row.HN}</td>
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
@@ -354,14 +478,14 @@ export default function PatientCostPage() {
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
                         {row.DSPNAME ?? "—"}
                       </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                        {row.CLINICNAME ?? row.CLINICLCT ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                        {row.PTTYPENAME ?? "—"}
-                      </td>
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap text-right">
                         {row.TOTAL_AMOUNT.toLocaleString("th-TH", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </td>
+                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap text-right">
+                        {Number(row.LAB_AMOUNT ?? 0).toLocaleString("th-TH", {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
@@ -432,6 +556,12 @@ export default function PatientCostPage() {
                   setSelectedVisit(null);
                   setDetailData(null);
                   setDetailError(null);
+                  setDrugSummary(null);
+                  setDrugSummaryError(null);
+                  setLabSummary(null);
+                  setLabSummaryError(null);
+                  setXraySummary(null);
+                  setXraySummaryError(null);
                 }}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
               >
@@ -453,51 +583,341 @@ export default function PatientCostPage() {
                 </p>
               )}
               {!detailLoading && !detailError && detailData && detailData.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full border-collapse text-xs text-left">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-100">
-                        {detailColumns.map((col) => (
-                          <th
-                            key={col.key}
-                            className="whitespace-nowrap px-2 py-1.5 font-semibold text-slate-800"
-                          >
-                            {col.label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detailData.map((row, idx) => (
-                        <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                          {detailColumns.map((col) => {
-                            const raw =
-                              (row as Record<string, unknown>)[col.key] ??
-                              (row as Record<string, unknown>)[col.key.toUpperCase()];
-                            const val = raw !== undefined && raw !== null ? raw : null;
-                            const isNum =
-                              typeof val === "number" ||
-                              (typeof val === "string" && val !== "" && !Number.isNaN(Number(val)));
-                            return (
-                              <td
-                                key={col.key}
-                                className={`whitespace-nowrap px-2 py-1.5 text-slate-700 ${isNum ? "text-right" : ""}`}
-                              >
-                                {isNum
-                                  ? Number(val).toLocaleString("th-TH", {
+                <>
+                  {(() => {
+                    const row = detailData[0] as unknown as Record<string, unknown>;
+                    const getNum = (key: string) => {
+                      const raw = row[key] ?? row[key.toUpperCase()];
+                      const n =
+                        raw !== undefined && raw !== null && raw !== ""
+                          ? Number(raw)
+                          : 0;
+                      return Number.isNaN(n) ? 0 : n;
+                    };
+
+                    const total = getNum("TOTAL");
+                    const room = getNum("ห้อง");
+                    const drugIn = getNum("ยาใน");
+                    const drugOut = getNum("ยานอก");
+
+                    const summaryFields: { key: string; label: string }[] = [
+                      { key: "TOTAL", label: "รวมทั้งหมด" },
+                      { key: "ห้อง", label: "ห้อง" },
+                      { key: "อาหาร", label: "อาหาร" },
+                      { key: "ยาใน", label: "ยาใน" },
+                      { key: "ยานอก", label: "ยานอก" },
+                      { key: "เวชภัณฑ์ที่มิใช่ยา", label: "เวชภัณฑ์ที่มิใช่ยา" },
+                      { key: "หัตถการ", label: "หัตถการ" },
+                      { key: "บริการทางการแพทย์", label: "บริการทางการแพทย์" },
+                    ];
+
+                    return (
+                      <div className="space-y-4">
+                        {/* summary cards */}
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
+                            <p className="text-[11px] font-medium text-emerald-800">
+                              ยอดรวมทั้งหมด
+                            </p>
+                            <p className="mt-1 text-base font-semibold text-emerald-900">
+                              {total.toLocaleString("th-TH", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              บาท
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                            <p className="text-[11px] font-medium text-slate-700">ค่าใช้จ่ายห้อง</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {room.toLocaleString("th-TH", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              บาท
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                            <p className="text-[11px] font-medium text-slate-700">
+                              ยาใน + ยานอก
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {(drugIn + drugOut).toLocaleString("th-TH", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              บาท
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* vertical key/value list */}
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <h3 className="mb-2 text-xs font-semibold text-slate-800">
+                            รายละเอียดตามหมวดค่าใช้จ่าย
+                          </h3>
+                          <div className="grid gap-x-6 gap-y-1 text-[11px] md:grid-cols-2">
+                            {summaryFields.map((field) => {
+                              const val = getNum(field.key);
+                              if (field.key !== "TOTAL" && val === 0) {
+                                return null;
+                              }
+                              return (
+                                <div
+                                  key={field.key}
+                                  className="flex items-center justify-between border-b border-dashed border-slate-100 py-1"
+                                >
+                                  <span className="text-slate-700">{field.label}</span>
+                                  <span className="font-semibold text-slate-900">
+                                    {val.toLocaleString("th-TH", {
                                       minimumFractionDigits: 2,
                                       maximumFractionDigits: 2,
-                                    })
-                                  : val != null ? String(val) : "—"}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                                    })}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
               )}
+
+              {/* สรุปค่ายาต่อเคส */}
+              <div className="mt-6 border-t border-slate-200 pt-3">
+                <h3 className="mb-2 text-xs font-semibold text-slate-800">
+                  สรุปค่ายา (ตามรหัสยา) ในวันเดียวกัน
+                </h3>
+                {drugSummaryLoading && (
+                  <p className="py-3 text-xs text-slate-500">กำลังโหลดข้อมูลค่ายา...</p>
+                )}
+                {drugSummaryError && (
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                    {drugSummaryError}
+                  </p>
+                )}
+                {!drugSummaryLoading && !drugSummaryError && drugSummary && drugSummary.length === 0 && (
+                  <p className="py-3 text-xs text-slate-500">
+                    ไม่มีข้อมูลใบสั่งยาสำหรับเคสนี้ในวันดังกล่าว
+                  </p>
+                )}
+                {!drugSummaryLoading && !drugSummaryError && drugSummary && drugSummary.length > 0 && (
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                    <table className="min-w-full border-collapse text-[11px] text-left">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-100">
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                            คลินิก (sphmlct)
+                          </th>
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                            รหัสยา
+                          </th>
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                            ชื่อยา
+                          </th>
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                            ประเภทยา
+                          </th>
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                            บัญชียาหลัก
+                          </th>
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                            จำนวนรวม
+                          </th>
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                            ต้นทุนรวม
+                          </th>
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                            มูลค่าขายรวม
+                          </th>
+                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                            กำไรรวม
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drugSummary.map((drug, idx) => (
+                          // eslint-disable-next-line react/no-array-index-key
+                          <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                              {drug.CLINIC_LCT ?? "—"}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                              {drug.MEDITEM}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                              {drug.DRUG_NAME ?? "—"}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                              {drug.MEDTYPE ?? "—"}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                              {drug.ACCNATION ?? "—"}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                              {Number(drug.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                              {Number(drug.TOTAL_COST ?? 0).toLocaleString("th-TH", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                              {Number(drug.TOTAL_SALE ?? 0).toLocaleString("th-TH", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                              {Number(drug.TOTAL_PROFIT ?? 0).toLocaleString("th-TH", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* สรุป X-ray / Vaccine */}
+              <div className="mt-6 border-t border-slate-200 pt-3">
+                <h3 className="mb-2 text-xs font-semibold text-slate-800">
+                  สรุป X-ray / Vaccine ในวันเดียวกัน
+                </h3>
+                {xraySummaryLoading && (
+                  <p className="py-3 text-xs text-slate-500">กำลังโหลดข้อมูล X-ray / Vaccine...</p>
+                )}
+                {xraySummaryError && (
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                    {xraySummaryError}
+                  </p>
+                )}
+                {!xraySummaryLoading && !xraySummaryError && xraySummary && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-3 text-[11px]">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div>
+                        <p className="font-semibold text-slate-800 mb-1">X-ray</p>
+                        <p className="text-slate-700">
+                          {xraySummary.HAS_XRAY ? "ทำการ X-ray แล้ว" : "ยังไม่มี X-ray"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-800 mb-1">Vaccine ที่เกี่ยวข้อง</p>
+                        <ul className="space-y-0.5 text-slate-700">
+                          {xraySummary.HAS_HPV4 ? <li>• HPV4 vaccine</li> : null}
+                          {xraySummary.HAS_HPV9 ? <li>• HPV9 vaccine</li> : null}
+                          {xraySummary.HAS_FLU_VACCINE ? <li>• Influenza vaccine</li> : null}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {!xraySummaryLoading && !xraySummaryError && !xraySummary && (
+                  <p className="py-3 text-xs text-slate-500">
+                    ไม่มีข้อมูล X-ray / Vaccine สำหรับเคสนี้ในวันดังกล่าว
+                  </p>
+                )}
+              </div>
+
+              {/* สรุปค่าใช้จ่าย Lab */}
+              <div className="mt-6 border-t border-slate-200 pt-3">
+                <h3 className="mb-2 text-xs font-semibold text-slate-800">
+                  ค่าใช้จ่าย Lab ในวันเดียวกัน
+                </h3>
+                {labSummaryLoading && (
+                  <p className="py-3 text-xs text-slate-500">กำลังโหลดข้อมูล Lab...</p>
+                )}
+                {labSummaryError && (
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                    {labSummaryError}
+                  </p>
+                )}
+                {!labSummaryLoading && !labSummaryError && labSummary && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-3 text-[11px]">
+                    <p className="font-semibold text-slate-800 mb-1.5">
+                      ค่าใช้จ่ายในการตรวจแต่ละรายการ Lab ({labSummary.LAB_COST_ITEMS?.length ?? 0} รายการ)
+                      {labSummary.TOTAL_LAB_AMOUNT != null && (
+                        <span className="ml-2 font-semibold text-slate-900">
+                          รวม {Number(labSummary.TOTAL_LAB_AMOUNT).toLocaleString("th-TH", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })} บาท
+                        </span>
+                      )}
+                    </p>
+                    {labSummary.LAB_COST_ITEMS && labSummary.LAB_COST_ITEMS.length > 0 ? (
+                      <div className="overflow-x-auto rounded-lg border border-slate-200">
+                        <table className="min-w-full border-collapse text-[11px] text-left">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-100">
+                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                รหัสรายการ
+                              </th>
+                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                ชื่อรายการ
+                              </th>
+                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                จำนวน
+                              </th>
+                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                ราคา
+                              </th>
+                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                ค่าใช้จ่าย (บาท)
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {labSummary.LAB_COST_ITEMS.map((item, idx) => (
+                              <tr
+                                key={`${item.INCOME ?? ""}-${idx}`}
+                                className="border-b border-slate-100 hover:bg-slate-50"
+                              >
+                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                  {item.INCOME ?? "—"}
+                                </td>
+                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                  {item.INCOMENAME ?? "—"}
+                                </td>
+                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                  {item.QTY != null ? Number(item.QTY).toLocaleString("th-TH") : "—"}
+                                </td>
+                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                  {item.PRICE != null
+                                    ? Number(item.PRICE).toLocaleString("th-TH", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })
+                                    : "—"}
+                                </td>
+                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                  {Number(item.INCAMT ?? 0).toLocaleString("th-TH", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-slate-500">ไม่มีรายการค่าใช้จ่าย Lab ในวันนี้</p>
+                    )}
+                  </div>
+                )}
+                {!labSummaryLoading && !labSummaryError && !labSummary && (
+                  <p className="py-3 text-xs text-slate-500">
+                    ไม่มีข้อมูลค่าใช้จ่าย Lab สำหรับเคสนี้ในวันดังกล่าว
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>

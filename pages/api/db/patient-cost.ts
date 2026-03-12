@@ -7,10 +7,9 @@ interface PatientCostRow {
   CARDNO: string | null;
   DSPNAME: string | null;
   VSTDATE: string;
-  CLINICLCT: string | null;
-  CLINICNAME: string | null;
-  PTTYPENAME: string | null;
   TOTAL_AMOUNT: number;
+  /** รวมค่าใช้จ่าย Lab (incpt หมวดพยาธิวิทยา incgrp=70) */
+  LAB_AMOUNT: number;
 }
 
 type SuccessResponse = {
@@ -52,24 +51,22 @@ export default async function handler(
   const whereHn = hnValue != null ? " AND ovst.hn = :hn" : "";
   const whereCardno = cardnoValue != null ? " AND ptno.cardno = :cardno" : "";
 
-  /* ไม่ใช้ GET_OPD_PTTYPE เพื่อหลีกเลี่ยง ORA-00904 (ฟังก์ชัน/คอลัมน์อาจไม่มีใน schema) */
+  /* รวมค่าใช้จ่ายทั้งหมดต่อ 1 คนต่อ 1 วัน; LAB_AMOUNT = ค่าใช้จ่าย Lab (incgrp=70 พยาธิวิทยา) */
   const sql = `
     SELECT
       ovst.hn           AS HN,
       ptno.cardno       AS CARDNO,
       pt.dspname        AS DSPNAME,
       ovst.vstdate      AS VSTDATE,
-      ovst.cliniclct    AS CLINICLCT,
-      lct.dspname       AS CLINICNAME,
-      CAST(NULL AS VARCHAR2(100)) AS PTTYPENAME,
-      SUM(incpt.incamt) AS TOTAL_AMOUNT
+      SUM(incpt.incamt) AS TOTAL_AMOUNT,
+      SUM(CASE WHEN incgrp.incgrp = 70 THEN incpt.incamt ELSE 0 END) AS LAB_AMOUNT
     FROM ovst
     LEFT JOIN incpt
       ON incpt.hn = ovst.hn
      AND incpt.fn = ovst.fn
      AND incpt.vn = ovst.vn
-    JOIN lct
-      ON lct.lct = ovst.cliniclct
+    LEFT JOIN income ON incpt.income = income.income
+    LEFT JOIN incgrp ON income.incgrp = incgrp.incgrp
     JOIN pt
       ON ovst.hn = pt.hn
     LEFT JOIN ptno
@@ -84,9 +81,7 @@ export default async function handler(
       ovst.hn,
       ptno.cardno,
       pt.dspname,
-      ovst.vstdate,
-      ovst.cliniclct,
-      lct.dspname
+      ovst.vstdate
     ORDER BY
       ovst.vstdate,
       ovst.hn

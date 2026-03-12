@@ -79,6 +79,21 @@ export default function HomePage() {
             </Link>
 
             <Link
+              href="/drug-cost-summary"
+              className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-emerald-500 hover:shadow-md transition-colors"
+            >
+              <h3 className="text-sm font-semibold text-slate-900 mb-1">
+                สรุปต้นทุนและกำไรจากยา
+              </h3>
+              <p className="text-xs text-slate-600 mb-2">
+                ดูปริมาณใช้ยา ต้นทุน มูลค่าขาย และกำไรรวม แยกตามรหัสยาและบัญชียาหลัก
+              </p>
+              <span className="text-[11px] font-medium text-emerald-700 group-hover:underline">
+                เข้าใช้งาน &rarr;
+              </span>
+            </Link>
+
+            <Link
               href="/clinic-dashboard"
               className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-emerald-500 hover:shadow-md transition-colors"
             >
