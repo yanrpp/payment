@@ -1,94 +1,10 @@
-/**
- * หน้าแรก — ระบบต้นแบบ (Template)
- * คงการเชื่อมต่อ Oracle + MySQL ไว้ สำหรับนำไปสร้างระบบอื่น
- */
-
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 
 import { siteConfig } from "@/config/site";
 
-type TableRow = Record<string, unknown>;
-
 export default function HomePage() {
-  const [stdtestData, setStdtestData] = useState<TableRow[] | null>(null);
-  const [stdtestLoading, setStdtestLoading] = useState(false);
-  const [stdtestError, setStdtestError] = useState<string | null>(null);
-
-  const [usertypeData, setUsertypeData] = useState<TableRow[] | null>(null);
-  const [usertypeLoading, setUsertypeLoading] = useState(false);
-  const [usertypeError, setUsertypeError] = useState<string | null>(null);
-
-  const [ldapMembers, setLdapMembers] = useState<{ cn: string; samAccountName: string; department: string }[] | null>(null);
-  const [ldapLoading, setLdapLoading] = useState(false);
-  const [ldapError, setLdapError] = useState<string | null>(null);
-
-  const handleLoadStdtest = async () => {
-    setStdtestLoading(true);
-    setStdtestError(null);
-    setStdtestData(null);
-    try {
-      const res = await fetch("/api/db/stdtest");
-      const json = await res.json();
-      if (!res.ok) {
-        setStdtestError(json.error ?? json.message ?? "โหลดข้อมูลไม่สำเร็จ");
-        return;
-      }
-      setStdtestData(Array.isArray(json.data) ? json.data : []);
-    } catch (err) {
-      setStdtestError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
-    } finally {
-      setStdtestLoading(false);
-    }
-  };
-
-  const handleLoadUsertype = async () => {
-    setUsertypeLoading(true);
-    setUsertypeError(null);
-    setUsertypeData(null);
-    try {
-      const res = await fetch("/api/db/oracle-usertype");
-      const json = await res.json();
-      if (!res.ok) {
-        setUsertypeError(json.error ?? json.message ?? "โหลดข้อมูลไม่สำเร็จ");
-        return;
-      }
-      setUsertypeData(Array.isArray(json.data) ? json.data : []);
-    } catch (err) {
-      setUsertypeError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
-    } finally {
-      setUsertypeLoading(false);
-    }
-  };
-
-  const handleLoadLdapMembers = async () => {
-    setLdapLoading(true);
-    setLdapError(null);
-    setLdapMembers(null);
-    try {
-      const res = await fetch("/api/db/ldap-adit-members");
-      const json = await res.json();
-      if (!res.ok) {
-        setLdapError(json.error ?? json.message ?? "โหลดข้อมูลไม่สำเร็จ");
-        return;
-      }
-      setLdapMembers(Array.isArray(json.data) ? json.data : []);
-    } catch (err) {
-      setLdapError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
-    } finally {
-      setLdapLoading(false);
-    }
-  };
-
-  const columns = stdtestData?.length
-    ? (Object.keys(stdtestData[0] ?? {}) as string[])
-    : [];
-  const usertypeColumns = usertypeData?.length
-    ? (Object.keys(usertypeData[0] ?? {}) as string[])
-    : [];
-
   return (
     <div
       className="min-h-screen flex flex-col bg-white text-slate-800"
@@ -96,160 +12,193 @@ export default function HomePage() {
     >
       <header className="border-b border-slate-200 bg-white">
         <div className="container mx-auto px-4 py-4">
-          <h1 className="text-xl font-bold text-slate-800">{siteConfig.name}</h1>
-          <p className="text-sm text-slate-500 mt-1">{siteConfig.description}</p>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">{siteConfig.name}</h1>
+                <p className="text-sm text-slate-500 mt-1">{siteConfig.description}</p>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
       <main className="flex-1 container mx-auto px-4 py-8">
-        <section className="mb-8">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">
-            ทดสอบการเชื่อมต่อฐานข้อมูล / บริการ
-          </h2>
-          <div className="flex flex-wrap gap-4">
-            <button
-              type="button"
-              onClick={handleLoadStdtest}
-              disabled={stdtestLoading}
-              className="rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {stdtestLoading ? "กำลังโหลด…" : "ทดสอบ MySQL (แสดง stdtest)"}
-            </button>
-            <button
-              type="button"
-              onClick={handleLoadUsertype}
-              disabled={usertypeLoading}
-              className="rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {usertypeLoading ? "กำลังโหลด…" : "ทดสอบ Oracle (แสดง USERTYPE)"}
-            </button>
-            <button
-              type="button"
-              onClick={handleLoadLdapMembers}
-              disabled={ldapLoading}
-              className="rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {ldapLoading ? "กำลังโหลด…" : "ทดสอบ LDAP (สมาชิก Ad_it)"}
-            </button>
+        {/* HERO DASHBOARD */}
+        <section className="mb-10">
+          <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)] items-start">
+            <div>
+              <h2 className="text-xl md:text-2xl font-semibold text-slate-900 mb-3">
+                แดชบอร์ดภาพรวมต้นทุน &amp; เงินเข้า-ออกโรงพยาบาล
+              </h2>
+              <p className="text-sm md:text-base text-slate-700 leading-relaxed">
+                หน้านี้เป็นจุดเริ่มต้นสำหรับผู้บริหารและฝ่ายการเงิน
+                ในการเข้าถึงข้อมูลต้นทุน-รายได้แบบ Real-time หรือ Near Real-time
+                สามารถค้นหาระดับผู้ป่วย คลินิก แผนก หรือสิทธิการรักษา
+                และเชื่อมต่อไปยังรายงานละเอียดและแดชบอร์ดเชิงวิเคราะห์ได้จากเมนูด้านล่าง
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">
+                โฟลว์การใช้งานหลัก
+              </h3>
+              <ol className="space-y-2 text-xs md:text-sm text-slate-700">
+                <li>1. เลือกช่วงเวลาและมุมมองที่ต้องการ (รายคน / คลินิก / แผนก)</li>
+                <li>2. ดูสรุป KPI หลัก: ต้นทุน, รายได้, Margin, อัตราเก็บเงิน</li>
+                <li>3. Drill-down ไปยังรายงานรายละเอียดหรือผู้ป่วยรายคน</li>
+                <li>4. ส่งออกข้อมูล/เชื่อมต่อ BI Tool เพื่อวิเคราะห์เชิงลึกเพิ่มเติม</li>
+              </ol>
+              <p className="mt-3 text-[11px] md:text-xs text-slate-500">
+                หมายเหตุ: หน้านี้เป็นโครง UI สำหรับระบบตรวจสอบและวิเคราะห์
+                โดยสามารถเชื่อมต่อกับ API/ฐานข้อมูลจริงได้ในขั้นตอนพัฒนาต่อไป
+              </p>
+            </div>
           </div>
-          <p className="text-sm text-slate-500 mt-2">
-            ตั้งค่าตัวแปรใน .env.local ตาม .env.example แล้วรัน npm run dev
-          </p>
         </section>
 
-        {/* แสดงข้อมูลตาราง stdtest เมื่อกดทดสอบ MySQL */}
-        {(stdtestError || usertypeError || ldapError) && (
-          <section className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">
-            {stdtestError && <p>MySQL: {stdtestError}</p>}
-            {usertypeError && <p>Oracle: {usertypeError}</p>}
-            {ldapError && <p>LDAP: {ldapError}</p>}
-          </section>
-        )}
-        {stdtestData && (
-          <section className="mb-8">
-            <h3 className="text-base font-semibold text-slate-800 mb-2">
-              ข้อมูลจาก rpptest_db ตาราง stdtest ({stdtestData.length} แถว)
-            </h3>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full text-sm text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200">
-                    {columns.map((col) => (
-                      <th
-                        key={col}
-                        className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap"
-                      >
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {stdtestData.map((row, idx) => (
-                    <tr
-                      key={idx}
-                      className="border-b border-slate-100 hover:bg-slate-50"
-                    >
-                      {columns.map((col) => (
-                        <td key={col} className="px-3 py-2 text-slate-600">
-                          {row[col] != null ? String(row[col]) : "—"}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
+        {/* แถวเมนูหลัก */}
+        <section className="mb-8">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3">
+            เมนูหลักของระบบวิเคราะห์
+          </h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Link
+              href="/patient-cost"
+              className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-emerald-500 hover:shadow-md transition-colors"
+            >
+              <h3 className="text-sm font-semibold text-slate-900 mb-1">
+                ตรวจสอบต้นทุนรายผู้ป่วย
+              </h3>
+              <p className="text-xs text-slate-600 mb-2">
+                ค้นหาเคสผู้ป่วย ดูต้นทุนจริง เงินเรียกเก็บ และเงินที่จ่ายได้จริง
+                พร้อม Drill-down รายการค่าใช้จ่าย
+              </p>
+              <span className="text-[11px] font-medium text-emerald-700 group-hover:underline">
+                เข้าใช้งาน &rarr;
+              </span>
+            </Link>
 
-        {/* แสดงข้อมูลตาราง USERTYPE เมื่อกดทดสอบ Oracle */}
-        {usertypeData && (
-          <section className="mb-8">
-            <h3 className="text-base font-semibold text-slate-800 mb-2">
-              ข้อมูลจาก Oracle ตาราง USERTYPE ({usertypeData.length} แถว)
-            </h3>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full text-sm text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200">
-                    {usertypeColumns.map((col) => (
-                      <th
-                        key={col}
-                        className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap"
-                      >
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {usertypeData.map((row, idx) => (
-                    <tr
-                      key={idx}
-                      className="border-b border-slate-100 hover:bg-slate-50"
-                    >
-                      {usertypeColumns.map((col) => (
-                        <td key={col} className="px-3 py-2 text-slate-600">
-                          {row[col] != null ? String(row[col]) : "—"}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
+            <Link
+              href="/clinic-dashboard"
+              className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-emerald-500 hover:shadow-md transition-colors"
+            >
+              <h3 className="text-sm font-semibold text-slate-900 mb-1">
+                แดชบอร์ดรายคลินิก/แผนก
+              </h3>
+              <p className="text-xs text-slate-600 mb-2">
+                เปรียบเทียบต้นทุน รายได้ และ Margin ของแต่ละคลินิก/แผนก
+                พร้อมตัวกรองวันที่ สิทธิประกัน และกลุ่มโรค
+              </p>
+              <span className="text-[11px] font-medium text-emerald-700 group-hover:underline">
+                เข้าใช้งาน &rarr;
+              </span>
+            </Link>
 
-        {/* สมาชิกกลุ่ม LDAP Ad_it (rpphosp.local/Users-RPP/manage Ad_it) */}
-        {ldapMembers && (
-          <section className="mb-8">
-            <h3 className="text-base font-semibold text-slate-800 mb-2">
-              สมาชิกกลุ่ม Ad_it — rpphosp.local/Users-RPP/manage Ad_it ({ldapMembers.length} คน)
-            </h3>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full text-sm text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200">
-                    <th className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap">cn</th>
-                    <th className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap">user</th>
-                    <th className="px-3 py-2 font-medium text-slate-700 whitespace-nowrap">department</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ldapMembers.map((row, idx) => (
-                    <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-3 py-2 text-slate-600">{row.cn || "—"}</td>
-                      <td className="px-3 py-2 text-slate-600">{row.samAccountName || "—"}</td>
-                      <td className="px-3 py-2 text-slate-600">{row.department || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <Link
+              href="/kpi-dashboard"
+              className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-emerald-500 hover:shadow-md transition-colors"
+            >
+              <h3 className="text-sm font-semibold text-slate-900 mb-1">
+                KPI การเงิน &amp; การเก็บเงิน
+              </h3>
+              <p className="text-xs text-slate-600 mb-2">
+                ติดตาม Collection Rate, AR Days, Claim Denial Rate
+                และตัวชี้วัดสำคัญอื่น ๆ ของโรงพยาบาล
+              </p>
+              <span className="text-[11px] font-medium text-emerald-700 group-hover:underline">
+                เข้าใช้งาน &rarr;
+              </span>
+            </Link>
+
+            <Link
+              href="/system-overview"
+              className="group rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm hover:border-emerald-500 hover:shadow-md transition-colors"
+            >
+              <h3 className="text-sm font-semibold text-slate-900 mb-1">
+                เอกสารอธิบายโครงสร้างระบบ
+              </h3>
+              <p className="text-xs text-slate-600 mb-2">
+                อ่านรายละเอียดโมเดลข้อมูล ขอบเขตข้อมูล ETL
+                และมาตรฐานความปลอดภัยของโปรแกรมนี้
+              </p>
+              <span className="text-[11px] font-medium text-emerald-700 group-hover:underline">
+                ไปยังหน้าคำอธิบาย &rarr;
+              </span>
+            </Link>
+          </div>
+        </section>
+
+        {/* ส่วน KPI SUMMARY MOCK */}
+        <section id="kpi" className="mb-8">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3">
+            สรุป KPI หลัก (ตัวอย่าง UI)
+          </h2>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs text-slate-500">ต้นทุนเฉลี่ยต่อผู้ป่วย</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">-</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                ดึงจาก Fact_PatientExpense (Actual Cost ÷ จำนวนเคส)
+              </p>
             </div>
-          </section>
-        )}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs text-slate-500">รายได้เฉลี่ยต่อผู้ป่วย</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">-</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                ดึงจากยอดเรียกเก็บ/รับชำระจริง หารด้วยจำนวนผู้ป่วย
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs text-slate-500">Operating Margin</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">-</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                (รายได้รวม - ต้นทุนรวม) ÷ รายได้รวม × 100%
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs text-slate-500">Collection Rate</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">-</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                ยอดเงินได้รับชำระจริง ÷ ยอดเรียกเก็บรวม × 100%
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ส่วนรายงาน & ฟิลเตอร์ (โครง) */}
+        <section id="reports" className="mb-10">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="md:w-2/5">
+              <h2 className="text-sm font-semibold text-slate-900 mb-2">
+                ฟิลเตอร์การตรวจสอบ (โครง UI)
+              </h2>
+              <div className="space-y-3 text-xs text-slate-700">
+                <p>
+                  ส่วนนี้สามารถเชื่อมกับคอมโพเนนต์ตัวกรองจริง เช่น Date Range, Clinic,
+                  Doctor, Insurance, ICD/DRG เพื่อดึงข้อมูลจาก Data Warehouse หรือ API
+                </p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>ช่วงวันที่ให้บริการ / วันที่ออกบิล</li>
+                  <li>คลินิก / แผนก / แหล่งทุน</li>
+                  <li>สิทธิการรักษา / ประกัน / DRG group</li>
+                  <li>ระดับมุมมอง (ผู้ป่วย / คลินิก / แผนก / โครงการ)</li>
+                </ul>
+              </div>
+            </div>
+            <div className="md:w-3/5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-2">
+                พื้นที่สำหรับตาราง/กราฟสรุป (Mock Layout)
+              </h3>
+              <div className="h-40 border border-dashed border-slate-300 rounded-lg flex items-center justify-center text-xs text-slate-500">
+                ตาราง/กราฟสรุปรวม เช่น ต้นทุนรวม รายได้รวม จำแนกตามมิติที่เลือก
+              </div>
+              <p className="mt-3 text-[11px] text-slate-500">
+                สามารถเชื่อมต่อไปยังเครื่องมือ BI เช่น Power BI, Tableau หรือสร้างกราฟด้วย
+                React Chart Library ตามความเหมาะสม
+              </p>
+            </div>
+          </div>
+        </section>
 
         <section className="text-sm text-slate-600">
           <p>เวอร์ชัน: {siteConfig.version}</p>
