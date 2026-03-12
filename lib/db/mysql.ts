@@ -59,10 +59,11 @@ export function getMySQLPool(): mysql.Pool {
 
 /**
  * Execute Query (SELECT)
+ * หมายเหตุ: ใช้ any[] สำหรับ params เพื่อให้เข้ากับ ExecuteValues ของ mysql2/promise
  */
-export async function executeQuery<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
+export async function executeQuery<T = unknown>(sql: string, params?: any[]): Promise<T[]> {
   const poolInstance = getMySQLPool();
-  const [rows] = await poolInstance.execute(sql, params);
+  const [rows] = await poolInstance.execute(sql, params ?? []);
 
   return rows as T[];
 }
@@ -72,10 +73,10 @@ export async function executeQuery<T = unknown>(sql: string, params?: unknown[])
  */
 export async function executeUpdate(
   sql: string,
-  params?: unknown[]
+  params?: any[]
 ): Promise<{ affectedRows: number; insertId?: number }> {
   const poolInstance = getMySQLPool();
-  const [result] = await poolInstance.execute(sql, params);
+  const [result] = await poolInstance.execute(sql, params ?? []);
   const mysqlResult = result as mysql.ResultSetHeader;
 
   return {
@@ -88,7 +89,7 @@ export async function executeUpdate(
  * Execute Transaction (multiple queries)
  */
 export async function executeTransaction<T = unknown>(
-  queries: Array<{ sql: string; params?: unknown[] }>
+  queries: Array<{ sql: string; params?: any[] }>
 ): Promise<T[]> {
   const poolInstance = getMySQLPool();
   const connection = await poolInstance.getConnection();
@@ -98,7 +99,7 @@ export async function executeTransaction<T = unknown>(
     const results: T[] = [];
 
     for (const query of queries) {
-      const [result] = await connection.execute(query.sql, query.params || []);
+      const [result] = await connection.execute(query.sql, (query.params ?? []) as any[]);
 
       results.push(result as T);
     }
