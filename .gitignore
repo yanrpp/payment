@@ -44,3 +44,8 @@ bun.lockb
 
 # uploads
 /public/uploads/cases/
+
+# pm2 logs
+/logs/pm2-combined-0.log
+/logs/pm2-error-0.log
+/logs/pm2-out-0.log
