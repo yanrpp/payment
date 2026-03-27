@@ -80,7 +80,7 @@ export default async function handler(
             d.salerate,
             0
           )
-        ) * d.qty
+        )
       ) AS TOTAL_PROFIT
     FROM prsc p
       INNER JOIN prscdt d ON p.prscno = d.prscno

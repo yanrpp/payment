@@ -107,7 +107,7 @@ export default async function handler(
       SUM(QTY) AS TOTAL_QTY,
       SUM(QTY * UNIT_COST) AS TOTAL_COST,
       SUM(QTY * UNIT_SALE) AS TOTAL_SALE,
-      SUM(QTY * (UNIT_SALE - UNIT_COST) * QTY) AS TOTAL_PROFIT
+      SUM(QTY * (UNIT_SALE - UNIT_COST)) AS TOTAL_PROFIT
     FROM base
     GROUP BY
       HN,
