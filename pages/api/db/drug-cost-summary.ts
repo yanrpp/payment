@@ -3,6 +3,9 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { executeQuery } from "@/lib/db/connection";
 
 type DrugCostSummaryRow = {
+  HN: string;
+  CLINIC_LCT: string | null;
+  CLINIC_LCT_NAME: string | null;
   MEDITEM: string;
   MEDTYPE: string | null;
   ACCNATION: string | null;
@@ -46,29 +49,77 @@ export default async function handler(
   }
 
   const sql = `
+    WITH base AS (
+      SELECT
+        p.hn                                AS HN,
+        d.sphmlct                           AS CLINIC_LCT,
+        lct.name                            AS CLINIC_LCT_NAME,
+        m.meditem                           AS MEDITEM,
+        t.name                              AS MEDTYPE,
+        a.name                              AS ACCNATION,
+        m.medname                           AS DRUG_NAME,
+        d.qty                               AS QTY,
+        COALESCE(
+          NULLIF(
+            (
+              SELECT MAX(ms.costrate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
+              FROM MEDITEMSALEHST ms
+              WHERE ms.meditem = m.meditem
+                AND ms.effectdate <= TRUNC(p.prscdate)
+            ),
+            0
+          ),
+          (
+            SELECT MAX(ms.salerate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
+            FROM MEDITEMSALEHST ms
+            WHERE ms.meditem = m.meditem
+              AND ms.effectdate <= TRUNC(p.prscdate)
+          ),
+          NULLIF(d.costrate, 0),
+          d.salerate
+        ) AS UNIT_COST,
+        COALESCE(
+          (
+            SELECT MAX(ms.salerate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
+            FROM MEDITEMSALEHST ms
+            WHERE ms.meditem = m.meditem
+              AND ms.effectdate <= TRUNC(p.prscdate)
+          ),
+          d.salerate,
+          0
+        ) AS UNIT_SALE
+      FROM prsc p
+        INNER JOIN prscdt d ON p.prscno = d.prscno
+        INNER JOIN meditem m ON d.meditem = m.meditem
+        INNER JOIN medtype t ON t.medtype = m.medtype
+        INNER JOIN medaccnation a ON a.accnation = m.accnation
+        LEFT JOIN lct ON d.sphmlct = lct.lct
+      WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+    )
     SELECT
-      m.meditem                           AS MEDITEM,
-      t.name                              AS MEDTYPE,
-      a.name                              AS ACCNATION,
-      m.medname                           AS DRUG_NAME,
-      SUM(d.qty)                          AS TOTAL_QTY,
-      SUM(d.qty * d.costrate)             AS TOTAL_COST,
-      SUM(d.qty * d.salerate)             AS TOTAL_SALE,
-      SUM(d.qty * d.salerate) - SUM(d.qty * d.costrate) AS TOTAL_PROFIT
-    FROM prsc p
-      INNER JOIN prscdt d ON p.prscno = d.prscno
-      INNER JOIN meditem m ON d.meditem = m.meditem
-      INNER JOIN medtype t ON t.medtype = m.medtype
-      INNER JOIN medaccnation a ON a.accnation = m.accnation
-    WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+      HN,
+      CLINIC_LCT,
+      CLINIC_LCT_NAME,
+      MEDITEM,
+      MEDTYPE,
+      ACCNATION,
+      DRUG_NAME,
+      SUM(QTY) AS TOTAL_QTY,
+      SUM(QTY * UNIT_COST) AS TOTAL_COST,
+      SUM(QTY * UNIT_SALE) AS TOTAL_SALE,
+      SUM(QTY * (UNIT_SALE - UNIT_COST) * QTY) AS TOTAL_PROFIT
+    FROM base
     GROUP BY
-      t.name,
-      a.name,
-      m.meditem,
-      m.medname
+      HN,
+      CLINIC_LCT,
+      CLINIC_LCT_NAME,
+      MEDITEM,
+      MEDTYPE,
+      ACCNATION,
+      DRUG_NAME
     ORDER BY
-      m.meditem,
-      m.medname
+      MEDITEM,
+      DRUG_NAME
   `;
 
   try {
@@ -90,4 +141,3 @@ export default async function handler(
     });
   }
 }
-

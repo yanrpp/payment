@@ -6,24 +6,11 @@ import { siteConfig } from "@/config/site";
 
 export default function HomePage() {
   return (
-    <div
-      className="min-h-screen flex flex-col bg-white text-slate-800"
-      style={{ fontFamily: "var(--font-thai), sans-serif" }}
-    >
-      <header className="border-b border-slate-200 bg-white">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">{siteConfig.name}</h1>
-                <p className="text-sm text-slate-500 mt-1">{siteConfig.description}</p>
-              </div>
-            </div>
-          </div>
-        </div>
+    <main className="flex w-full flex-1 flex-col container mx-auto px-4 py-8">
+      <header className="mb-8 border-b border-slate-100 pb-6">
+        <p className="text-sm text-slate-500">{siteConfig.description}</p>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-8">
         {/* HERO DASHBOARD */}
         <section className="mb-10">
           <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)] items-start">
@@ -218,13 +205,6 @@ export default function HomePage() {
         <section className="text-sm text-slate-600">
           <p>เวอร์ชัน: {siteConfig.version}</p>
         </section>
-      </main>
-
-      <footer className="border-t border-slate-200 py-4 mt-auto">
-        <div className="container mx-auto px-4 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} {siteConfig.name} — ระบบต้นแบบ
-        </div>
-      </footer>
-    </div>
+    </main>
   );
 }

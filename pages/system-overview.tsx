@@ -4,13 +4,10 @@ import { siteConfig } from "@/config/site";
 
 export default function SystemOverviewPage() {
   return (
-    <div
-      className="min-h-screen flex flex-col bg-white text-slate-800"
-      style={{ fontFamily: "var(--font-thai), sans-serif" }}
-    >
+    <div className="flex w-full flex-1 flex-col">
       <header className="border-b border-slate-200 bg-white">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-2xl font-bold text-slate-900">
                 ภาพรวมการออกแบบระบบวิเคราะห์ค่าใช้จ่ายผู้ป่วย
@@ -19,8 +16,8 @@ export default function SystemOverviewPage() {
                 เอกสารอธิบายโครงสร้างข้อมูล โมเดลต้นทุน และแดชบอร์ดสำหรับผู้บริหาร
               </p>
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700 border border-emerald-100">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 border border-emerald-100">
                 System Design Overview
               </span>
             </div>
@@ -561,12 +558,6 @@ export default function SystemOverviewPage() {
           <p>เวอร์ชันระบบต้นแบบ: {siteConfig.version}</p>
         </section>
       </main>
-
-      <footer className="border-t border-slate-200 py-4 mt-auto">
-        <div className="container mx-auto px-4 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} {siteConfig.name} — เอกสารออกแบบระบบต้นแบบ
-        </div>
-      </footer>
     </div>
   );
 }

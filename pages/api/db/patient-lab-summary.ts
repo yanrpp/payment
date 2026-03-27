@@ -52,12 +52,11 @@ export default async function handler(
 
   const params = { hn: hn.trim(), vstdate: vstdate.trim() };
 
-  /* ค่าใช้จ่ายแต่ละรายการ Lab: incpt หมวดพยาธิวิทยา (incgrp = 70).
-   * ใช้เฉพาะ income, incamt (qty/price/incomename อาจไม่มีในบาง schema) */
+  /* ค่าใช้จ่ายแต่ละรายการ Lab: incpt หมวดพยาธิวิทยา (incgrp = 70) + ชื่อรายการจาก income.name */
   const sqlLabCostItems = `
     SELECT
       i.income   AS INCOME,
-      CAST(NULL AS VARCHAR2(4000)) AS INCOMENAME,
+      inc.name   AS INCOMENAME,
       CAST(NULL AS NUMBER) AS QTY,
       CAST(NULL AS NUMBER) AS PRICE,
       i.incamt   AS INCAMT
@@ -68,7 +67,7 @@ export default async function handler(
       AND i.incdate = TO_DATE(:vstdate, 'YYYY-MM-DD')
       AND i.an IS NULL
       AND ig.incgrp = 70
-    ORDER BY i.income
+    ORDER BY inc.name, i.income
   `;
 
   try {

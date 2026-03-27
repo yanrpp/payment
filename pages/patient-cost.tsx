@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 
-import Link from "next/link";
-
 import { ThaiDatePicker } from "@/components/ThaiDatePicker";
 import { normalizeThaiCardInput } from "@/lib/card/normalize";
 import { normalizeHnInput } from "@/lib/hn/normalize";
@@ -16,8 +14,6 @@ type PatientCostRow = {
   DSPNAME: string | null;
   VSTDATE: string;
   TOTAL_AMOUNT: number;
-  /** รวมค่าใช้จ่าย Lab (incgrp=70 พยาธิวิทยา) */
-  LAB_AMOUNT: number;
 };
 
 /** รายละเอียดต้นทุนต่อเคส แยกตามหมวดค่าใช้จ่าย — จาก API patient-cost-detail */
@@ -33,6 +29,7 @@ type PatientCostDetailRow = {
 
 type PatientDrugSummaryRow = {
   CLINIC_LCT: string | null;
+  CLINIC_LCT_NAME: string | null;
   ORDER_DATE: string;
   MEDITEM: string;
   MEDTYPE: string | null;
@@ -70,6 +67,69 @@ type PatientXraySummaryRow = {
   HAS_FLU_VACCINE: number;
 };
 
+/** สรุปยอดตาม INCGRP — ชื่อจากตาราง INCGRP (patient-cost-incgrp-breakdown) */
+type PatientCostIncgrpBreakdownRow = {
+  INCGRP: number;
+  INCGRP_NAME: string | null;
+  AMOUNT: number;
+};
+
+type PatientCostItemRow = {
+  INCOME: string | null;
+  INCOMENAME: string | null;
+  INCGRP: number | null;
+  QTY: number | null;
+  PRICE: number | null;
+  INCAMT: number;
+};
+
+function formatHnDisplay(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (raw.includes("/") || raw.includes("-")) return raw;
+
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 3) return raw;
+
+  const yearSuffix = digits.slice(0, 2);
+  const runningRaw = digits.slice(2);
+  const running = runningRaw.replace(/^0+/, "") || "0";
+  return `${running}/${yearSuffix}`;
+}
+
+function isDrugRelatedIncgrp(incgrp: number): boolean {
+  return [31, 32, 33, 34, 40, 50].includes(incgrp);
+}
+
+function filterDrugSummaryByIncgrp(
+  rows: PatientDrugSummaryRow[] | null,
+  incgrp: number | null
+): PatientDrugSummaryRow[] {
+  if (!rows || rows.length === 0 || incgrp == null) return [];
+
+  if (incgrp === 50) {
+    return rows.filter((r) => (r.MEDTYPE ?? "").includes("เวชภัณฑ์"));
+  }
+
+  if (incgrp === 31) {
+    return rows.filter((r) => !(r.MEDTYPE ?? "").includes("เวชภัณฑ์"));
+  }
+
+  return rows;
+}
+
+function filterCostItemsByIncgrp(
+  rows: PatientCostItemRow[] | null,
+  incgrp: number | null
+): PatientCostItemRow[] {
+  if (!rows || rows.length === 0 || incgrp == null) return [];
+
+  return rows.filter((r) => Number(r.INCGRP ?? 0) === incgrp);
+}
+
+const SPECIAL_SECTION_XRAY = -9001;
+const SPECIAL_SECTION_LAB = -9002;
+
 export default function PatientCostPage() {
   const todayIso = new Date().toISOString().slice(0, 10);
 
@@ -102,6 +162,16 @@ export default function PatientCostPage() {
   const [xraySummaryLoading, setXraySummaryLoading] = useState(false);
   const [xraySummaryError, setXraySummaryError] = useState<string | null>(null);
 
+  const [incgrpBreakdown, setIncgrpBreakdown] = useState<PatientCostIncgrpBreakdownRow[] | null>(
+    null
+  );
+  const [incgrpBreakdownLoading, setIncgrpBreakdownLoading] = useState(false);
+  const [incgrpBreakdownError, setIncgrpBreakdownError] = useState<string | null>(null);
+  const [costItems, setCostItems] = useState<PatientCostItemRow[] | null>(null);
+  const [costItemsLoading, setCostItemsLoading] = useState(false);
+  const [costItemsError, setCostItemsError] = useState<string | null>(null);
+  const [expandedIncgrp, setExpandedIncgrp] = useState<number | null>(null);
+
   const handleSearch = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -111,16 +181,19 @@ export default function PatientCostPage() {
     setPage(1);
 
     const query = new URLSearchParams();
+
     query.set("d1", dateFrom);
     query.set("d2", dateTo);
     if (hn.trim()) {
       const normalizedHn = normalizeHnInput(hn);
+
       if (normalizedHn) {
         query.set("hn", normalizedHn);
       }
     }
     if (cardno.trim()) {
       const normalizedCard = normalizeThaiCardInput(cardno);
+
       if (normalizedCard) {
         query.set("cardno", normalizedCard);
       }
@@ -132,6 +205,7 @@ export default function PatientCostPage() {
 
       if (!res.ok || !json.success) {
         setError(json.message ?? "ค้นหาข้อมูลไม่สำเร็จ");
+
         return;
       }
 
@@ -162,10 +236,12 @@ export default function PatientCostPage() {
         : value instanceof Date
           ? value
           : new Date(String(value));
+
     if (Number.isNaN(d.getTime())) return "";
     const year = d.getFullYear();
     const month = d.getMonth() + 1; // 0-11
     const day = d.getDate();
+
     return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day
       .toString()
       .padStart(2, "0")}`;
@@ -173,6 +249,7 @@ export default function PatientCostPage() {
 
   const handleRowClick = async (row: PatientCostRow) => {
     const iso = apiDateToIsoLocal(row.VSTDATE);
+
     if (!iso) return;
     setSelectedVisit({
       hn: row.HN,
@@ -187,21 +264,52 @@ export default function PatientCostPage() {
     setLabSummaryError(null);
     setXraySummary(null);
     setXraySummaryError(null);
+    setIncgrpBreakdown(null);
+    setIncgrpBreakdownError(null);
+    setCostItems(null);
+    setCostItemsError(null);
+    setExpandedIncgrp(null);
     setDetailLoading(true);
+    setIncgrpBreakdownLoading(true);
     try {
-      const res = await fetch(
-        `/api/db/patient-cost-detail?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
-      );
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        setDetailError(json.message ?? "โหลดรายละเอียดไม่สำเร็จ");
-        return;
+      const [resDetail, resIncgrp] = await Promise.all([
+        fetch(
+          `/api/db/patient-cost-detail?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
+        ),
+        fetch(
+          `/api/db/patient-cost-incgrp-breakdown?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
+        ),
+      ]);
+      const [jsonDetail, jsonIncgrp] = await Promise.all([
+        resDetail.json() as Promise<{
+          success?: boolean;
+          message?: string;
+          data?: PatientCostDetailRow[];
+        }>,
+        resIncgrp.json() as Promise<{
+          success?: boolean;
+          message?: string;
+          data?: PatientCostIncgrpBreakdownRow[];
+        }>,
+      ]);
+
+      if (!resDetail.ok || !jsonDetail.success) {
+        setDetailError(jsonDetail.message ?? "โหลดรายละเอียดไม่สำเร็จ");
+      } else {
+        setDetailData(Array.isArray(jsonDetail.data) ? jsonDetail.data : []);
       }
-      setDetailData(Array.isArray(json.data) ? json.data : []);
+
+      if (!resIncgrp.ok || !jsonIncgrp.success) {
+        setIncgrpBreakdownError(jsonIncgrp.message ?? "โหลดสรุปหมวด INCGRP ไม่สำเร็จ");
+      } else {
+        setIncgrpBreakdown(Array.isArray(jsonIncgrp.data) ? jsonIncgrp.data : []);
+      }
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
+      setIncgrpBreakdownError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
     } finally {
       setDetailLoading(false);
+      setIncgrpBreakdownLoading(false);
     }
 
     // โหลดสรุปค่ายาต่อเคส (ตาม HN+วันที่)
@@ -211,6 +319,7 @@ export default function PatientCostPage() {
         `/api/db/patient-drug-summary?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
       );
       const jsonDrug = await resDrug.json();
+
       if (!resDrug.ok || !jsonDrug.success) {
         setDrugSummaryError(jsonDrug.message ?? "โหลดรายละเอียดค่ายาไม่สำเร็จ");
       } else {
@@ -229,10 +338,12 @@ export default function PatientCostPage() {
         `/api/db/patient-lab-summary?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
       );
       const jsonLab = await resLab.json();
+
       if (!resLab.ok || !jsonLab.success) {
         setLabSummaryError(jsonLab.message ?? "โหลดสรุป Lab ไม่สำเร็จ");
       } else {
         const data = Array.isArray(jsonLab.data) ? jsonLab.data : [];
+
         setLabSummary(data[0] ?? null);
       }
     } catch (err) {
@@ -248,10 +359,12 @@ export default function PatientCostPage() {
         `/api/db/patient-xray-summary?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
       );
       const jsonXray = await resXray.json();
+
       if (!resXray.ok || !jsonXray.success) {
         setXraySummaryError(jsonXray.message ?? "โหลดสรุป X-ray/Vaccine ไม่สำเร็จ");
       } else {
         const data = Array.isArray(jsonXray.data) ? jsonXray.data : [];
+
         setXraySummary(data[0] ?? null);
       }
     } catch (err) {
@@ -261,64 +374,48 @@ export default function PatientCostPage() {
     } finally {
       setXraySummaryLoading(false);
     }
+
+    // โหลดรายการค่าใช้จ่าย (INCOME/INCOMENAME) ต่อเคส เพื่อใช้เจาะรายละเอียดตามหมวด
+    try {
+      setCostItemsLoading(true);
+      const resCostItems = await fetch(
+        `/api/db/patient-cost-items?hn=${encodeURIComponent(row.HN)}&vstdate=${encodeURIComponent(iso)}`
+      );
+      const jsonCostItems = await resCostItems.json();
+
+      if (!resCostItems.ok || !jsonCostItems.success) {
+        setCostItemsError(jsonCostItems.message ?? "โหลดรายการค่าใช้จ่ายไม่สำเร็จ");
+      } else {
+        setCostItems(Array.isArray(jsonCostItems.data) ? jsonCostItems.data : []);
+      }
+    } catch (err) {
+      setCostItemsError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดรายการค่าใช้จ่าย");
+    } finally {
+      setCostItemsLoading(false);
+    }
   };
 
-  const detailColumns: { key: string; label: string }[] = [
-    { key: "FLG", label: "ลำดับ" },
-    { key: "ICD10", label: "กลุ่ม" },
-    { key: "ICD9CM", label: "ICD-9" },
-    { key: "TOTAL", label: "รวม(บาท)" },
-    { key: "ห้อง", label: "ห้อง" },
-    { key: "อาหาร", label: "อาหาร" },
-    { key: "อวัยวะเทียม", label: "อวัยวะเทียม" },
-    { key: "ยาใน", label: "ยาใน" },
-    { key: "ยานอก", label: "ยานอก" },
-    { key: "ยาเคมี", label: "ยาเคมี" },
-    { key: "อาหารทางเส้นเลือด", label: "อาหารทางเส้นเลือด" },
-    { key: "ยาที่นำไปใช้ต่อที่บ้าน", label: "ยาที่นำไปใช้ต่อที่บ้าน" },
-    { key: "เวชภัณฑ์ที่มิใช่ยา", label: "เวชภัณฑ์ที่มิใช่ยา" },
-    { key: "บริการโลหิต", label: "บริการโลหิต" },
-    { key: "พยาธิวิทยา", label: "พยาธิวิทยา" },
-    { key: "รังสีวิทยา", label: "รังสีวิทยา" },
-    { key: "วินิจฉัยโดยวิธีพิเศษ", label: "วินิจฉัยโดยวิธีพิเศษ" },
-    { key: "อุปกรณ์ของใช้และเครื่องมือ", label: "อุปกรณ์ของใช้และเครื่องมือ" },
-    { key: "หัตถการ", label: "หัตถการ" },
-    { key: "ทันตกรรม", label: "ทันตกรรม" },
-    { key: "กายภาพบำบัด", label: "กายภาพบำบัด" },
-    { key: "บริการทางการพยาบาล", label: "บริการทางการพยาบาล" },
-    { key: "บริการทางการแพทย์", label: "บริการทางการแพทย์" },
-    { key: "บริการฝังเข็ม", label: "บริการฝังเข็ม" },
-  ];
-
   return (
-    <div
-      className="min-h-screen flex flex-col bg-white text-slate-800"
-      style={{ fontFamily: "var(--font-thai), sans-serif" }}
-    >
+    <div className="flex w-full flex-1 flex-col">
       <header className="border-b border-slate-200 bg-white">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between gap-4">
+        <div className="container mx-auto px-4 py-4">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-slate-900">
               ตรวจสอบต้นทุนรายผู้ป่วย (OPD)
             </h1>
             <p className="text-xs md:text-sm text-slate-500 mt-1">
-              อ้างอิงโครงสร้างข้อมูลจากตาราง OVST, INCPT, PT, PTNO, LCT และฟังก์ชัน GET_OPD_PTTYPE / GET_OPD_ICD10
+              อ้างอิงโครงสร้างข้อมูลจากตาราง OVST, INCPT, PT, PTNO, LCT และฟังก์ชัน GET_OPD_PTTYPE /
+              GET_OPD_ICD10
             </p>
           </div>
-          <Link
-            href="/"
-            className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs md:text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            กลับหน้าแรก
-          </Link>
         </div>
       </header>
 
       <main className="flex-1 container mx-auto px-4 py-6 md:py-8">
         <section className="mb-6">
           <form
-            onSubmit={handleSearch}
             className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 md:p-5 shadow-sm space-y-4"
+            onSubmit={handleSearch}
           >
             <div className="flex flex-wrap gap-4">
               <ThaiDatePicker
@@ -334,45 +431,47 @@ export default function PatientCostPage() {
                 onChange={(iso) => setDateTo(iso)}
               />
               <div className="flex flex-col gap-1">
-                <label htmlFor="hn" className="text-xs font-medium text-slate-700">
-                  HN 
+                <label className="text-xs font-medium text-slate-700" htmlFor="hn">
+                  HN
                 </label>
                 <input
-                  id="hn"
-                  type="text"
                   className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  id="hn"
+                  placeholder="เช่น 1666/69 หรือ 69001666"
+                  type="text"
                   value={hn}
                   onChange={(event) => setHn(event.target.value)}
-                  placeholder="เช่น 1666/69 หรือ 69001666"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="cardno" className="text-xs font-medium text-slate-700">
-                  เลขบัตร 
+                <label className="text-xs font-medium text-slate-700" htmlFor="cardno">
+                  เลขบัตร
                 </label>
                 <input
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   id="cardno"
-                  type="text"
                   inputMode="numeric"
                   pattern="\d*"
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  placeholder="เลขบัตรประชาชน 13 หลัก"
+                  type="text"
                   value={cardno}
                   onChange={(event) => {
                     const digitsOnly = event.target.value.replace(/\D/g, "").slice(0, 13);
+
                     setCardno(digitsOnly);
                   }}
-                  placeholder="เลขบัตรประชาชน 13 หลัก"
                 />
               </div>
             </div>
             <div className="flex items-center justify-between gap-4 pt-2">
               <p className="text-[11px] md:text-xs text-slate-500">
-                เงื่อนไขอื่นตาม SQL: OPD เท่านั้น (AN เป็นค่าว่าง, ไม่ถูกยกเลิก) และสิทธิรหัส 2110, 100
+                เงื่อนไขอื่นตาม SQL: OPD เท่านั้น (AN เป็นค่าว่าง, ไม่ถูกยกเลิก) และสิทธิรหัส 2110,
+                100
               </p>
               <button
-                type="submit"
-                disabled={loading}
                 className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-xs md:text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+                type="submit"
               >
                 {loading ? "กำลังค้นหา..." : "ค้นหาข้อมูล"}
               </button>
@@ -398,13 +497,14 @@ export default function PatientCostPage() {
                 <div className="flex items-center gap-1">
                   <span>แสดงต่อหน้า:</span>
                   <select
+                    className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
                     value={pageSize}
                     onChange={(event) => {
                       const newSize = Number(event.target.value) || 15;
+
                       setPageSize(newSize);
                       setPage(1);
                     }}
-                    className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
                   >
                     <option value={15}>15</option>
                     <option value={50}>50</option>
@@ -433,9 +533,7 @@ export default function PatientCostPage() {
                     <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
                       วันที่รับบริการ
                     </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
-                      HN
-                    </th>
+                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">HN</th>
                     <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
                       เลขบัตรประชาชน
                     </th>
@@ -445,15 +543,13 @@ export default function PatientCostPage() {
                     <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap text-right">
                       SUM(INCAMT)
                     </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap text-right">
-                      ค่า Lab
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {pagedRows.map((row, index) => (
                     <tr
                       key={`${row.HN}-${row.VSTDATE}`}
+                      className="border-b border-slate-100 hover:bg-emerald-50 cursor-pointer"
                       role="button"
                       tabIndex={0}
                       onClick={() => handleRowClick(row)}
@@ -463,7 +559,6 @@ export default function PatientCostPage() {
                           handleRowClick(row);
                         }
                       }}
-                      className="border-b border-slate-100 hover:bg-emerald-50 cursor-pointer"
                     >
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap text-right">
                         {startIndex + index + 1}
@@ -471,7 +566,9 @@ export default function PatientCostPage() {
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
                         {isoToThaiDisplay(apiDateToIsoLocal(row.VSTDATE))}
                       </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{row.HN}</td>
+                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
+                        {formatHnDisplay(row.HN)}
+                      </td>
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
                         {row.CARDNO ?? "—"}
                       </td>
@@ -480,12 +577,6 @@ export default function PatientCostPage() {
                       </td>
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap text-right">
                         {row.TOTAL_AMOUNT.toLocaleString("th-TH", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap text-right">
-                        {Number(row.LAB_AMOUNT ?? 0).toLocaleString("th-TH", {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
@@ -505,10 +596,10 @@ export default function PatientCostPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  type="button"
-                  disabled={currentPage <= 1}
-                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                   className="rounded border border-slate-300 bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  disabled={currentPage <= 1}
+                  type="button"
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 >
                   ก่อนหน้า
                 </button>
@@ -516,10 +607,10 @@ export default function PatientCostPage() {
                   หน้า {currentPage} / {totalPages}
                 </span>
                 <button
-                  type="button"
-                  disabled={currentPage >= totalPages}
-                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                   className="rounded border border-slate-300 bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  disabled={currentPage >= totalPages}
+                  type="button"
+                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 >
                   ถัดไป
                 </button>
@@ -538,19 +629,21 @@ export default function PatientCostPage() {
       {/* โมดัลรายละเอียดต้นทุนต่อเคส */}
       {selectedVisit && (
         <div
+          aria-labelledby="detail-modal-title"
+          aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           role="dialog"
-          aria-modal="true"
-          aria-labelledby="detail-modal-title"
         >
-          <div className="relative max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="relative h-[90vh] w-[95vw] max-w-[1400px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
-              <h2 id="detail-modal-title" className="text-sm font-semibold text-slate-900">
-                รายละเอียดต้นทุนต่อเคส (แยกตามหมวดค่าใช้จ่าย) — HN {selectedVisit.hn}
+              <h2 className="text-sm font-semibold text-slate-900" id="detail-modal-title">
+                รายละเอียดต้นทุนต่อเคส (แยกตามหมวดค่าใช้จ่าย) — HN{" "}
+                {formatHnDisplay(selectedVisit.hn)}
                 {selectedVisit.dspname ? ` — ${selectedVisit.dspname}` : ""} — วันที่{" "}
                 {isoToThaiDisplay(selectedVisit.vstdate)}
               </h2>
               <button
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
                 type="button"
                 onClick={() => {
                   setSelectedVisit(null);
@@ -562,8 +655,12 @@ export default function PatientCostPage() {
                   setLabSummaryError(null);
                   setXraySummary(null);
                   setXraySummaryError(null);
+                  setIncgrpBreakdown(null);
+                  setIncgrpBreakdownError(null);
+                  setCostItems(null);
+                  setCostItemsError(null);
+                  setExpandedIncgrp(null);
                 }}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
               >
                 ปิด
               </button>
@@ -588,28 +685,25 @@ export default function PatientCostPage() {
                     const row = detailData[0] as unknown as Record<string, unknown>;
                     const getNum = (key: string) => {
                       const raw = row[key] ?? row[key.toUpperCase()];
-                      const n =
-                        raw !== undefined && raw !== null && raw !== ""
-                          ? Number(raw)
-                          : 0;
+                      const n = raw !== undefined && raw !== null && raw !== "" ? Number(raw) : 0;
+
                       return Number.isNaN(n) ? 0 : n;
                     };
 
-                    const total = getNum("TOTAL");
+                    const totalBase = getNum("TOTAL");
                     const room = getNum("ห้อง");
                     const drugIn = getNum("ยาใน");
                     const drugOut = getNum("ยานอก");
 
-                    const summaryFields: { key: string; label: string }[] = [
-                      { key: "TOTAL", label: "รวมทั้งหมด" },
-                      { key: "ห้อง", label: "ห้อง" },
-                      { key: "อาหาร", label: "อาหาร" },
-                      { key: "ยาใน", label: "ยาใน" },
-                      { key: "ยานอก", label: "ยานอก" },
-                      { key: "เวชภัณฑ์ที่มิใช่ยา", label: "เวชภัณฑ์ที่มิใช่ยา" },
-                      { key: "หัตถการ", label: "หัตถการ" },
-                      { key: "บริการทางการแพทย์", label: "บริการทางการแพทย์" },
-                    ];
+                    // ใช้ต้นทุนค่ายาจาก drugSummary (ซึ่งคำนวณด้วย MEDITEMSALEHST) แทนค่าจาก incpt.incamt ในหมวดยา
+                    const drugCostFromSummary =
+                      Array.isArray(drugSummary) && drugSummary.length > 0
+                        ? drugSummary.reduce((acc, r) => acc + Number(r.TOTAL_COST ?? 0), 0)
+                        : null;
+
+                    const drugCostForCard = drugCostFromSummary ?? drugIn + drugOut;
+                    // ให้เทียบตรงกับบล็อกรายละเอียด INCGRP (ซึ่งมาจาก incpt) ต้องใช้ TOTAL เดิมจาก detail
+                    const total = totalBase;
 
                     return (
                       <div className="space-y-4">
@@ -639,10 +733,10 @@ export default function PatientCostPage() {
                           </div>
                           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
                             <p className="text-[11px] font-medium text-slate-700">
-                              ยาใน + ยานอก
+                              ยาใน + ยานอก (คำนวณจากราคายา)
                             </p>
                             <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {(drugIn + drugOut).toLocaleString("th-TH", {
+                              {drugCostForCard.toLocaleString("th-TH", {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })}{" "}
@@ -651,33 +745,507 @@ export default function PatientCostPage() {
                           </div>
                         </div>
 
-                        {/* vertical key/value list */}
+                        {/* หมวด INCGRP จากตาราง INCGRP (เชื่อม INCPT → INCOME → INCGRP) */}
                         <div className="rounded-lg border border-slate-200 bg-white p-3">
                           <h3 className="mb-2 text-xs font-semibold text-slate-800">
-                            รายละเอียดตามหมวดค่าใช้จ่าย
+                            รายละเอียดตามหมวดค่าใช้จ่าย (INCGRP.NAME จากฐานข้อมูล)
                           </h3>
-                          <div className="grid gap-x-6 gap-y-1 text-[11px] md:grid-cols-2">
-                            {summaryFields.map((field) => {
-                              const val = getNum(field.key);
-                              if (field.key !== "TOTAL" && val === 0) {
-                                return null;
-                              }
-                              return (
-                                <div
-                                  key={field.key}
-                                  className="flex items-center justify-between border-b border-dashed border-slate-100 py-1"
-                                >
-                                  <span className="text-slate-700">{field.label}</span>
-                                  <span className="font-semibold text-slate-900">
-                                    {val.toLocaleString("th-TH", {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
+                          <p className="mb-2 text-[10px] text-slate-500">
+                            สรุปจาก{" "}
+                            <code className="rounded bg-slate-100 px-1">
+                              /api/db/patient-cost-incgrp-breakdown
+                            </code>{" "}
+                            — incpt.income → income.incgrp → incgrp.name
+                          </p>
+                          {incgrpBreakdownLoading && (
+                            <p className="py-2 text-[11px] text-slate-500">
+                              กำลังโหลดหมวด INCGRP...
+                            </p>
+                          )}
+                          {incgrpBreakdownError && (
+                            <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+                              {incgrpBreakdownError}
+                            </p>
+                          )}
+                          {!incgrpBreakdownLoading &&
+                            !incgrpBreakdownError &&
+                            incgrpBreakdown &&
+                            incgrpBreakdown.length > 0 && (
+                              <div className="grid gap-x-6 gap-y-1 text-[11px] md:grid-cols-2">
+                                {incgrpBreakdown.map((igr) => (
+                                  <div
+                                    key={igr.INCGRP}
+                                    className="border-b border-dashed border-slate-100 py-1"
+                                  >
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-slate-50"
+                                      onClick={() =>
+                                        setExpandedIncgrp((prev) =>
+                                          prev === igr.INCGRP ? null : igr.INCGRP
+                                        )
+                                      }
+                                    >
+                                      <span className="text-slate-700 shrink min-w-0">
+                                        <span className="font-medium">
+                                          {igr.INCGRP_NAME?.trim()
+                                            ? igr.INCGRP_NAME
+                                            : `หมวดรหัส ${igr.INCGRP}`}
+                                        </span>
+                                        <span className="ml-1 text-slate-400">
+                                          (incgrp {igr.INCGRP})
+                                        </span>
+                                      </span>
+                                      <span className="flex items-center gap-2 whitespace-nowrap">
+                                        <span className="font-semibold text-slate-900">
+                                          {Number(igr.AMOUNT ?? 0).toLocaleString("th-TH", {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}{" "}
+                                          บาท
+                                        </span>
+                                        <span className="text-slate-400">
+                                          {expandedIncgrp === igr.INCGRP ? "▲" : "▼"}
+                                        </span>
+                                      </span>
+                                    </button>
+                                  </div>
+                                ))}
+
+                              </div>
+                            )}
+                          {!incgrpBreakdownLoading &&
+                            !incgrpBreakdownError &&
+                            incgrpBreakdown &&
+                            incgrpBreakdown.length === 0 && (
+                              <p className="mt-2 text-[11px] text-slate-500">
+                                ไม่มียอดแยกตามหมวด INCGRP ในข้อมูลนี้
+                              </p>
+                            )}
+
+                          {/* แสดงรายละเอียดเมื่อเลือกหมวด เพื่อลดข้อมูลที่แสดงพร้อมกัน */}
+                          {expandedIncgrp != null && (
+                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                              <p className="mb-2 text-[11px] font-semibold text-slate-800">
+                                {expandedIncgrp === SPECIAL_SECTION_XRAY
+                                  ? "รายละเอียด: สรุป X-ray / Vaccine"
+                                  : expandedIncgrp === SPECIAL_SECTION_LAB
+                                    ? "รายละเอียด: ค่าใช้จ่าย Lab"
+                                    : `รายละเอียดหมวด incgrp ${expandedIncgrp}`}
+                              </p>
+
+                              {expandedIncgrp === SPECIAL_SECTION_XRAY && (
+                                <>
+                                  {xraySummaryLoading && (
+                                    <p className="py-2 text-[11px] text-slate-500">
+                                      กำลังโหลดข้อมูล X-ray / Vaccine...
+                                    </p>
+                                  )}
+                                  {xraySummaryError && (
+                                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                                      {xraySummaryError}
+                                    </p>
+                                  )}
+                                  {!xraySummaryLoading && !xraySummaryError && xraySummary && (
+                                    <div className="rounded border border-slate-200 bg-white p-3 text-[11px]">
+                                      <div className="grid gap-2 md:grid-cols-2">
+                                        <div>
+                                          <p className="font-semibold text-slate-800 mb-1">X-ray</p>
+                                          <p className="text-slate-700">
+                                            {xraySummary.HAS_XRAY
+                                              ? "ทำการ X-ray แล้ว"
+                                              : "ยังไม่มี X-ray"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="font-semibold text-slate-800 mb-1">
+                                            Vaccine ที่เกี่ยวข้อง
+                                          </p>
+                                          <ul className="space-y-0.5 text-slate-700">
+                                            {xraySummary.HAS_HPV4 ? <li>• HPV4 vaccine</li> : null}
+                                            {xraySummary.HAS_HPV9 ? <li>• HPV9 vaccine</li> : null}
+                                            {xraySummary.HAS_FLU_VACCINE ? (
+                                              <li>• Influenza vaccine</li>
+                                            ) : null}
+                                          </ul>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {!xraySummaryLoading && !xraySummaryError && !xraySummary && (
+                                    <p className="text-[11px] text-slate-600">
+                                      ไม่มีข้อมูล X-ray / Vaccine สำหรับเคสนี้ในวันดังกล่าว
+                                    </p>
+                                  )}
+                                </>
+                              )}
+
+                              {expandedIncgrp === SPECIAL_SECTION_LAB && (
+                                <>
+                                  {labSummaryLoading && (
+                                    <p className="py-2 text-[11px] text-slate-500">
+                                      กำลังโหลดข้อมูล Lab...
+                                    </p>
+                                  )}
+                                  {labSummaryError && (
+                                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                                      {labSummaryError}
+                                    </p>
+                                  )}
+                                  {!labSummaryLoading && !labSummaryError && labSummary && (
+                                    <div className="rounded border border-slate-200 bg-white p-3 text-[11px]">
+                                      <p className="font-semibold text-slate-800 mb-1.5">
+                                        ค่าใช้จ่ายในการตรวจแต่ละรายการ Lab (
+                                        {labSummary.LAB_COST_ITEMS?.length ?? 0} รายการ)
+                                        {labSummary.TOTAL_LAB_AMOUNT != null && (
+                                          <span className="ml-2 font-semibold text-slate-900">
+                                            รวม{" "}
+                                            {Number(labSummary.TOTAL_LAB_AMOUNT).toLocaleString(
+                                              "th-TH",
+                                              {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                              }
+                                            )}{" "}
+                                            บาท
+                                          </span>
+                                        )}
+                                      </p>
+                                      {labSummary.LAB_COST_ITEMS &&
+                                      labSummary.LAB_COST_ITEMS.length > 0 ? (
+                                        <div className="overflow-x-auto rounded-lg border border-slate-200">
+                                          <table className="min-w-full border-collapse text-[11px] text-left">
+                                            <thead>
+                                              <tr className="border-b border-slate-200 bg-slate-100">
+                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                                  รหัสรายการ
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                                  ชื่อรายการ
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                  จำนวน
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                  ราคา
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                  ค่าใช้จ่าย (บาท)
+                                                </th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {labSummary.LAB_COST_ITEMS.map((item, idx) => (
+                                                <tr
+                                                  key={`${item.INCOME ?? ""}-${idx}`}
+                                                  className="border-b border-slate-100 hover:bg-slate-50"
+                                                >
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                    {item.INCOME ?? "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                    {item.INCOMENAME ?? "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                    {item.QTY != null
+                                                      ? Number(item.QTY).toLocaleString("th-TH")
+                                                      : "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                    {item.PRICE != null
+                                                      ? Number(item.PRICE).toLocaleString("th-TH", {
+                                                          minimumFractionDigits: 2,
+                                                          maximumFractionDigits: 2,
+                                                        })
+                                                      : "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                    {Number(item.INCAMT ?? 0).toLocaleString("th-TH", {
+                                                      minimumFractionDigits: 2,
+                                                      maximumFractionDigits: 2,
+                                                    })}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      ) : (
+                                        <p className="text-slate-500">ไม่มีรายการค่าใช้จ่าย Lab ในวันนี้</p>
+                                      )}
+                                    </div>
+                                  )}
+                                  {!labSummaryLoading && !labSummaryError && !labSummary && (
+                                    <p className="text-[11px] text-slate-600">
+                                      ไม่มีข้อมูลค่าใช้จ่าย Lab สำหรับเคสนี้ในวันดังกล่าว
+                                    </p>
+                                  )}
+                                </>
+                              )}
+
+                              {expandedIncgrp !== SPECIAL_SECTION_XRAY &&
+                                expandedIncgrp !== SPECIAL_SECTION_LAB &&
+                                !isDrugRelatedIncgrp(expandedIncgrp) && (
+                                <>
+                                  {costItemsLoading && (
+                                    <p className="py-2 text-[11px] text-slate-500">
+                                      กำลังโหลดรายการค่าใช้จ่าย...
+                                    </p>
+                                  )}
+                                  {costItemsError && (
+                                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                                      {costItemsError}
+                                    </p>
+                                  )}
+                                  {!costItemsLoading &&
+                                    !costItemsError &&
+                                    filterCostItemsByIncgrp(costItems, expandedIncgrp).length ===
+                                      0 && (
+                                      <p className="text-[11px] text-slate-600">
+                                        ไม่พบรายการค่าใช้จ่ายย่อยในหมวดนี้สำหรับเคสดังกล่าว
+                                      </p>
+                                    )}
+                                  {!costItemsLoading &&
+                                    !costItemsError &&
+                                    filterCostItemsByIncgrp(costItems, expandedIncgrp).length >
+                                      0 && (
+                                      <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+                                        <table className="min-w-full border-collapse text-[11px] text-left">
+                                          <thead>
+                                            <tr className="border-b border-slate-200 bg-slate-100">
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                                รหัสรายการ
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                                ชื่อรายการ
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                จำนวน
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                ราคา
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                ค่าใช้จ่าย (บาท)
+                                              </th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {filterCostItemsByIncgrp(costItems, expandedIncgrp).map(
+                                              (item, idx) => (
+                                                <tr
+                                                  key={`cost-item-${expandedIncgrp}-${item.INCOME ?? ""}-${idx}`}
+                                                  className="border-b border-slate-100 hover:bg-slate-50"
+                                                >
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                    {item.INCOME ?? "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                    {item.INCOMENAME ?? "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                    {item.QTY != null
+                                                      ? Number(item.QTY).toLocaleString("th-TH")
+                                                      : "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                    {item.PRICE != null
+                                                      ? Number(item.PRICE).toLocaleString("th-TH", {
+                                                          minimumFractionDigits: 2,
+                                                          maximumFractionDigits: 2,
+                                                        })
+                                                      : "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                    {Number(item.INCAMT ?? 0).toLocaleString("th-TH", {
+                                                      minimumFractionDigits: 2,
+                                                      maximumFractionDigits: 2,
+                                                    })}
+                                                  </td>
+                                                </tr>
+                                              )
+                                            )}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                </>
+                                )}
+
+                              {expandedIncgrp !== SPECIAL_SECTION_XRAY &&
+                                expandedIncgrp !== SPECIAL_SECTION_LAB &&
+                                isDrugRelatedIncgrp(expandedIncgrp) && (
+                                <>
+                                  {drugSummaryLoading && (
+                                    <p className="py-2 text-[11px] text-slate-500">
+                                      กำลังโหลดข้อมูลค่ายา...
+                                    </p>
+                                  )}
+                                  {drugSummaryError && (
+                                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                                      {drugSummaryError}
+                                    </p>
+                                  )}
+                                  {!drugSummaryLoading &&
+                                    !drugSummaryError &&
+                                    drugSummary &&
+                                    filterDrugSummaryByIncgrp(drugSummary, expandedIncgrp).length ===
+                                      0 && (
+                                      <p className="py-2 text-[11px] text-slate-500">
+                                        ไม่มีข้อมูลรายการยาสำหรับหมวดที่เลือก
+                                      </p>
+                                    )}
+                                  {!drugSummaryLoading &&
+                                    !drugSummaryError &&
+                                    drugSummary &&
+                                    filterDrugSummaryByIncgrp(drugSummary, expandedIncgrp).length >
+                                      0 && (
+                                      <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+                                        <table className="min-w-full border-collapse text-[11px] text-left">
+                                          <thead>
+                                            <tr className="border-b border-slate-200 bg-slate-100">
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                                คลินิก
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                                รหัสยา
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                                ชื่อยา
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                จำนวนรวม
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                ต้นทุนรวม (ต้นทุน/หน่วย)
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                มูลค่าขายรวม
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                กำไรรวม
+                                              </th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {filterDrugSummaryByIncgrp(drugSummary, expandedIncgrp).map(
+                                              (drug, idx) => (
+                                              <tr
+                                                key={`compact-${drug.MEDITEM}-${idx}`}
+                                                className="border-b border-slate-100 hover:bg-slate-50"
+                                              >
+                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                  {drug.CLINIC_LCT_NAME ?? drug.CLINIC_LCT ?? "—"}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                  {drug.MEDITEM}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                  {drug.DRUG_NAME ?? "—"}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  {Number(drug.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  {(() => {
+                                                    const totalCost = Number(drug.TOTAL_COST ?? 0);
+                                                    const totalQty = Number(drug.TOTAL_QTY ?? 0);
+                                                    const unitCost =
+                                                      totalQty > 0 ? totalCost / totalQty : 0;
+
+                                                    return `${totalCost.toLocaleString("th-TH", {
+                                                      minimumFractionDigits: 2,
+                                                      maximumFractionDigits: 2,
+                                                    })} (${unitCost.toLocaleString("th-TH", {
+                                                      minimumFractionDigits: 1,
+                                                      maximumFractionDigits: 2,
+                                                    })})`;
+                                                  })()}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  {Number(drug.TOTAL_SALE ?? 0).toLocaleString("th-TH", {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                  })}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  {Number(drug.TOTAL_PROFIT ?? 0).toLocaleString("th-TH", {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                  })}
+                                                </td>
+                                              </tr>
+                                            )
+                                            )}
+                                            <tr className="bg-slate-50 font-semibold text-slate-900">
+                                              <td className="px-2 py-1.5 whitespace-nowrap">รวม</td>
+                                              <td className="px-2 py-1.5 whitespace-nowrap">—</td>
+                                              <td className="px-2 py-1.5 whitespace-nowrap">—</td>
+                                              <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                                {filterDrugSummaryByIncgrp(
+                                                  drugSummary,
+                                                  expandedIncgrp
+                                                )
+                                                  .reduce(
+                                                    (acc, r) => acc + Number(r.TOTAL_QTY ?? 0),
+                                                    0
+                                                  )
+                                                  .toLocaleString("th-TH")}
+                                              </td>
+                                              <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                                {(() => {
+                                                  const rows = filterDrugSummaryByIncgrp(
+                                                    drugSummary,
+                                                    expandedIncgrp
+                                                  );
+                                                  const totalCost = rows.reduce(
+                                                    (acc, r) => acc + Number(r.TOTAL_COST ?? 0),
+                                                    0
+                                                  );
+
+                                                  return totalCost.toLocaleString("th-TH", {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                  });
+                                                })()}
+                                              </td>
+                                              <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                                {filterDrugSummaryByIncgrp(
+                                                  drugSummary,
+                                                  expandedIncgrp
+                                                )
+                                                  .reduce(
+                                                    (acc, r) => acc + Number(r.TOTAL_SALE ?? 0),
+                                                    0
+                                                  )
+                                                  .toLocaleString("th-TH", {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                  })}
+                                              </td>
+                                              <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                                {filterDrugSummaryByIncgrp(
+                                                  drugSummary,
+                                                  expandedIncgrp
+                                                )
+                                                  .reduce(
+                                                    (acc, r) => acc + Number(r.TOTAL_PROFIT ?? 0),
+                                                    0
+                                                  )
+                                                  .toLocaleString("th-TH", {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                  })}
+                                              </td>
+                                            </tr>
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -685,239 +1253,6 @@ export default function PatientCostPage() {
                 </>
               )}
 
-              {/* สรุปค่ายาต่อเคส */}
-              <div className="mt-6 border-t border-slate-200 pt-3">
-                <h3 className="mb-2 text-xs font-semibold text-slate-800">
-                  สรุปค่ายา (ตามรหัสยา) ในวันเดียวกัน
-                </h3>
-                {drugSummaryLoading && (
-                  <p className="py-3 text-xs text-slate-500">กำลังโหลดข้อมูลค่ายา...</p>
-                )}
-                {drugSummaryError && (
-                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                    {drugSummaryError}
-                  </p>
-                )}
-                {!drugSummaryLoading && !drugSummaryError && drugSummary && drugSummary.length === 0 && (
-                  <p className="py-3 text-xs text-slate-500">
-                    ไม่มีข้อมูลใบสั่งยาสำหรับเคสนี้ในวันดังกล่าว
-                  </p>
-                )}
-                {!drugSummaryLoading && !drugSummaryError && drugSummary && drugSummary.length > 0 && (
-                  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                    <table className="min-w-full border-collapse text-[11px] text-left">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-100">
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                            คลินิก (sphmlct)
-                          </th>
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                            รหัสยา
-                          </th>
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                            ชื่อยา
-                          </th>
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                            ประเภทยา
-                          </th>
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                            บัญชียาหลัก
-                          </th>
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                            จำนวนรวม
-                          </th>
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                            ต้นทุนรวม
-                          </th>
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                            มูลค่าขายรวม
-                          </th>
-                          <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                            กำไรรวม
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {drugSummary.map((drug, idx) => (
-                          // eslint-disable-next-line react/no-array-index-key
-                          <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
-                              {drug.CLINIC_LCT ?? "—"}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
-                              {drug.MEDITEM}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
-                              {drug.DRUG_NAME ?? "—"}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
-                              {drug.MEDTYPE ?? "—"}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
-                              {drug.ACCNATION ?? "—"}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
-                              {Number(drug.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
-                              {Number(drug.TOTAL_COST ?? 0).toLocaleString("th-TH", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
-                              {Number(drug.TOTAL_SALE ?? 0).toLocaleString("th-TH", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
-                              {Number(drug.TOTAL_PROFIT ?? 0).toLocaleString("th-TH", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* สรุป X-ray / Vaccine */}
-              <div className="mt-6 border-t border-slate-200 pt-3">
-                <h3 className="mb-2 text-xs font-semibold text-slate-800">
-                  สรุป X-ray / Vaccine ในวันเดียวกัน
-                </h3>
-                {xraySummaryLoading && (
-                  <p className="py-3 text-xs text-slate-500">กำลังโหลดข้อมูล X-ray / Vaccine...</p>
-                )}
-                {xraySummaryError && (
-                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                    {xraySummaryError}
-                  </p>
-                )}
-                {!xraySummaryLoading && !xraySummaryError && xraySummary && (
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 text-[11px]">
-                    <div className="grid gap-2 md:grid-cols-2">
-                      <div>
-                        <p className="font-semibold text-slate-800 mb-1">X-ray</p>
-                        <p className="text-slate-700">
-                          {xraySummary.HAS_XRAY ? "ทำการ X-ray แล้ว" : "ยังไม่มี X-ray"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-800 mb-1">Vaccine ที่เกี่ยวข้อง</p>
-                        <ul className="space-y-0.5 text-slate-700">
-                          {xraySummary.HAS_HPV4 ? <li>• HPV4 vaccine</li> : null}
-                          {xraySummary.HAS_HPV9 ? <li>• HPV9 vaccine</li> : null}
-                          {xraySummary.HAS_FLU_VACCINE ? <li>• Influenza vaccine</li> : null}
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {!xraySummaryLoading && !xraySummaryError && !xraySummary && (
-                  <p className="py-3 text-xs text-slate-500">
-                    ไม่มีข้อมูล X-ray / Vaccine สำหรับเคสนี้ในวันดังกล่าว
-                  </p>
-                )}
-              </div>
-
-              {/* สรุปค่าใช้จ่าย Lab */}
-              <div className="mt-6 border-t border-slate-200 pt-3">
-                <h3 className="mb-2 text-xs font-semibold text-slate-800">
-                  ค่าใช้จ่าย Lab ในวันเดียวกัน
-                </h3>
-                {labSummaryLoading && (
-                  <p className="py-3 text-xs text-slate-500">กำลังโหลดข้อมูล Lab...</p>
-                )}
-                {labSummaryError && (
-                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                    {labSummaryError}
-                  </p>
-                )}
-                {!labSummaryLoading && !labSummaryError && labSummary && (
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 text-[11px]">
-                    <p className="font-semibold text-slate-800 mb-1.5">
-                      ค่าใช้จ่ายในการตรวจแต่ละรายการ Lab ({labSummary.LAB_COST_ITEMS?.length ?? 0} รายการ)
-                      {labSummary.TOTAL_LAB_AMOUNT != null && (
-                        <span className="ml-2 font-semibold text-slate-900">
-                          รวม {Number(labSummary.TOTAL_LAB_AMOUNT).toLocaleString("th-TH", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })} บาท
-                        </span>
-                      )}
-                    </p>
-                    {labSummary.LAB_COST_ITEMS && labSummary.LAB_COST_ITEMS.length > 0 ? (
-                      <div className="overflow-x-auto rounded-lg border border-slate-200">
-                        <table className="min-w-full border-collapse text-[11px] text-left">
-                          <thead>
-                            <tr className="border-b border-slate-200 bg-slate-100">
-                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                                รหัสรายการ
-                              </th>
-                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                                ชื่อรายการ
-                              </th>
-                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                                จำนวน
-                              </th>
-                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                                ราคา
-                              </th>
-                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                                ค่าใช้จ่าย (บาท)
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {labSummary.LAB_COST_ITEMS.map((item, idx) => (
-                              <tr
-                                key={`${item.INCOME ?? ""}-${idx}`}
-                                className="border-b border-slate-100 hover:bg-slate-50"
-                              >
-                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
-                                  {item.INCOME ?? "—"}
-                                </td>
-                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
-                                  {item.INCOMENAME ?? "—"}
-                                </td>
-                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
-                                  {item.QTY != null ? Number(item.QTY).toLocaleString("th-TH") : "—"}
-                                </td>
-                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
-                                  {item.PRICE != null
-                                    ? Number(item.PRICE).toLocaleString("th-TH", {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      })
-                                    : "—"}
-                                </td>
-                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
-                                  {Number(item.INCAMT ?? 0).toLocaleString("th-TH", {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <p className="text-slate-500">ไม่มีรายการค่าใช้จ่าย Lab ในวันนี้</p>
-                    )}
-                  </div>
-                )}
-                {!labSummaryLoading && !labSummaryError && !labSummary && (
-                  <p className="py-3 text-xs text-slate-500">
-                    ไม่มีข้อมูลค่าใช้จ่าย Lab สำหรับเคสนี้ในวันดังกล่าว
-                  </p>
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -925,4 +1260,3 @@ export default function PatientCostPage() {
     </div>
   );
 }
-

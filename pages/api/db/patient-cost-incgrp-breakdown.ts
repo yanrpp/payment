@@ -2,21 +2,17 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { executeQuery } from "@/lib/db/connection";
 
-type PatientCostItemRow = {
-  HN: string;
-  INCDATE: string;
-  INCOME: string | null;
-  INCOMENAME: string | null;
-  INCGRP: number | null;
-  QTY: number | null;
-  PRICE: number | null;
-  INCAMT: number;
+/** สรุปยอดตามหมวด — INCPT → INCOME → INCGRP (แสดงชื่อจาก incgrp.name) */
+export type PatientCostIncgrpBreakdownRow = {
+  INCGRP: number;
+  INCGRP_NAME: string | null;
+  AMOUNT: number;
 };
 
 type SuccessResponse = {
   success: true;
   count: number;
-  data: PatientCostItemRow[];
+  data: PatientCostIncgrpBreakdownRow[];
 };
 
 type ErrorResponse = {
@@ -30,10 +26,7 @@ export default async function handler(
   res: NextApiResponse<SuccessResponse | ErrorResponse>
 ) {
   if (req.method !== "GET") {
-    return res.status(405).json({
-      success: false,
-      message: "Method not allowed",
-    });
+    return res.status(405).json({ success: false, message: "Method not allowed" });
   }
 
   const { hn, vstdate } = req.query;
@@ -45,16 +38,12 @@ export default async function handler(
     });
   }
 
+  /* ผูกกับ ovst แบบเดียวกับ patient-cost / patient-cost-detail (hn+fn+vn) */
   const sql = `
     SELECT
-      i.hn                              AS HN,
-      i.incdate                         AS INCDATE,
-      i.income                          AS INCOME,
-      inc.name                          AS INCOMENAME,
-      g.incgrp                          AS INCGRP,
-      NULL                              AS QTY,
-      NULL                              AS PRICE,
-      i.incamt                          AS INCAMT
+      g.incgrp AS INCGRP,
+      MAX(g.name) AS INCGRP_NAME,
+      SUM(NVL(i.incamt, 0)) AS AMOUNT
     FROM ovst ov
     INNER JOIN incpt i
       ON i.hn = ov.hn
@@ -67,33 +56,27 @@ export default async function handler(
       AND ov.an IS NULL
       AND ov.canceldate IS NULL
       AND i.an IS NULL
-    ORDER BY
-      g.incgrp,
-      inc.name,
-      i.income
+      AND g.incgrp IS NOT NULL
+    GROUP BY g.incgrp
+    HAVING SUM(NVL(i.incamt, 0)) > 0
+    ORDER BY g.incgrp
   `;
 
   try {
-    const result = await executeQuery<PatientCostItemRow>(sql, {
+    const result = await executeQuery<PatientCostIncgrpBreakdownRow>(sql, {
       hn: hn.trim(),
       vstdate: vstdate.trim(),
     });
-
     const rows = result.rows ?? [];
 
-    return res.status(200).json({
-      success: true,
-      count: rows.length,
-      data: rows,
-    });
+    return res.status(200).json({ success: true, count: rows.length, data: rows });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     return res.status(500).json({
       success: false,
-      message: "ไม่สามารถดึงรายละเอียดรายการค่าใช้จ่ายได้",
+      message: "ไม่สามารถดึงสรุปหมวด INCGRP ได้ (ตรวจสอบคอลัมน์ incgrp.name)",
       error: errorMessage,
     });
   }
 }
-
