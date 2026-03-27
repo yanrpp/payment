@@ -2,13 +2,17 @@ module.exports = {
   apps: [
     {
       name: "payment",
-      // Windows + PM2: ใช้ npm.cmd เรียก npm script โดยตรง
-      script: "npm.cmd",
-      args: "run start",
+      // Windows + PM2: เรียกผ่าน cmd เพื่อลดปัญหา npm.cmd ถูกตีความด้วย node
+      script: "cmd",
+      args: "/c npm run start",
       cwd: ".",
       instances: 1,
       exec_mode: "fork",
       env: {
+        NODE_ENV: "production",
+        PORT: 3008,
+      },
+      env_production: {
         NODE_ENV: "production",
         PORT: 3008,
       },
