@@ -8,6 +8,8 @@ type LabCostItemRow = {
   INCOMENAME: string | null;
   QTY: number | null;
   PRICE: number | null;
+  /** ราคาขายมาตรฐานต่อหน่วย — ผูกคอลัมน์ใน SQL เมื่อทราบชื่อฟิลด์ใน income */
+  SALE_PRICE: number | null;
   INCAMT: number;
 };
 
@@ -59,6 +61,7 @@ export default async function handler(
       inc.name   AS INCOMENAME,
       CAST(NULL AS NUMBER) AS QTY,
       CAST(NULL AS NUMBER) AS PRICE,
+      CAST(NULL AS NUMBER) AS SALE_PRICE,
       i.incamt   AS INCAMT
     FROM incpt i
     LEFT JOIN income inc ON i.income = inc.income

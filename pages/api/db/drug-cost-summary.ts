@@ -4,6 +4,8 @@ import { executeQuery } from "@/lib/db/connection";
 
 type DrugCostSummaryRow = {
   HN: string;
+  /** ชื่อสิทธิจาก pttype.name (ผูกจาก prsc.pttype) */
+  PTTYPE_NAME: string | null;
   CLINIC_LCT: string | null;
   CLINIC_LCT_NAME: string | null;
   MEDITEM: string;
@@ -87,17 +89,20 @@ export default async function handler(
           ),
           d.salerate,
           0
-        ) AS UNIT_SALE
+        ) AS UNIT_SALE,
+        pt.name AS PTTYPE_NAME
       FROM prsc p
         INNER JOIN prscdt d ON p.prscno = d.prscno
         INNER JOIN meditem m ON d.meditem = m.meditem
         INNER JOIN medtype t ON t.medtype = m.medtype
         INNER JOIN medaccnation a ON a.accnation = m.accnation
         LEFT JOIN lct ON d.sphmlct = lct.lct
+        LEFT JOIN pttype pt ON pt.pttype = p.pttype
       WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
     )
     SELECT
       HN,
+      PTTYPE_NAME,
       CLINIC_LCT,
       CLINIC_LCT_NAME,
       MEDITEM,
@@ -111,6 +116,7 @@ export default async function handler(
     FROM base
     GROUP BY
       HN,
+      PTTYPE_NAME,
       CLINIC_LCT,
       CLINIC_LCT_NAME,
       MEDITEM,

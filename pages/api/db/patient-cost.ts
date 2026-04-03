@@ -7,6 +7,10 @@ interface PatientCostRow {
   CARDNO: string | null;
   DSPNAME: string | null;
   VSTDATE: string;
+  /** รหัสสิทธิจาก incpt.pttype (รายการคิดเงินต่อ visit — โครงสร้างบางที่ไม่มี ovst.pttype) */
+  PTTYPE: string | null;
+  /** ชื่อสิทธิจาก pttype.name */
+  PTTYPE_NAME: string | null;
   TOTAL_AMOUNT: number;
   /** รวมค่าใช้จ่าย Lab (incpt หมวดพยาธิวิทยา incgrp=70) */
   LAB_AMOUNT: number;
@@ -58,6 +62,27 @@ export default async function handler(
       ptno.cardno       AS CARDNO,
       pt.dspname        AS DSPNAME,
       ovst.vstdate      AS VSTDATE,
+      (SELECT MAX(i.pttype)
+         FROM incpt i
+        INNER JOIN ovst o2
+          ON o2.hn = i.hn
+         AND o2.fn = i.fn
+         AND o2.vn = i.vn
+        WHERE o2.hn = ovst.hn
+          AND o2.vstdate = ovst.vstdate
+          AND o2.an IS NULL
+          AND o2.canceldate IS NULL) AS PTTYPE,
+      (SELECT MAX(pty.name)
+         FROM incpt i
+        INNER JOIN ovst o2
+          ON o2.hn = i.hn
+         AND o2.fn = i.fn
+         AND o2.vn = i.vn
+         LEFT JOIN pttype pty ON pty.pttype = i.pttype
+        WHERE o2.hn = ovst.hn
+          AND o2.vstdate = ovst.vstdate
+          AND o2.an IS NULL
+          AND o2.canceldate IS NULL) AS PTTYPE_NAME,
       SUM(incpt.incamt) AS TOTAL_AMOUNT,
       SUM(CASE WHEN incgrp.incgrp = 70 THEN incpt.incamt ELSE 0 END) AS LAB_AMOUNT
     FROM ovst

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ThaiDatePicker } from "@/components/ThaiDatePicker";
 import { normalizeThaiCardInput } from "@/lib/card/normalize";
@@ -8,13 +8,32 @@ import { normalizeHnInput } from "@/lib/hn/normalize";
 import { isoToThaiDisplay } from "@/lib/date/thaiDate";
 import { siteConfig } from "@/config/site";
 
+function normalizeFieldForFilter(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value).toLowerCase();
+}
+
+function filterStringOptions(options: string[], query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return options;
+  const needle = normalizeFieldForFilter(trimmed);
+  return options.filter((opt) => normalizeFieldForFilter(opt).includes(needle));
+}
+
 type PatientCostRow = {
   HN: string;
   CARDNO: string | null;
   DSPNAME: string | null;
   VSTDATE: string;
+  PTTYPE: string | null;
+  PTTYPE_NAME: string | null;
   TOTAL_AMOUNT: number;
 };
+
+function pttypeDisplayName(row: PatientCostRow): string {
+  const n = row.PTTYPE_NAME?.trim();
+  return n ? n : "(ไม่ระบุ)";
+}
 
 /** รายละเอียดต้นทุนต่อเคส แยกตามหมวดค่าใช้จ่าย — จาก API patient-cost-detail */
 type PatientCostDetailRow = {
@@ -47,6 +66,7 @@ type LabCostItemRow = {
   INCOMENAME: string | null;
   QTY: number | null;
   PRICE: number | null;
+  SALE_PRICE: number | null;
   INCAMT: number;
 };
 
@@ -80,6 +100,7 @@ type PatientCostItemRow = {
   INCGRP: number | null;
   QTY: number | null;
   PRICE: number | null;
+  SALE_PRICE: number | null;
   INCAMT: number;
 };
 
@@ -137,6 +158,10 @@ export default function PatientCostPage() {
   const [dateTo, setDateTo] = useState<string>(todayIso);
   const [hn, setHn] = useState<string>("");
   const [cardno, setCardno] = useState<string>("");
+  const [filterPttype, setFilterPttype] = useState<string[]>([]);
+  const [filterPttypeListQuery, setFilterPttypeListQuery] = useState("");
+  const [pttypeDropdownOpen, setPttypeDropdownOpen] = useState(false);
+  const pttypeDropdownRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -179,6 +204,9 @@ export default function PatientCostPage() {
     setError(null);
     setRows([]);
     setPage(1);
+    setFilterPttype([]);
+    setFilterPttypeListQuery("");
+    setPttypeDropdownOpen(false);
 
     const query = new URLSearchParams();
 
@@ -217,11 +245,41 @@ export default function PatientCostPage() {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize) || 1);
+  const pttypeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      set.add(pttypeDisplayName(r));
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
+  }, [rows]);
+
+  const pttypeOptionsFiltered = useMemo(
+    () => filterStringOptions(pttypeOptions, filterPttypeListQuery),
+    [pttypeOptions, filterPttypeListQuery]
+  );
+
+  const filteredRows = useMemo(() => {
+    if (filterPttype.length === 0) return rows;
+    return rows.filter((r) => filterPttype.includes(pttypeDisplayName(r)));
+  }, [rows, filterPttype]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize) || 1);
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
-  const pagedRows = rows.slice(startIndex, endIndex);
+  const pagedRows = filteredRows.slice(startIndex, endIndex);
+
+  useEffect(() => {
+    if (!pttypeDropdownOpen) return;
+    const closeOnOutside = (e: MouseEvent) => {
+      const el = pttypeDropdownRef.current;
+      if (el && !el.contains(e.target as Node)) {
+        setPttypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutside);
+    return () => document.removeEventListener("mousedown", closeOnOutside);
+  }, [pttypeDropdownOpen]);
 
   /**
    * แปลงวันที่จาก API (ซึ่งถูก serialize เป็น ISO UTC จาก Oracle)
@@ -404,8 +462,7 @@ export default function PatientCostPage() {
               ตรวจสอบต้นทุนรายผู้ป่วย (OPD)
             </h1>
             <p className="text-xs md:text-sm text-slate-500 mt-1">
-              อ้างอิงโครงสร้างข้อมูลจากตาราง OVST, INCPT, PT, PTNO, LCT และฟังก์ชัน GET_OPD_PTTYPE /
-              GET_OPD_ICD10
+              อ้างอิงโครงสร้างข้อมูลจากตาราง OVST, INCPT, PT, PTNO, LCT 
             </p>
           </div>
         </div>
@@ -465,8 +522,7 @@ export default function PatientCostPage() {
             </div>
             <div className="flex items-center justify-between gap-4 pt-2">
               <p className="text-[11px] md:text-xs text-slate-500">
-                เงื่อนไขอื่นตาม SQL: OPD เท่านั้น (AN เป็นค่าว่าง, ไม่ถูกยกเลิก) และสิทธิรหัส 2110,
-                100
+                เงื่อนไขอื่นตาม SQL: OPD เท่านั้น (AN เป็นค่าว่าง, ไม่ถูกยกเลิก)
               </p>
               <button
                 className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-xs md:text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -489,7 +545,9 @@ export default function PatientCostPage() {
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-slate-900">
               ผลลัพธ์การค้นหา{" "}
-              {rows.length > 0 ? `(${rows.length} แถว, หน้า ${currentPage}/${totalPages})` : ""}
+              {rows.length > 0
+                ? `(${filteredRows.length} แถว${filterPttype.length > 0 ? " หลังกรองสิทธิ" : ""}, หน้า ${currentPage}/${totalPages})`
+                : ""}
             </h2>
             {rows.length > 0 && (
               <div className="flex items-center gap-3 text-[11px] text-slate-500">
@@ -523,6 +581,141 @@ export default function PatientCostPage() {
           )}
 
           {rows.length > 0 && (
+            <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+              <p className="mb-2 text-[11px] font-semibold text-slate-800" id="patient-cost-pttype-filter-label">
+                กรองตามสิทธิการรักษา
+              </p>
+              <div ref={pttypeDropdownRef} className="relative max-w-xl">
+                <button
+                  type="button"
+                  disabled={pttypeOptions.length === 0}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-[11px] text-slate-800 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-expanded={pttypeDropdownOpen}
+                  aria-haspopup="listbox"
+                  aria-controls="patient-cost-pttype-listbox"
+                  onClick={() => {
+                    if (pttypeOptions.length === 0) return;
+                    setPttypeDropdownOpen((o) => !o);
+                  }}
+                >
+                  <span className="min-w-0 truncate">
+                    {pttypeOptions.length === 0
+                      ? "ไม่มีรายการสิทธิในผลลัพธ์"
+                      : filterPttype.length === 0
+                        ? "ทุกสิทธิ — แตะเพื่อเลือกกรอง (มีทั้งหมด " + pttypeOptions.length + " รายการ)"
+                        : `เลือกแล้ว ${filterPttype.length} สิทธิ — แตะเพื่อเปลี่ยน`}
+                  </span>
+                  <span className="shrink-0 text-slate-400" aria-hidden>
+                    {pttypeDropdownOpen ? "▲" : "▼"}
+                  </span>
+                </button>
+                {pttypeDropdownOpen && pttypeOptions.length > 0 && (
+                  <div
+                    id="patient-cost-pttype-listbox"
+                    className="absolute left-0 right-0 z-30 mt-1 rounded-lg border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-black/5"
+                    role="listbox"
+                    aria-multiselectable="true"
+                    aria-labelledby="patient-cost-pttype-filter-label"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-2 text-[10px]">
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-slate-700 hover:bg-slate-100"
+                        onClick={() => {
+                          setFilterPttype((prev) => {
+                            const next = new Set(prev);
+                            for (const o of pttypeOptionsFiltered) next.add(o);
+                            return Array.from(next);
+                          });
+                          setPage(1);
+                        }}
+                      >
+                        เลือกทั้งหมด (ตามที่ค้นเห็น)
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
+                        onClick={() => {
+                          const visible = new Set(pttypeOptionsFiltered);
+                          setFilterPttype((prev) => prev.filter((item) => !visible.has(item)));
+                          setPage(1);
+                        }}
+                      >
+                        ไม่เลือกทั้งหมด (ตามที่ค้นเห็น)
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
+                        onClick={() => {
+                          setFilterPttype([]);
+                          setFilterPttypeListQuery("");
+                          setPage(1);
+                        }}
+                      >
+                        ล้างฟิลเตอร์สิทธิ
+                      </button>
+                    </div>
+                    <input
+                      type="search"
+                      value={filterPttypeListQuery}
+                      onChange={(e) => setFilterPttypeListQuery(e.target.value)}
+                      placeholder="พิมพ์เพื่อค้นหาชื่อสิทธิ..."
+                      className="mt-2 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-[11px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                      autoComplete="off"
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setPttypeDropdownOpen(false);
+                      }}
+                    />
+                    <div
+                      className="mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-200 bg-slate-50/90 px-1 py-1"
+                      role="group"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        {pttypeOptionsFiltered.length === 0 ? (
+                          <p className="px-2 py-2 text-[10px] text-slate-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
+                        ) : (
+                          pttypeOptionsFiltered.map((opt) => (
+                            <label
+                              key={opt}
+                              className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-[11px] text-slate-700 hover:bg-white"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={filterPttype.includes(opt)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFilterPttype((prev) => [...prev, opt]);
+                                  } else {
+                                    setFilterPttype((prev) => prev.filter((item) => item !== opt));
+                                  }
+                                  setPage(1);
+                                }}
+                                className="mt-0.5 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <span className="min-w-0 flex-1 leading-snug" title={opt}>
+                                {opt}
+                              </span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <p className="mt-2 text-[10px] text-slate-500">
+                ไม่เลือก = แสดงทุกสิทธิ · เลือกอย่างน้อยหนึ่งรายการ = แสดงเฉพาะแถวที่ตรงสิทธิที่เลือก
+              </p>
+            </div>
+          )}
+
+          {rows.length > 0 && filteredRows.length === 0 && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs md:text-sm text-amber-900">
+              ไม่มีแถวที่ตรงกับสิทธิที่เลือก กรุณาเลือกสิทธิเพิ่มหรือกด &quot;ล้างฟิลเตอร์สิทธิ&quot;
+            </p>
+          )}
+
+          {rows.length > 0 && filteredRows.length > 0 && (
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
               <table className="min-w-full border-collapse text-xs md:text-sm text-left">
                 <thead>
@@ -539,6 +732,9 @@ export default function PatientCostPage() {
                     </th>
                     <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
                       ชื่อผู้ป่วย
+                    </th>
+                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap min-w-[8rem]">
+                      สิทธิการรักษา
                     </th>
                     <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap text-right">
                       SUM(INCAMT)
@@ -575,6 +771,11 @@ export default function PatientCostPage() {
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
                         {row.DSPNAME ?? "—"}
                       </td>
+                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap max-w-[14rem]">
+                        <span className="line-clamp-2" title={pttypeDisplayName(row)}>
+                          {pttypeDisplayName(row)}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-slate-700 whitespace-nowrap text-right">
                         {row.TOTAL_AMOUNT.toLocaleString("th-TH", {
                           minimumFractionDigits: 2,
@@ -588,11 +789,14 @@ export default function PatientCostPage() {
             </div>
           )}
 
-          {rows.length > 0 && (
+          {rows.length > 0 && filteredRows.length > 0 && (
             <div className="mt-3 flex items-center justify-between text-[11px] text-slate-600">
               <div>
-                แสดงแถวที่ {rows.length === 0 ? 0 : startIndex + 1} -{" "}
-                {Math.min(endIndex, rows.length)} จากทั้งหมด {rows.length} แถว
+                แสดงแถวที่ {filteredRows.length === 0 ? 0 : startIndex + 1} -{" "}
+                {Math.min(endIndex, filteredRows.length)} จากทั้งหมด {filteredRows.length} แถว
+                {filterPttype.length > 0 && rows.length !== filteredRows.length
+                  ? ` (จากทั้งหมด ${rows.length} แถวก่อนกรองสิทธิ)`
+                  : ""}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -690,59 +894,19 @@ export default function PatientCostPage() {
                       return Number.isNaN(n) ? 0 : n;
                     };
 
-                    const totalBase = getNum("TOTAL");
-                    const room = getNum("ห้อง");
-                    const drugIn = getNum("ยาใน");
-                    const drugOut = getNum("ยานอก");
-
-                    // ใช้ต้นทุนค่ายาจาก drugSummary (ซึ่งคำนวณด้วย MEDITEMSALEHST) แทนค่าจาก incpt.incamt ในหมวดยา
-                    const drugCostFromSummary =
-                      Array.isArray(drugSummary) && drugSummary.length > 0
-                        ? drugSummary.reduce((acc, r) => acc + Number(r.TOTAL_COST ?? 0), 0)
-                        : null;
-
-                    const drugCostForCard = drugCostFromSummary ?? drugIn + drugOut;
-                    // ให้เทียบตรงกับบล็อกรายละเอียด INCGRP (ซึ่งมาจาก incpt) ต้องใช้ TOTAL เดิมจาก detail
-                    const total = totalBase;
+                    const total = getNum("TOTAL");
 
                     return (
                       <div className="space-y-4">
-                        {/* summary cards */}
-                        <div className="grid gap-3 md:grid-cols-3">
-                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
-                            <p className="text-[11px] font-medium text-emerald-800">
-                              ยอดรวมทั้งหมด
-                            </p>
-                            <p className="mt-1 text-base font-semibold text-emerald-900">
-                              {total.toLocaleString("th-TH", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}{" "}
-                              บาท
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                            <p className="text-[11px] font-medium text-slate-700">ค่าใช้จ่ายห้อง</p>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {room.toLocaleString("th-TH", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}{" "}
-                              บาท
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                            <p className="text-[11px] font-medium text-slate-700">
-                              ยาใน + ยานอก (คำนวณจากราคายา)
-                            </p>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {drugCostForCard.toLocaleString("th-TH", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}{" "}
-                              บาท
-                            </p>
-                          </div>
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
+                          <p className="text-[11px] font-medium text-emerald-800">ยอดรวมทั้งหมด</p>
+                          <p className="mt-1 text-base font-semibold text-emerald-900">
+                            {total.toLocaleString("th-TH", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            บาท
+                          </p>
                         </div>
 
                         {/* หมวด INCGRP จากตาราง INCGRP (เชื่อม INCPT → INCOME → INCGRP) */}
@@ -927,7 +1091,10 @@ export default function PatientCostPage() {
                                                   จำนวน
                                                 </th>
                                                 <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                                                  ราคา
+                                                  ต้นทุน
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                  ราคาขาย
                                                 </th>
                                                 <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
                                                   ค่าใช้จ่าย (บาท)
@@ -954,6 +1121,14 @@ export default function PatientCostPage() {
                                                   <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
                                                     {item.PRICE != null
                                                       ? Number(item.PRICE).toLocaleString("th-TH", {
+                                                          minimumFractionDigits: 2,
+                                                          maximumFractionDigits: 2,
+                                                        })
+                                                      : "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                    {item.SALE_PRICE != null
+                                                      ? Number(item.SALE_PRICE).toLocaleString("th-TH", {
                                                           minimumFractionDigits: 2,
                                                           maximumFractionDigits: 2,
                                                         })
@@ -1023,7 +1198,10 @@ export default function PatientCostPage() {
                                                 จำนวน
                                               </th>
                                               <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
-                                                ราคา
+                                                ต้นทุน
+                                              </th>
+                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                ราคาขาย
                                               </th>
                                               <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
                                                 ค่าใช้จ่าย (บาท)
@@ -1051,6 +1229,14 @@ export default function PatientCostPage() {
                                                   <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
                                                     {item.PRICE != null
                                                       ? Number(item.PRICE).toLocaleString("th-TH", {
+                                                          minimumFractionDigits: 2,
+                                                          maximumFractionDigits: 2,
+                                                        })
+                                                      : "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                    {item.SALE_PRICE != null
+                                                      ? Number(item.SALE_PRICE).toLocaleString("th-TH", {
                                                           minimumFractionDigits: 2,
                                                           maximumFractionDigits: 2,
                                                         })

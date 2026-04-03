@@ -10,6 +10,8 @@ type PatientCostItemRow = {
   INCGRP: number | null;
   QTY: number | null;
   PRICE: number | null;
+  /** ราคาขายมาตรฐานต่อหน่วย — ผูกคอลัมน์ใน SQL เมื่อทราบชื่อฟิลด์ใน income */
+  SALE_PRICE: number | null;
   INCAMT: number;
 };
 
@@ -54,6 +56,7 @@ export default async function handler(
       g.incgrp                          AS INCGRP,
       NULL                              AS QTY,
       NULL                              AS PRICE,
+      CAST(NULL AS NUMBER)              AS SALE_PRICE,
       i.incamt                          AS INCAMT
     FROM ovst ov
     INNER JOIN incpt i
