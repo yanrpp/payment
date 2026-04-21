@@ -124,19 +124,43 @@ function isDrugRelatedIncgrp(incgrp: number): boolean {
 
 function filterDrugSummaryByIncgrp(
   rows: PatientDrugSummaryRow[] | null,
-  incgrp: number | null
+  incgrp: number | null,
+  options?: {
+    zeroSaleOnly?: boolean;
+    negativeProfitOnly?: boolean;
+    excludeZeroSale?: boolean;
+    excludeNegativeProfit?: boolean;
+  }
 ): PatientDrugSummaryRow[] {
   if (!rows || rows.length === 0 || incgrp == null) return [];
 
+  const {
+    zeroSaleOnly = false,
+    negativeProfitOnly = false,
+    excludeZeroSale = false,
+    excludeNegativeProfit = false,
+  } = options ?? {};
+
+  const applyCommonFilters = (input: PatientDrugSummaryRow[]) =>
+    input.filter((r) => {
+      const sale = Number(r.TOTAL_SALE ?? 0);
+      const profit = Number(r.TOTAL_PROFIT ?? 0);
+      if (zeroSaleOnly && sale !== 0) return false;
+      if (negativeProfitOnly && profit >= 0) return false;
+      if (excludeZeroSale && sale === 0) return false;
+      if (excludeNegativeProfit && profit < 0) return false;
+      return true;
+    });
+
   if (incgrp === 50) {
-    return rows.filter((r) => (r.MEDTYPE ?? "").includes("เวชภัณฑ์"));
+    return applyCommonFilters(rows.filter((r) => (r.MEDTYPE ?? "").includes("เวชภัณฑ์")));
   }
 
   if (incgrp === 31) {
-    return rows.filter((r) => !(r.MEDTYPE ?? "").includes("เวชภัณฑ์"));
+    return applyCommonFilters(rows.filter((r) => !(r.MEDTYPE ?? "").includes("เวชภัณฑ์")));
   }
 
-  return rows;
+  return applyCommonFilters(rows);
 }
 
 function filterCostItemsByIncgrp(
@@ -162,6 +186,10 @@ export default function PatientCostPage() {
   const [filterPttypeListQuery, setFilterPttypeListQuery] = useState("");
   const [pttypeDropdownOpen, setPttypeDropdownOpen] = useState(false);
   const pttypeDropdownRef = useRef<HTMLDivElement>(null);
+  const [filterZeroSaleOnly, setFilterZeroSaleOnly] = useState(false);
+  const [filterNegativeProfitOnly, setFilterNegativeProfitOnly] = useState(false);
+  const [excludeZeroSale, setExcludeZeroSale] = useState(false);
+  const [excludeNegativeProfit, setExcludeNegativeProfit] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,6 +235,10 @@ export default function PatientCostPage() {
     setFilterPttype([]);
     setFilterPttypeListQuery("");
     setPttypeDropdownOpen(false);
+    setFilterZeroSaleOnly(false);
+    setFilterNegativeProfitOnly(false);
+    setExcludeZeroSale(false);
+    setExcludeNegativeProfit(false);
 
     const query = new URLSearchParams();
 
@@ -262,6 +294,24 @@ export default function PatientCostPage() {
     if (filterPttype.length === 0) return rows;
     return rows.filter((r) => filterPttype.includes(pttypeDisplayName(r)));
   }, [rows, filterPttype]);
+
+  const filteredDrugRowsForExpanded = useMemo(
+    () =>
+      filterDrugSummaryByIncgrp(drugSummary, expandedIncgrp, {
+        zeroSaleOnly: filterZeroSaleOnly,
+        negativeProfitOnly: filterNegativeProfitOnly,
+        excludeZeroSale,
+        excludeNegativeProfit,
+      }),
+    [
+      drugSummary,
+      expandedIncgrp,
+      filterZeroSaleOnly,
+      filterNegativeProfitOnly,
+      excludeZeroSale,
+      excludeNegativeProfit,
+    ]
+  );
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize) || 1);
   const currentPage = Math.min(page, totalPages);
@@ -546,7 +596,7 @@ export default function PatientCostPage() {
             <h2 className="text-sm font-semibold text-slate-900">
               ผลลัพธ์การค้นหา{" "}
               {rows.length > 0
-                ? `(${filteredRows.length} แถว${filterPttype.length > 0 ? " หลังกรองสิทธิ" : ""}, หน้า ${currentPage}/${totalPages})`
+                ? `(${filteredRows.length} แถว${filterPttype.length > 0 ? " สิทธิ" : ""}, หน้า ${currentPage}/${totalPages})`
                 : ""}
             </h2>
             {rows.length > 0 && (
@@ -1262,6 +1312,58 @@ export default function PatientCostPage() {
                                 expandedIncgrp !== SPECIAL_SECTION_LAB &&
                                 isDrugRelatedIncgrp(expandedIncgrp) && (
                                 <>
+                                  <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                        <input
+                                          type="checkbox"
+                                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                          checked={filterNegativeProfitOnly}
+                                          onChange={(event) => setFilterNegativeProfitOnly(event.target.checked)}
+                                        />
+                                        แสดงเฉพาะรายการที่กำไรรวมติดลบ
+                                      </label>
+                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                        <input
+                                          type="checkbox"
+                                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                          checked={excludeZeroSale}
+                                          onChange={(event) => setExcludeZeroSale(event.target.checked)}
+                                        />
+                                        ไม่แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
+                                      </label>
+                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                        <input
+                                          type="checkbox"
+                                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                          checked={excludeNegativeProfit}
+                                          onChange={(event) => setExcludeNegativeProfit(event.target.checked)}
+                                        />
+                                        ไม่แสดงเฉพาะรายการที่กำไรรวมติดลบ
+                                      </label>
+                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                        <input
+                                          type="checkbox"
+                                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                          checked={filterZeroSaleOnly}
+                                          onChange={(event) => setFilterZeroSaleOnly(event.target.checked)}
+                                        />
+                                        แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
+                                      </label>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                                      onClick={() => {
+                                        setFilterZeroSaleOnly(false);
+                                        setFilterNegativeProfitOnly(false);
+                                        setExcludeZeroSale(false);
+                                        setExcludeNegativeProfit(false);
+                                      }}
+                                    >
+                                      ล้างฟิลเตอร์
+                                    </button>
+                                  </div>
                                   {drugSummaryLoading && (
                                     <p className="py-2 text-[11px] text-slate-500">
                                       กำลังโหลดข้อมูลค่ายา...
@@ -1275,7 +1377,7 @@ export default function PatientCostPage() {
                                   {!drugSummaryLoading &&
                                     !drugSummaryError &&
                                     drugSummary &&
-                                    filterDrugSummaryByIncgrp(drugSummary, expandedIncgrp).length ===
+                                    filteredDrugRowsForExpanded.length ===
                                       0 && (
                                       <p className="py-2 text-[11px] text-slate-500">
                                         ไม่มีข้อมูลรายการยาสำหรับหมวดที่เลือก
@@ -1284,7 +1386,7 @@ export default function PatientCostPage() {
                                   {!drugSummaryLoading &&
                                     !drugSummaryError &&
                                     drugSummary &&
-                                    filterDrugSummaryByIncgrp(drugSummary, expandedIncgrp).length >
+                                    filteredDrugRowsForExpanded.length >
                                       0 && (
                                       <div className="overflow-x-auto rounded border border-slate-200 bg-white">
                                         <table className="min-w-full border-collapse text-[11px] text-left">
@@ -1314,7 +1416,7 @@ export default function PatientCostPage() {
                                             </tr>
                                           </thead>
                                           <tbody>
-                                            {filterDrugSummaryByIncgrp(drugSummary, expandedIncgrp).map(
+                                            {filteredDrugRowsForExpanded.map(
                                               (drug, idx) => (
                                               <tr
                                                 key={`compact-${drug.MEDITEM}-${idx}`}
@@ -1368,10 +1470,7 @@ export default function PatientCostPage() {
                                               <td className="px-2 py-1.5 whitespace-nowrap">—</td>
                                               <td className="px-2 py-1.5 whitespace-nowrap">—</td>
                                               <td className="px-2 py-1.5 whitespace-nowrap text-right">
-                                                {filterDrugSummaryByIncgrp(
-                                                  drugSummary,
-                                                  expandedIncgrp
-                                                )
+                                                {filteredDrugRowsForExpanded
                                                   .reduce(
                                                     (acc, r) => acc + Number(r.TOTAL_QTY ?? 0),
                                                     0
@@ -1380,10 +1479,7 @@ export default function PatientCostPage() {
                                               </td>
                                               <td className="px-2 py-1.5 whitespace-nowrap text-right">
                                                 {(() => {
-                                                  const rows = filterDrugSummaryByIncgrp(
-                                                    drugSummary,
-                                                    expandedIncgrp
-                                                  );
+                                                  const rows = filteredDrugRowsForExpanded;
                                                   const totalCost = rows.reduce(
                                                     (acc, r) => acc + Number(r.TOTAL_COST ?? 0),
                                                     0
@@ -1396,10 +1492,7 @@ export default function PatientCostPage() {
                                                 })()}
                                               </td>
                                               <td className="px-2 py-1.5 whitespace-nowrap text-right">
-                                                {filterDrugSummaryByIncgrp(
-                                                  drugSummary,
-                                                  expandedIncgrp
-                                                )
+                                                {filteredDrugRowsForExpanded
                                                   .reduce(
                                                     (acc, r) => acc + Number(r.TOTAL_SALE ?? 0),
                                                     0
@@ -1410,10 +1503,7 @@ export default function PatientCostPage() {
                                                   })}
                                               </td>
                                               <td className="px-2 py-1.5 whitespace-nowrap text-right">
-                                                {filterDrugSummaryByIncgrp(
-                                                  drugSummary,
-                                                  expandedIncgrp
-                                                )
+                                                {filteredDrugRowsForExpanded
                                                   .reduce(
                                                     (acc, r) => acc + Number(r.TOTAL_PROFIT ?? 0),
                                                     0
