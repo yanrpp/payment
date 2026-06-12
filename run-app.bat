@@ -57,7 +57,7 @@ exit /b 1
 
 :DEV
 echo.
-echo Starting development server at http://localhost:3008
+echo Starting development server at http://localhost:3012
 npm run dev
 goto END
 
@@ -71,7 +71,7 @@ if %errorlevel% neq 0 (
   exit /b 1
 )
 echo.
-echo Starting production server at http://localhost:3008
+echo Starting production server at http://localhost:3012
 npm run start
 goto END
 
@@ -106,7 +106,7 @@ if %errorlevel% neq 0 (
 
 pm2 save
 echo.
-echo PM2 is running. App URL: http://localhost:3008
+echo PM2 is running. App URL: http://localhost:3012
 pm2 status
 goto END
 

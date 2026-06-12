@@ -10,11 +10,11 @@ module.exports = {
       exec_mode: "fork",
       env: {
         NODE_ENV: "production",
-        PORT: 3008,
+        PORT: 3012,
       },
       env_production: {
         NODE_ENV: "production",
-        PORT: 3008,
+        PORT: 3012,
       },
       autorestart: true,
       watch: false,
