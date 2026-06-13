@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ThaiDatePicker } from "@/components/ThaiDatePicker";
 import { normalizeThaiCardInput } from "@/lib/card/normalize";
 import { normalizeHnInput } from "@/lib/hn/normalize";
-import { isoToThaiDisplay } from "@/lib/date/thaiDate";
+import { isoToThaiDisplay, localTodayIso } from "@/lib/date/thaiDate";
 import { siteConfig } from "@/config/site";
 
 function normalizeFieldForFilter(value: unknown): string {
@@ -176,10 +176,8 @@ const SPECIAL_SECTION_XRAY = -9001;
 const SPECIAL_SECTION_LAB = -9002;
 
 export default function PatientCostPage() {
-  const todayIso = new Date().toISOString().slice(0, 10);
-
-  const [dateFrom, setDateFrom] = useState<string>(todayIso);
-  const [dateTo, setDateTo] = useState<string>(todayIso);
+  const [dateFrom, setDateFrom] = useState<string>(() => localTodayIso());
+  const [dateTo, setDateTo] = useState<string>(() => localTodayIso());
   const [hn, setHn] = useState<string>("");
   const [cardno, setCardno] = useState<string>("");
   const [filterPttype, setFilterPttype] = useState<string[]>([]);
@@ -225,9 +223,7 @@ export default function PatientCostPage() {
   const [costItemsError, setCostItemsError] = useState<string | null>(null);
   const [expandedIncgrp, setExpandedIncgrp] = useState<number | null>(null);
 
-  const handleSearch = async (event: React.FormEvent) => {
-    event.preventDefault();
-
+  const runSearch = async (params: { d1: string; d2: string; hnValue: string; cardnoValue: string }) => {
     setLoading(true);
     setError(null);
     setRows([]);
@@ -242,17 +238,17 @@ export default function PatientCostPage() {
 
     const query = new URLSearchParams();
 
-    query.set("d1", dateFrom);
-    query.set("d2", dateTo);
-    if (hn.trim()) {
-      const normalizedHn = normalizeHnInput(hn);
+    query.set("d1", params.d1);
+    query.set("d2", params.d2);
+    if (params.hnValue.trim()) {
+      const normalizedHn = normalizeHnInput(params.hnValue);
 
       if (normalizedHn) {
         query.set("hn", normalizedHn);
       }
     }
-    if (cardno.trim()) {
-      const normalizedCard = normalizeThaiCardInput(cardno);
+    if (params.cardnoValue.trim()) {
+      const normalizedCard = normalizeThaiCardInput(params.cardnoValue);
 
       if (normalizedCard) {
         query.set("cardno", normalizedCard);
@@ -276,6 +272,16 @@ export default function PatientCostPage() {
       setLoading(false);
     }
   };
+
+  const handleSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await runSearch({ d1: dateFrom, d2: dateTo, hnValue: hn, cardnoValue: cardno });
+  };
+
+  useEffect(() => {
+    const today = localTodayIso();
+    void runSearch({ d1: today, d2: today, hnValue: "", cardnoValue: "" });
+  }, []);
 
   const pttypeOptions = useMemo(() => {
     const set = new Set<string>();
@@ -505,26 +511,23 @@ export default function PatientCostPage() {
 
   return (
     <div className="flex w-full flex-1 flex-col">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="container mx-auto px-4 py-4">
+      <header className="border-b border-accent-border bg-neutral-50">
+        <div className="w-full px-4 py-4 md:px-6">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-slate-900">
+            <h1 className="text-xl md:text-2xl font-bold text-flow-text">
               ตรวจสอบต้นทุนรายผู้ป่วย (OPD)
             </h1>
-            <p className="text-xs md:text-sm text-slate-500 mt-1">
-              อ้างอิงโครงสร้างข้อมูลจากตาราง OVST, INCPT, PT, PTNO, LCT 
-            </p>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-6 md:py-8">
+      <main className="flex-1 w-full px-4 py-6 md:px-6 md:py-8">
         <section className="mb-6">
           <form
-            className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 md:p-5 shadow-sm space-y-4"
+            className="rounded-xl border border-accent-border bg-white p-4 shadow-sm space-y-4"
             onSubmit={handleSearch}
           >
-            <div className="flex flex-wrap gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <ThaiDatePicker
                 id="dateFrom"
                 label="วันที่เริ่ม"
@@ -537,12 +540,12 @@ export default function PatientCostPage() {
                 value={dateTo}
                 onChange={(iso) => setDateTo(iso)}
               />
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-slate-700" htmlFor="hn">
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-xs font-medium text-flow-text" htmlFor="hn">
                   HN
                 </label>
                 <input
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="ui-input w-full text-sm py-1.5 px-3"
                   id="hn"
                   placeholder="เช่น 1666/69 หรือ 69001666"
                   type="text"
@@ -550,12 +553,12 @@ export default function PatientCostPage() {
                   onChange={(event) => setHn(event.target.value)}
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-slate-700" htmlFor="cardno">
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-xs font-medium text-flow-text" htmlFor="cardno">
                   เลขบัตร
                 </label>
                 <input
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="ui-input w-full text-sm py-1.5 px-3"
                   id="cardno"
                   inputMode="numeric"
                   pattern="\d*"
@@ -570,12 +573,147 @@ export default function PatientCostPage() {
                 />
               </div>
             </div>
+
+            {rows.length > 0 && (
+              <div className="border-t border-flow-border pt-4">
+                <p
+                  className="mb-2 text-[11px] font-semibold text-flow-text"
+                  id="patient-cost-pttype-filter-label"
+                >
+                  กรองตามสิทธิการรักษา
+                </p>
+                <div ref={pttypeDropdownRef} className="relative w-full">
+                  <button
+                    type="button"
+                    disabled={pttypeOptions.length === 0}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-flow-border bg-white px-3 py-2 text-left text-[11px] text-flow-text shadow-sm hover:bg-flow-input focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-expanded={pttypeDropdownOpen}
+                    aria-haspopup="listbox"
+                    aria-controls="patient-cost-pttype-listbox"
+                    onClick={() => {
+                      if (pttypeOptions.length === 0) return;
+                      setPttypeDropdownOpen((o) => !o);
+                    }}
+                  >
+                    <span className="min-w-0 truncate">
+                      {pttypeOptions.length === 0
+                        ? "ไม่มีรายการสิทธิในผลลัพธ์"
+                        : filterPttype.length === 0
+                          ? "ทุกสิทธิ — แตะเพื่อเลือกกรอง (มีทั้งหมด " + pttypeOptions.length + " รายการ)"
+                          : `เลือกแล้ว ${filterPttype.length} สิทธิ — แตะเพื่อเปลี่ยน`}
+                    </span>
+                    <span className="shrink-0 text-slate-400" aria-hidden>
+                      {pttypeDropdownOpen ? "▲" : "▼"}
+                    </span>
+                  </button>
+                  {pttypeDropdownOpen && pttypeOptions.length > 0 && (
+                    <div
+                      id="patient-cost-pttype-listbox"
+                      className="absolute left-0 right-0 z-30 mt-1 rounded-lg border border-flow-border bg-white p-2 shadow-lg ring-1 ring-black/5"
+                      role="listbox"
+                      aria-multiselectable="true"
+                      aria-labelledby="patient-cost-pttype-filter-label"
+                    >
+                      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-2 text-[10px]">
+                        <button
+                          type="button"
+                          className="rounded border border-flow-border bg-flow-input px-2 py-0.5 text-flow-text hover:bg-brand-50"
+                          onClick={() => {
+                            setFilterPttype((prev) => {
+                              const next = new Set(prev);
+                              for (const o of pttypeOptionsFiltered) next.add(o);
+                              return Array.from(next);
+                            });
+                            setPage(1);
+                          }}
+                        >
+                          เลือกทั้งหมด (ตามที่ค้นเห็น)
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
+                          onClick={() => {
+                            const visible = new Set(pttypeOptionsFiltered);
+                            setFilterPttype((prev) => prev.filter((item) => !visible.has(item)));
+                            setPage(1);
+                          }}
+                        >
+                          ไม่เลือกทั้งหมด (ตามที่ค้นเห็น)
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
+                          onClick={() => {
+                            setFilterPttype([]);
+                            setFilterPttypeListQuery("");
+                            setPage(1);
+                          }}
+                        >
+                          ล้างฟิลเตอร์สิทธิ
+                        </button>
+                      </div>
+                      <input
+                        type="search"
+                        value={filterPttypeListQuery}
+                        onChange={(e) => setFilterPttypeListQuery(e.target.value)}
+                        placeholder="พิมพ์เพื่อค้นหาชื่อสิทธิ..."
+                        className="ui-input-sm mt-2 text-[11px] py-1.5"
+                        autoComplete="off"
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") setPttypeDropdownOpen(false);
+                        }}
+                      />
+                      <div
+                        className="mt-2 max-h-60 overflow-y-auto rounded-md border border-flow-border bg-flow-input/90 px-1 py-1"
+                        role="group"
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          {pttypeOptionsFiltered.length === 0 ? (
+                            <p className="px-2 py-2 text-[10px] text-slate-400">
+                              ไม่พบรายการที่ตรงกับการค้นหา
+                            </p>
+                          ) : (
+                            pttypeOptionsFiltered.map((opt) => (
+                              <label
+                                key={opt}
+                                className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-[11px] text-flow-text hover:bg-white"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={filterPttype.includes(opt)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setFilterPttype((prev) => [...prev, opt]);
+                                    } else {
+                                      setFilterPttype((prev) => prev.filter((item) => item !== opt));
+                                    }
+                                    setPage(1);
+                                  }}
+                                  className="ui-checkbox mt-0.5 shrink-0"
+                                />
+                                <span className="min-w-0 flex-1 leading-snug" title={opt}>
+                                  {opt}
+                                </span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-2 text-[10px] text-flow-muted">
+                  ไม่เลือก = แสดงทุกสิทธิ · เลือกอย่างน้อยหนึ่งรายการ = แสดงเฉพาะแถวที่ตรงสิทธิที่เลือก
+                </p>
+              </div>
+            )}
+
             <div className="flex items-center justify-between gap-4 pt-2">
-              <p className="text-[11px] md:text-xs text-slate-500">
+              <p className="text-[11px] md:text-xs text-flow-muted">
                 เงื่อนไขอื่นตาม SQL: OPD เท่านั้น (AN เป็นค่าว่าง, ไม่ถูกยกเลิก)
               </p>
               <button
-                className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-xs md:text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ui-btn-primary text-xs md:text-sm"
                 disabled={loading}
                 type="submit"
               >
@@ -592,20 +730,20 @@ export default function PatientCostPage() {
         )}
 
         <section>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold text-slate-900">
+          <div className="mb-2 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <h2 className="text-sm font-semibold text-flow-text">
               ผลลัพธ์การค้นหา{" "}
               {rows.length > 0
                 ? `(${filteredRows.length} แถว${filterPttype.length > 0 ? " สิทธิ" : ""}, หน้า ${currentPage}/${totalPages})`
                 : ""}
             </h2>
             {rows.length > 0 && (
-              <div className="flex items-center gap-3 text-[11px] text-slate-500">
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-flow-muted lg:justify-end">
                 <p>รวมยอดจากฟิลด์ INCPT.INCAMT ตามเงื่อนไขที่กำหนด</p>
                 <div className="flex items-center gap-1">
                   <span>แสดงต่อหน้า:</span>
                   <select
-                    className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="rounded border border-flow-border bg-white px-1 py-0.5 text-[11px] text-flow-text focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
                     value={pageSize}
                     onChange={(event) => {
                       const newSize = Number(event.target.value) || 15;
@@ -625,222 +763,111 @@ export default function PatientCostPage() {
           </div>
 
           {rows.length === 0 && !loading && !error && (
-            <p className="text-xs md:text-sm text-slate-500">
+            <p className="text-xs md:text-sm text-flow-muted">
               ยังไม่มีข้อมูลแสดง กรุณาเลือกช่วงวันที่ และเงื่อนไข แล้วกด &quot;ค้นหาข้อมูล&quot;
             </p>
           )}
 
           {rows.length > 0 && (
-            <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-              <p className="mb-2 text-[11px] font-semibold text-slate-800" id="patient-cost-pttype-filter-label">
-                กรองตามสิทธิการรักษา
-              </p>
-              <div ref={pttypeDropdownRef} className="relative max-w-xl">
-                <button
-                  type="button"
-                  disabled={pttypeOptions.length === 0}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-[11px] text-slate-800 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-expanded={pttypeDropdownOpen}
-                  aria-haspopup="listbox"
-                  aria-controls="patient-cost-pttype-listbox"
-                  onClick={() => {
-                    if (pttypeOptions.length === 0) return;
-                    setPttypeDropdownOpen((o) => !o);
-                  }}
-                >
-                  <span className="min-w-0 truncate">
-                    {pttypeOptions.length === 0
-                      ? "ไม่มีรายการสิทธิในผลลัพธ์"
-                      : filterPttype.length === 0
-                        ? "ทุกสิทธิ — แตะเพื่อเลือกกรอง (มีทั้งหมด " + pttypeOptions.length + " รายการ)"
-                        : `เลือกแล้ว ${filterPttype.length} สิทธิ — แตะเพื่อเปลี่ยน`}
-                  </span>
-                  <span className="shrink-0 text-slate-400" aria-hidden>
-                    {pttypeDropdownOpen ? "▲" : "▼"}
-                  </span>
-                </button>
-                {pttypeDropdownOpen && pttypeOptions.length > 0 && (
-                  <div
-                    id="patient-cost-pttype-listbox"
-                    className="absolute left-0 right-0 z-30 mt-1 rounded-lg border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-black/5"
-                    role="listbox"
-                    aria-multiselectable="true"
-                    aria-labelledby="patient-cost-pttype-filter-label"
-                  >
-                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-2 text-[10px]">
-                      <button
-                        type="button"
-                        className="rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-slate-700 hover:bg-slate-100"
-                        onClick={() => {
-                          setFilterPttype((prev) => {
-                            const next = new Set(prev);
-                            for (const o of pttypeOptionsFiltered) next.add(o);
-                            return Array.from(next);
-                          });
-                          setPage(1);
-                        }}
-                      >
-                        เลือกทั้งหมด (ตามที่ค้นเห็น)
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
-                        onClick={() => {
-                          const visible = new Set(pttypeOptionsFiltered);
-                          setFilterPttype((prev) => prev.filter((item) => !visible.has(item)));
-                          setPage(1);
-                        }}
-                      >
-                        ไม่เลือกทั้งหมด (ตามที่ค้นเห็น)
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-50"
-                        onClick={() => {
-                          setFilterPttype([]);
-                          setFilterPttypeListQuery("");
-                          setPage(1);
-                        }}
-                      >
-                        ล้างฟิลเตอร์สิทธิ
-                      </button>
-                    </div>
-                    <input
-                      type="search"
-                      value={filterPttypeListQuery}
-                      onChange={(e) => setFilterPttypeListQuery(e.target.value)}
-                      placeholder="พิมพ์เพื่อค้นหาชื่อสิทธิ..."
-                      className="mt-2 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-[11px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-                      autoComplete="off"
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") setPttypeDropdownOpen(false);
-                      }}
-                    />
-                    <div
-                      className="mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-200 bg-slate-50/90 px-1 py-1"
-                      role="group"
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        {pttypeOptionsFiltered.length === 0 ? (
-                          <p className="px-2 py-2 text-[10px] text-slate-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
-                        ) : (
-                          pttypeOptionsFiltered.map((opt) => (
-                            <label
-                              key={opt}
-                              className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-[11px] text-slate-700 hover:bg-white"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={filterPttype.includes(opt)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFilterPttype((prev) => [...prev, opt]);
-                                  } else {
-                                    setFilterPttype((prev) => prev.filter((item) => item !== opt));
-                                  }
-                                  setPage(1);
-                                }}
-                                className="mt-0.5 shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <span className="min-w-0 flex-1 leading-snug" title={opt}>
-                                {opt}
-                              </span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <p className="mt-2 text-[10px] text-slate-500">
-                ไม่เลือก = แสดงทุกสิทธิ · เลือกอย่างน้อยหนึ่งรายการ = แสดงเฉพาะแถวที่ตรงสิทธิที่เลือก
-              </p>
-            </div>
-          )}
-
-          {rows.length > 0 && filteredRows.length === 0 && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs md:text-sm text-amber-900">
-              ไม่มีแถวที่ตรงกับสิทธิที่เลือก กรุณาเลือกสิทธิเพิ่มหรือกด &quot;ล้างฟิลเตอร์สิทธิ&quot;
-            </p>
-          )}
-
-          {rows.length > 0 && filteredRows.length > 0 && (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-              <table className="min-w-full border-collapse text-xs md:text-sm text-left">
+            <div className="mb-4 w-full overflow-x-auto rounded-xl border border-flow-border bg-white shadow-sm">
+              <table className="w-full min-w-full table-fixed border-separate border-spacing-0 text-xs md:text-sm text-left">
+                <colgroup>
+                  <col className="w-[5%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[33%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
                 <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200">
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
+                  <tr className="bg-black">
+                    <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
                       NO.
                     </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
+                    <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
                       วันที่รับบริการ
                     </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">HN</th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
+                    <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
+                      HN
+                    </th>
+                    <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
                       เลขบัตรประชาชน
                     </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
+                    <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
                       ชื่อผู้ป่วย
                     </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap min-w-[8rem]">
+                    <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
                       สิทธิการรักษา
                     </th>
-                    <th className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap text-right">
+                    <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
                       SUM(INCAMT)
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedRows.map((row, index) => (
-                    <tr
-                      key={`${row.HN}-${row.VSTDATE}`}
-                      className="border-b border-slate-100 hover:bg-emerald-50 cursor-pointer"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleRowClick(row)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          handleRowClick(row);
-                        }
-                      }}
-                    >
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap text-right">
-                        {startIndex + index + 1}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                        {isoToThaiDisplay(apiDateToIsoLocal(row.VSTDATE))}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                        {formatHnDisplay(row.HN)}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                        {row.CARDNO ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                        {row.DSPNAME ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap max-w-[14rem]">
-                        <span className="line-clamp-2" title={pttypeDisplayName(row)}>
-                          {pttypeDisplayName(row)}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap text-right">
-                        {row.TOTAL_AMOUNT.toLocaleString("th-TH", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                  {filteredRows.length === 0 ? (
+                    <tr>
+                      <td
+                        className="px-3 py-6 text-center text-xs text-amber-900 md:text-sm"
+                        colSpan={7}
+                      >
+                        ไม่มีแถวที่ตรงกับสิทธิที่เลือก กรุณาเลือกสิทธิเพิ่มหรือกด &quot;ล้างฟิลเตอร์สิทธิ&quot;
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    pagedRows.map((row, index) => (
+                      <tr
+                        key={`${row.HN}-${row.VSTDATE}`}
+                        className="cursor-pointer border-b border-slate-100 hover:bg-brand-50"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleRowClick(row)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleRowClick(row);
+                          }
+                        }}
+                      >
+                        <td className="px-3 py-2 text-right text-flow-text whitespace-nowrap">
+                          {startIndex + index + 1}
+                        </td>
+                        <td className="px-3 py-2 text-flow-text whitespace-nowrap">
+                          {isoToThaiDisplay(apiDateToIsoLocal(row.VSTDATE))}
+                        </td>
+                        <td className="px-3 py-2 text-flow-text whitespace-nowrap">
+                          {formatHnDisplay(row.HN)}
+                        </td>
+                        <td className="px-3 py-2 text-flow-text whitespace-nowrap">
+                          {row.CARDNO ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 text-flow-text">
+                          <span className="line-clamp-2 break-words" title={row.DSPNAME ?? undefined}>
+                            {row.DSPNAME ?? "—"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-flow-text">
+                          <span className="line-clamp-2 break-words" title={pttypeDisplayName(row)}>
+                            {pttypeDisplayName(row)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right text-flow-text whitespace-nowrap">
+                          {row.TOTAL_AMOUNT.toLocaleString("th-TH", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           )}
 
           {rows.length > 0 && filteredRows.length > 0 && (
-            <div className="mt-3 flex items-center justify-between text-[11px] text-slate-600">
+            <div className="mt-3 flex items-center justify-between text-[11px] text-flow-muted">
               <div>
                 แสดงแถวที่ {filteredRows.length === 0 ? 0 : startIndex + 1} -{" "}
                 {Math.min(endIndex, filteredRows.length)} จากทั้งหมด {filteredRows.length} แถว
@@ -850,7 +877,7 @@ export default function PatientCostPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  className="rounded border border-slate-300 bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  className="rounded border border-flow-border bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-flow-input"
                   disabled={currentPage <= 1}
                   type="button"
                   onClick={() => setPage((prev) => Math.max(1, prev - 1))}
@@ -861,7 +888,7 @@ export default function PatientCostPage() {
                   หน้า {currentPage} / {totalPages}
                 </span>
                 <button
-                  className="rounded border border-slate-300 bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  className="rounded border border-flow-border bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-flow-input"
                   disabled={currentPage >= totalPages}
                   type="button"
                   onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
@@ -873,7 +900,7 @@ export default function PatientCostPage() {
           )}
         </section>
 
-        <section className="mt-4 text-[11px] md:text-xs text-slate-500">
+        <section className="mt-4 text-[11px] md:text-xs text-flow-muted">
           <p>
             เวอร์ชันระบบต้นแบบ: {siteConfig.version} — API: <code>/api/db/patient-cost</code>
           </p>
@@ -888,16 +915,16 @@ export default function PatientCostPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           role="dialog"
         >
-          <div className="relative h-[90vh] w-[95vw] max-w-[1400px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
-              <h2 className="text-sm font-semibold text-slate-900" id="detail-modal-title">
+          <div className="relative h-[90vh] w-[95vw] max-w-[1400px] overflow-hidden rounded-xl border border-flow-border bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-flow-border bg-flow-input px-4 py-3">
+              <h2 className="text-sm font-semibold text-flow-text" id="detail-modal-title">
                 รายละเอียดต้นทุนต่อเคส (แยกตามหมวดค่าใช้จ่าย) — HN{" "}
                 {formatHnDisplay(selectedVisit.hn)}
                 {selectedVisit.dspname ? ` — ${selectedVisit.dspname}` : ""} — วันที่{" "}
                 {isoToThaiDisplay(selectedVisit.vstdate)}
               </h2>
               <button
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                className="rounded-lg border border-flow-border bg-white px-3 py-1 text-xs font-medium text-flow-text hover:bg-brand-50"
                 type="button"
                 onClick={() => {
                   setSelectedVisit(null);
@@ -921,7 +948,7 @@ export default function PatientCostPage() {
             </div>
             <div className="overflow-auto p-4 max-h-[calc(90vh-4rem)]">
               {detailLoading && (
-                <p className="py-8 text-center text-sm text-slate-500">กำลังโหลด...</p>
+                <p className="py-8 text-center text-sm text-flow-muted">กำลังโหลด...</p>
               )}
               {detailError && (
                 <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -929,7 +956,7 @@ export default function PatientCostPage() {
                 </p>
               )}
               {!detailLoading && !detailError && detailData && detailData.length === 0 && (
-                <p className="py-8 text-center text-sm text-slate-500">
+                <p className="py-8 text-center text-sm text-flow-muted">
                   ไม่มีข้อมูลรายละเอียดต้นทุนสำหรับเคสนี้
                 </p>
               )}
@@ -948,9 +975,9 @@ export default function PatientCostPage() {
 
                     return (
                       <div className="space-y-4">
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
-                          <p className="text-[11px] font-medium text-emerald-800">ยอดรวมทั้งหมด</p>
-                          <p className="mt-1 text-base font-semibold text-emerald-900">
+                        <div className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-3">
+                          <p className="text-[11px] font-medium text-brand-800">ยอดรวมทั้งหมด</p>
+                          <p className="mt-1 text-base font-semibold text-brand-900">
                             {total.toLocaleString("th-TH", {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
@@ -960,11 +987,11 @@ export default function PatientCostPage() {
                         </div>
 
                         {/* หมวด INCGRP จากตาราง INCGRP (เชื่อม INCPT → INCOME → INCGRP) */}
-                        <div className="rounded-lg border border-slate-200 bg-white p-3">
-                          <h3 className="mb-2 text-xs font-semibold text-slate-800">
+                        <div className="rounded-lg border border-flow-border bg-white p-3">
+                          <h3 className="mb-2 text-xs font-semibold text-flow-text">
                             รายละเอียดตามหมวดค่าใช้จ่าย (INCGRP.NAME จากฐานข้อมูล)
                           </h3>
-                          <p className="mb-2 text-[10px] text-slate-500">
+                          <p className="mb-2 text-[10px] text-flow-muted">
                             สรุปจาก{" "}
                             <code className="rounded bg-slate-100 px-1">
                               /api/db/patient-cost-incgrp-breakdown
@@ -972,7 +999,7 @@ export default function PatientCostPage() {
                             — incpt.income → income.incgrp → incgrp.name
                           </p>
                           {incgrpBreakdownLoading && (
-                            <p className="py-2 text-[11px] text-slate-500">
+                            <p className="py-2 text-[11px] text-flow-muted">
                               กำลังโหลดหมวด INCGRP...
                             </p>
                           )}
@@ -993,14 +1020,14 @@ export default function PatientCostPage() {
                                   >
                                     <button
                                       type="button"
-                                      className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-slate-50"
+                                      className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-flow-input"
                                       onClick={() =>
                                         setExpandedIncgrp((prev) =>
                                           prev === igr.INCGRP ? null : igr.INCGRP
                                         )
                                       }
                                     >
-                                      <span className="text-slate-700 shrink min-w-0">
+                                      <span className="text-flow-text shrink min-w-0">
                                         <span className="font-medium">
                                           {igr.INCGRP_NAME?.trim()
                                             ? igr.INCGRP_NAME
@@ -1011,7 +1038,7 @@ export default function PatientCostPage() {
                                         </span>
                                       </span>
                                       <span className="flex items-center gap-2 whitespace-nowrap">
-                                        <span className="font-semibold text-slate-900">
+                                        <span className="font-semibold text-flow-text">
                                           {Number(igr.AMOUNT ?? 0).toLocaleString("th-TH", {
                                             minimumFractionDigits: 2,
                                             maximumFractionDigits: 2,
@@ -1032,15 +1059,15 @@ export default function PatientCostPage() {
                             !incgrpBreakdownError &&
                             incgrpBreakdown &&
                             incgrpBreakdown.length === 0 && (
-                              <p className="mt-2 text-[11px] text-slate-500">
+                              <p className="mt-2 text-[11px] text-flow-muted">
                                 ไม่มียอดแยกตามหมวด INCGRP ในข้อมูลนี้
                               </p>
                             )}
 
                           {/* แสดงรายละเอียดเมื่อเลือกหมวด เพื่อลดข้อมูลที่แสดงพร้อมกัน */}
                           {expandedIncgrp != null && (
-                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
-                              <p className="mb-2 text-[11px] font-semibold text-slate-800">
+                            <div className="mt-3 rounded-lg border border-flow-border bg-flow-input p-2">
+                              <p className="mb-2 text-[11px] font-semibold text-flow-text">
                                 {expandedIncgrp === SPECIAL_SECTION_XRAY
                                   ? "รายละเอียด: สรุป X-ray / Vaccine"
                                   : expandedIncgrp === SPECIAL_SECTION_LAB
@@ -1051,7 +1078,7 @@ export default function PatientCostPage() {
                               {expandedIncgrp === SPECIAL_SECTION_XRAY && (
                                 <>
                                   {xraySummaryLoading && (
-                                    <p className="py-2 text-[11px] text-slate-500">
+                                    <p className="py-2 text-[11px] text-flow-muted">
                                       กำลังโหลดข้อมูล X-ray / Vaccine...
                                     </p>
                                   )}
@@ -1061,21 +1088,21 @@ export default function PatientCostPage() {
                                     </p>
                                   )}
                                   {!xraySummaryLoading && !xraySummaryError && xraySummary && (
-                                    <div className="rounded border border-slate-200 bg-white p-3 text-[11px]">
+                                    <div className="rounded border border-flow-border bg-white p-3 text-[11px]">
                                       <div className="grid gap-2 md:grid-cols-2">
                                         <div>
-                                          <p className="font-semibold text-slate-800 mb-1">X-ray</p>
-                                          <p className="text-slate-700">
+                                          <p className="font-semibold text-flow-text mb-1">X-ray</p>
+                                          <p className="text-flow-text">
                                             {xraySummary.HAS_XRAY
                                               ? "ทำการ X-ray แล้ว"
                                               : "ยังไม่มี X-ray"}
                                           </p>
                                         </div>
                                         <div>
-                                          <p className="font-semibold text-slate-800 mb-1">
+                                          <p className="font-semibold text-flow-text mb-1">
                                             Vaccine ที่เกี่ยวข้อง
                                           </p>
-                                          <ul className="space-y-0.5 text-slate-700">
+                                          <ul className="space-y-0.5 text-flow-text">
                                             {xraySummary.HAS_HPV4 ? <li>• HPV4 vaccine</li> : null}
                                             {xraySummary.HAS_HPV9 ? <li>• HPV9 vaccine</li> : null}
                                             {xraySummary.HAS_FLU_VACCINE ? (
@@ -1087,7 +1114,7 @@ export default function PatientCostPage() {
                                     </div>
                                   )}
                                   {!xraySummaryLoading && !xraySummaryError && !xraySummary && (
-                                    <p className="text-[11px] text-slate-600">
+                                    <p className="text-[11px] text-flow-muted">
                                       ไม่มีข้อมูล X-ray / Vaccine สำหรับเคสนี้ในวันดังกล่าว
                                     </p>
                                   )}
@@ -1097,7 +1124,7 @@ export default function PatientCostPage() {
                               {expandedIncgrp === SPECIAL_SECTION_LAB && (
                                 <>
                                   {labSummaryLoading && (
-                                    <p className="py-2 text-[11px] text-slate-500">
+                                    <p className="py-2 text-[11px] text-flow-muted">
                                       กำลังโหลดข้อมูล Lab...
                                     </p>
                                   )}
@@ -1107,12 +1134,12 @@ export default function PatientCostPage() {
                                     </p>
                                   )}
                                   {!labSummaryLoading && !labSummaryError && labSummary && (
-                                    <div className="rounded border border-slate-200 bg-white p-3 text-[11px]">
-                                      <p className="font-semibold text-slate-800 mb-1.5">
+                                    <div className="rounded border border-flow-border bg-white p-3 text-[11px]">
+                                      <p className="font-semibold text-flow-text mb-1.5">
                                         ค่าใช้จ่ายในการตรวจแต่ละรายการ Lab (
                                         {labSummary.LAB_COST_ITEMS?.length ?? 0} รายการ)
                                         {labSummary.TOTAL_LAB_AMOUNT != null && (
-                                          <span className="ml-2 font-semibold text-slate-900">
+                                          <span className="ml-2 font-semibold text-flow-text">
                                             รวม{" "}
                                             {Number(labSummary.TOTAL_LAB_AMOUNT).toLocaleString(
                                               "th-TH",
@@ -1127,26 +1154,26 @@ export default function PatientCostPage() {
                                       </p>
                                       {labSummary.LAB_COST_ITEMS &&
                                       labSummary.LAB_COST_ITEMS.length > 0 ? (
-                                        <div className="overflow-x-auto rounded-lg border border-slate-200">
+                                        <div className="overflow-x-auto rounded-lg border border-flow-border">
                                           <table className="min-w-full border-collapse text-[11px] text-left">
                                             <thead>
-                                              <tr className="border-b border-slate-200 bg-slate-100">
-                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                              <tr className="border-b border-flow-border bg-slate-100">
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
                                                   รหัสรายการ
                                                 </th>
-                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
                                                   ชื่อรายการ
                                                 </th>
-                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                   จำนวน
                                                 </th>
-                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                   ต้นทุน
                                                 </th>
-                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                   ราคาขาย
                                                 </th>
-                                                <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                   ค่าใช้จ่าย (บาท)
                                                 </th>
                                               </tr>
@@ -1155,20 +1182,20 @@ export default function PatientCostPage() {
                                               {labSummary.LAB_COST_ITEMS.map((item, idx) => (
                                                 <tr
                                                   key={`${item.INCOME ?? ""}-${idx}`}
-                                                  className="border-b border-slate-100 hover:bg-slate-50"
+                                                  className="border-b border-slate-100 hover:bg-flow-input"
                                                 >
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
                                                     {item.INCOME ?? "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
                                                     {item.INCOMENAME ?? "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {item.QTY != null
                                                       ? Number(item.QTY).toLocaleString("th-TH")
                                                       : "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {item.PRICE != null
                                                       ? Number(item.PRICE).toLocaleString("th-TH", {
                                                           minimumFractionDigits: 2,
@@ -1176,7 +1203,7 @@ export default function PatientCostPage() {
                                                         })
                                                       : "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {item.SALE_PRICE != null
                                                       ? Number(item.SALE_PRICE).toLocaleString("th-TH", {
                                                           minimumFractionDigits: 2,
@@ -1184,7 +1211,7 @@ export default function PatientCostPage() {
                                                         })
                                                       : "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {Number(item.INCAMT ?? 0).toLocaleString("th-TH", {
                                                       minimumFractionDigits: 2,
                                                       maximumFractionDigits: 2,
@@ -1196,12 +1223,12 @@ export default function PatientCostPage() {
                                           </table>
                                         </div>
                                       ) : (
-                                        <p className="text-slate-500">ไม่มีรายการค่าใช้จ่าย Lab ในวันนี้</p>
+                                        <p className="text-flow-muted">ไม่มีรายการค่าใช้จ่าย Lab ในวันนี้</p>
                                       )}
                                     </div>
                                   )}
                                   {!labSummaryLoading && !labSummaryError && !labSummary && (
-                                    <p className="text-[11px] text-slate-600">
+                                    <p className="text-[11px] text-flow-muted">
                                       ไม่มีข้อมูลค่าใช้จ่าย Lab สำหรับเคสนี้ในวันดังกล่าว
                                     </p>
                                   )}
@@ -1213,7 +1240,7 @@ export default function PatientCostPage() {
                                 !isDrugRelatedIncgrp(expandedIncgrp) && (
                                 <>
                                   {costItemsLoading && (
-                                    <p className="py-2 text-[11px] text-slate-500">
+                                    <p className="py-2 text-[11px] text-flow-muted">
                                       กำลังโหลดรายการค่าใช้จ่าย...
                                     </p>
                                   )}
@@ -1226,7 +1253,7 @@ export default function PatientCostPage() {
                                     !costItemsError &&
                                     filterCostItemsByIncgrp(costItems, expandedIncgrp).length ===
                                       0 && (
-                                      <p className="text-[11px] text-slate-600">
+                                      <p className="text-[11px] text-flow-muted">
                                         ไม่พบรายการค่าใช้จ่ายย่อยในหมวดนี้สำหรับเคสดังกล่าว
                                       </p>
                                     )}
@@ -1234,26 +1261,26 @@ export default function PatientCostPage() {
                                     !costItemsError &&
                                     filterCostItemsByIncgrp(costItems, expandedIncgrp).length >
                                       0 && (
-                                      <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+                                      <div className="overflow-x-auto rounded border border-flow-border bg-white">
                                         <table className="min-w-full border-collapse text-[11px] text-left">
                                           <thead>
-                                            <tr className="border-b border-slate-200 bg-slate-100">
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                            <tr className="border-b border-flow-border bg-slate-100">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
                                                 รหัสรายการ
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
                                                 ชื่อรายการ
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                 จำนวน
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                 ต้นทุน
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                 ราคาขาย
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                 ค่าใช้จ่าย (บาท)
                                               </th>
                                             </tr>
@@ -1263,20 +1290,20 @@ export default function PatientCostPage() {
                                               (item, idx) => (
                                                 <tr
                                                   key={`cost-item-${expandedIncgrp}-${item.INCOME ?? ""}-${idx}`}
-                                                  className="border-b border-slate-100 hover:bg-slate-50"
+                                                  className="border-b border-slate-100 hover:bg-flow-input"
                                                 >
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
                                                     {item.INCOME ?? "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
                                                     {item.INCOMENAME ?? "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {item.QTY != null
                                                       ? Number(item.QTY).toLocaleString("th-TH")
                                                       : "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {item.PRICE != null
                                                       ? Number(item.PRICE).toLocaleString("th-TH", {
                                                           minimumFractionDigits: 2,
@@ -1284,7 +1311,7 @@ export default function PatientCostPage() {
                                                         })
                                                       : "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {item.SALE_PRICE != null
                                                       ? Number(item.SALE_PRICE).toLocaleString("th-TH", {
                                                           minimumFractionDigits: 2,
@@ -1292,7 +1319,7 @@ export default function PatientCostPage() {
                                                         })
                                                       : "—"}
                                                   </td>
-                                                  <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {Number(item.INCAMT ?? 0).toLocaleString("th-TH", {
                                                       minimumFractionDigits: 2,
                                                       maximumFractionDigits: 2,
@@ -1312,39 +1339,39 @@ export default function PatientCostPage() {
                                 expandedIncgrp !== SPECIAL_SECTION_LAB &&
                                 isDrugRelatedIncgrp(expandedIncgrp) && (
                                 <>
-                                  <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]">
+                                  <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded border border-flow-border bg-flow-input px-2 py-1.5 text-[11px]">
                                     <div className="flex flex-wrap items-center gap-3">
-                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
                                         <input
                                           type="checkbox"
-                                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                          className="ui-checkbox"
                                           checked={filterNegativeProfitOnly}
                                           onChange={(event) => setFilterNegativeProfitOnly(event.target.checked)}
                                         />
                                         แสดงเฉพาะรายการที่กำไรรวมติดลบ
                                       </label>
-                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
                                         <input
                                           type="checkbox"
-                                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                          className="ui-checkbox"
                                           checked={excludeZeroSale}
                                           onChange={(event) => setExcludeZeroSale(event.target.checked)}
                                         />
                                         ไม่แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
                                       </label>
-                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
                                         <input
                                           type="checkbox"
-                                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                          className="ui-checkbox"
                                           checked={excludeNegativeProfit}
                                           onChange={(event) => setExcludeNegativeProfit(event.target.checked)}
                                         />
                                         ไม่แสดงเฉพาะรายการที่กำไรรวมติดลบ
                                       </label>
-                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700">
+                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
                                         <input
                                           type="checkbox"
-                                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                          className="ui-checkbox"
                                           checked={filterZeroSaleOnly}
                                           onChange={(event) => setFilterZeroSaleOnly(event.target.checked)}
                                         />
@@ -1353,7 +1380,7 @@ export default function PatientCostPage() {
                                     </div>
                                     <button
                                       type="button"
-                                      className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                                      className="rounded border border-flow-border bg-white px-2 py-0.5 text-[11px] text-flow-text hover:bg-flow-input"
                                       onClick={() => {
                                         setFilterZeroSaleOnly(false);
                                         setFilterNegativeProfitOnly(false);
@@ -1365,7 +1392,7 @@ export default function PatientCostPage() {
                                     </button>
                                   </div>
                                   {drugSummaryLoading && (
-                                    <p className="py-2 text-[11px] text-slate-500">
+                                    <p className="py-2 text-[11px] text-flow-muted">
                                       กำลังโหลดข้อมูลค่ายา...
                                     </p>
                                   )}
@@ -1379,7 +1406,7 @@ export default function PatientCostPage() {
                                     drugSummary &&
                                     filteredDrugRowsForExpanded.length ===
                                       0 && (
-                                      <p className="py-2 text-[11px] text-slate-500">
+                                      <p className="py-2 text-[11px] text-flow-muted">
                                         ไม่มีข้อมูลรายการยาสำหรับหมวดที่เลือก
                                       </p>
                                     )}
@@ -1388,29 +1415,29 @@ export default function PatientCostPage() {
                                     drugSummary &&
                                     filteredDrugRowsForExpanded.length >
                                       0 && (
-                                      <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+                                      <div className="overflow-x-auto rounded border border-flow-border bg-white">
                                         <table className="min-w-full border-collapse text-[11px] text-left">
                                           <thead>
-                                            <tr className="border-b border-slate-200 bg-slate-100">
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                            <tr className="border-b border-flow-border bg-slate-100">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
                                                 คลินิก
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
                                                 รหัสยา
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
                                                 ชื่อยา
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                 จำนวนรวม
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                 ต้นทุนรวม (ต้นทุน/หน่วย)
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                 มูลค่าขายรวม
                                               </th>
-                                              <th className="px-2 py-1.5 font-semibold text-slate-800 whitespace-nowrap text-right">
+                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
                                                 กำไรรวม
                                               </th>
                                             </tr>
@@ -1420,21 +1447,21 @@ export default function PatientCostPage() {
                                               (drug, idx) => (
                                               <tr
                                                 key={`compact-${drug.MEDITEM}-${idx}`}
-                                                className="border-b border-slate-100 hover:bg-slate-50"
+                                                className="border-b border-slate-100 hover:bg-flow-input"
                                               >
-                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
                                                   {drug.CLINIC_LCT_NAME ?? drug.CLINIC_LCT ?? "—"}
                                                 </td>
-                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
                                                   {drug.MEDITEM}
                                                 </td>
-                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
                                                   {drug.DRUG_NAME ?? "—"}
                                                 </td>
-                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                   {Number(drug.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
                                                 </td>
-                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                   {(() => {
                                                     const totalCost = Number(drug.TOTAL_COST ?? 0);
                                                     const totalQty = Number(drug.TOTAL_QTY ?? 0);
@@ -1450,13 +1477,13 @@ export default function PatientCostPage() {
                                                     })})`;
                                                   })()}
                                                 </td>
-                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                   {Number(drug.TOTAL_SALE ?? 0).toLocaleString("th-TH", {
                                                     minimumFractionDigits: 2,
                                                     maximumFractionDigits: 2,
                                                   })}
                                                 </td>
-                                                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap text-right">
+                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                   {Number(drug.TOTAL_PROFIT ?? 0).toLocaleString("th-TH", {
                                                     minimumFractionDigits: 2,
                                                     maximumFractionDigits: 2,
@@ -1465,7 +1492,7 @@ export default function PatientCostPage() {
                                               </tr>
                                             )
                                             )}
-                                            <tr className="bg-slate-50 font-semibold text-slate-900">
+                                            <tr className="bg-flow-input font-semibold text-flow-text">
                                               <td className="px-2 py-1.5 whitespace-nowrap">รวม</td>
                                               <td className="px-2 py-1.5 whitespace-nowrap">—</td>
                                               <td className="px-2 py-1.5 whitespace-nowrap">—</td>

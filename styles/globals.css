@@ -10,6 +10,76 @@
   --font-sans: "font", sans-serif;
   --font-mono: "monospace", monospace;
   --font-thai: "Prompt", sans-serif;
+
+  /* FlowAccount-inspired palette */
+  --color-brand-50: #e8f6fc;
+  --color-brand-100: #c5e9f7;
+  --color-brand-200: #9bd8f1;
+  --color-brand-300: #71c7eb;
+  --color-brand-400: #4fb8e3;
+  --color-brand-500: #2d9cdb;
+  --color-brand-600: #268bbf;
+  --color-brand-700: #1f7aa3;
+  --color-brand-800: #186987;
+  --color-brand-900: #11586b;
+  --color-flow-border: #e0e0e0;
+  --color-flow-input: #f2f2f2;
+  --color-flow-text: #333333;
+  --color-flow-muted: #666666;
+  --color-accent-50: #f5f3ff;
+  --color-accent-100: #ede9fe;
+  --color-accent-200: #ddd6fe;
+  --color-accent-300: #c4b5fd;
+  --color-accent-600: #7c3aed;
+  --color-accent-700: #6d28d9;
+  --color-accent-800: #5b21b6;
+  --color-accent-border: #5b21b6;
+}
+
+@layer base {
+  body {
+    color: var(--color-flow-text);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+  select,
+  textarea {
+    background-color: #ffffff;
+  }
+}
+
+@layer components {
+  .ui-input {
+    @apply w-full rounded-lg border border-flow-border bg-white px-3 py-2 text-sm text-flow-text placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25;
+  }
+
+  .ui-input-sm {
+    @apply w-full rounded border border-flow-border bg-white px-2 py-1 text-[10px] text-flow-text placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500/25;
+  }
+
+  .ui-select {
+    @apply rounded-lg border border-flow-border bg-white px-2 py-1.5 text-sm text-flow-text focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25;
+  }
+
+  .ui-btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500/40 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .ui-btn-secondary {
+    @apply inline-flex items-center justify-center rounded-lg border border-flow-border bg-white px-4 py-2 text-sm font-medium text-flow-text shadow-sm transition-colors hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-brand-500/25;
+  }
+
+  .ui-panel {
+    @apply rounded-xl border border-flow-border bg-white p-4 shadow-sm;
+  }
+
+  .ui-panel-muted {
+    @apply rounded-xl border border-flow-border bg-white p-4 md:p-5 shadow-sm;
+  }
+
+  .ui-checkbox {
+    @apply h-3.5 w-3.5 rounded border-flow-border text-brand-500 focus:ring-brand-500;
+  }
 }
 
 /* Override Next.js portal default positioning - remove left and top */

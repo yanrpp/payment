@@ -14,7 +14,7 @@ type MainLayoutProps = {
 export default function MainLayout({ children }: MainLayoutProps) {
   return (
     <div
-      className="flex min-h-screen flex-col bg-white text-slate-800"
+      className="flex min-h-screen flex-col bg-white text-flow-text"
       style={{ fontFamily: "var(--font-thai), sans-serif" }}
     >
       <AppTopbar />

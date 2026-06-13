@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { THAI_MONTH_SHORT, getDaysInMonth, isoToThaiDisplay, isoToThaiInput, thaiInputToIso } from "@/lib/date/thaiDate";
+import {
+  THAI_MONTH_SHORT,
+  getDaysInMonth,
+  isoToThaiDisplay,
+  isoToThaiInput,
+  localTodayIso,
+  thaiInputToIso,
+} from "@/lib/date/thaiDate";
 
 type ThaiDatePickerProps = {
   id: string;
@@ -11,14 +18,27 @@ type ThaiDatePickerProps = {
   onChange: (isoDate: string) => void;
 };
 
+function parseIsoLocal(iso: string): Date {
+  const [yearStr, monthStr, dayStr] = iso.split("-");
+  return new Date(Number(yearStr), Number(monthStr) - 1, Number(dayStr));
+}
+
 export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerProps) {
-  const today = value || new Date().toISOString().slice(0, 10);
+  const today = value || localTodayIso();
   const [inputValue, setInputValue] = useState<string>(isoToThaiInput(today));
 
-  const baseDate = value ? new Date(value) : new Date();
+  const baseDate = value ? parseIsoLocal(value) : new Date();
   const [viewYear, setViewYear] = useState<number>(baseDate.getFullYear());
   const [viewMonth, setViewMonth] = useState<number>(baseDate.getMonth());
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!value) return;
+    setInputValue(isoToThaiInput(value));
+    const d = parseIsoLocal(value);
+    setViewYear(d.getFullYear());
+    setViewMonth(d.getMonth());
+  }, [value]);
 
   const handleInputChange = (raw: string) => {
     let nextValue = raw;
@@ -77,15 +97,15 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
   }
 
   return (
-    <div className="flex flex-col gap-1 relative">
-      <label htmlFor={id} className="text-xs font-medium text-slate-700">
+    <div className="relative flex w-full min-w-0 flex-col gap-1">
+      <label htmlFor={id} className="text-xs font-medium text-flow-text">
         {label}
       </label>
       <div className="relative">
         <input
           id={id}
           type="text"
-          className="w-full rounded-lg border border-slate-300 bg-white pr-9 pl-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+          className="ui-input w-full pr-9"
           value={inputValue}
           onChange={(event) => handleInputChange(event.target.value)}
           onKeyDown={(event) => {
@@ -98,7 +118,7 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
         <button
           type="button"
           aria-label="เปิดปฏิทินเลือกวันที่"
-          className="absolute inset-y-0 right-0 flex items-center justify-center px-2 text-slate-500 hover:text-emerald-600"
+          className="absolute inset-y-0 right-0 flex items-center justify-center px-2 text-flow-muted hover:text-brand-600"
           onClick={() => setOpen((prev) => !prev)}
         >
           <span aria-hidden="true" className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-[10px]">
@@ -106,11 +126,11 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
           </span>
         </button>
       </div>
-      <p className="text-[11px] text-slate-500">
+      <p className="text-[11px] text-flow-muted">
         {selectedLabel ? `วันที่เลือก: ${selectedLabel}` : "ยังไม่ได้เลือกวันที่"}
       </p>
       {open && (
-        <div className="absolute z-30 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-lg top-full left-0">
+        <div className="absolute z-30 top-full left-0 mt-1 w-64 rounded-xl border border-flow-border bg-white p-3 shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <button
               type="button"
@@ -127,9 +147,9 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
                 type="button"
                 className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-50"
                 onClick={() => {
-                  const today = new Date();
-                  setViewYear(today.getFullYear());
-                  setViewMonth(today.getMonth());
+                  const d = parseIsoLocal(localTodayIso());
+                  setViewYear(d.getFullYear());
+                  setViewMonth(d.getMonth());
                 }}
               >
                 วันนี้
@@ -160,7 +180,7 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
                   // eslint-disable-next-line react/no-array-index-key
                   key={index}
                   type="button"
-                  className="h-7 rounded-md border border-transparent text-slate-700 hover:border-emerald-500 hover:bg-emerald-50"
+                  className="h-7 rounded-md border border-transparent text-flow-text hover:border-brand-500 hover:bg-brand-50"
                   onClick={() => handleSelectDay(day)}
                 >
                   {day}

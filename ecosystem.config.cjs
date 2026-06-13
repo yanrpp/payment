@@ -2,9 +2,8 @@ module.exports = {
   apps: [
     {
       name: "payment",
-      // Windows + PM2: เรียกผ่าน cmd เพื่อลดปัญหา npm.cmd ถูกตีความด้วย node
-      script: "cmd",
-      args: "/c npm run start",
+      script: "scripts/start-production.mjs",
+      interpreter: "node",
       cwd: ".",
       instances: 1,
       exec_mode: "fork",

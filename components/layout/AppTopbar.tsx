@@ -18,14 +18,14 @@ export function AppTopbar() {
 
   return (
     <header
-      className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80"
+      className="sticky top-0 z-40 border-b border-accent-200 bg-accent-50"
       role="banner"
     >
       <div className="container mx-auto px-4">
         <div className="flex h-14 md:h-16 items-center justify-between gap-3">
           <Link
             href="/"
-            className="shrink-0 font-semibold text-slate-900 hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 rounded-md"
+            className="shrink-0 rounded-md font-semibold text-accent-800 hover:text-accent-700 focus:outline-none focus:ring-2 focus:ring-accent-300 focus:ring-offset-2"
           >
             <span className="text-sm md:text-base">{siteConfig.name}</span>
           </Link>
@@ -43,10 +43,10 @@ export function AppTopbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 ${
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-accent-300 focus:ring-offset-1 ${
                     active
-                      ? "bg-emerald-50 text-emerald-800"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      ? "bg-white text-accent-800 shadow-sm ring-1 ring-accent-200"
+                      : "text-accent-700/80 hover:bg-white/70 hover:text-accent-800"
                   }`}
                 >
                   {item.label}
@@ -55,14 +55,13 @@ export function AppTopbar() {
             })}
           </nav>
 
-          {/* Mobile: เลือกเมนูจาก <select> เพื่อไม่ให้ topbar ยาวเกิน */}
           <div className="flex min-w-0 flex-1 items-center justify-end md:hidden">
             <label htmlFor="main-nav-mobile" className="sr-only">
               เลือกหน้า
             </label>
             <select
               id="main-nav-mobile"
-              className="max-w-[min(100%,12rem)] truncate rounded-lg border border-slate-300 bg-white py-1.5 pl-2 pr-7 text-xs text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="max-w-[min(100%,12rem)] truncate rounded-lg border border-accent-200 bg-white py-1.5 pl-2 pr-7 text-xs text-accent-800 focus:border-accent-300 focus:outline-none focus:ring-2 focus:ring-accent-300/40"
               value={mobileSelectValue}
               onChange={(e) => {
                 void router.push(e.target.value);

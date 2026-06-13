@@ -58,6 +58,7 @@ exit /b 1
 :DEV
 echo.
 echo Starting development server at http://localhost:3012
+echo (dev cache: .next-dev — separate from production .next)
 npm run dev
 goto END
 
