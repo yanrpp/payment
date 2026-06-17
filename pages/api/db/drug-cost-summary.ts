@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
-import { buildVisitTypeWhereSql, sqlCoalesceAn } from "@/lib/db/visitTypeSql";
+import { buildDrugSourceSql } from "@/lib/db/drugSourceSql";
+import { sqlUnitCost, sqlUnitSale } from "@/lib/db/meditemRateSql";
 
 type DrugCostSummaryRow = {
   HN: string;
@@ -68,22 +69,16 @@ export default async function handler(
     });
   }
 
-  const whereVisitTypeSql = buildVisitTypeWhereSql(includeOpd, includeIpd);
-  const anExpr = sqlCoalesceAn();
+  const src = buildDrugSourceSql(includeOpd, includeIpd);
+  const unitCost = sqlUnitCost("m", "d", "p");
+  const unitSale = sqlUnitSale("m", "d", "p");
 
   const sql = `
     WITH base AS (
       SELECT
         p.hn                                AS HN,
-        ${anExpr}                           AS AN,
-        CASE
-          WHEN ${anExpr} IS NOT NULL THEN
-            ${anExpr} || ':' || COALESCE(NULLIF(TRIM(p.vn), ''), TO_CHAR(p.prscno))
-          ELSE COALESCE(
-            NULLIF(TRIM(p.vn), ''),
-            p.hn || ':' || TO_CHAR(TRUNC(p.prscdate), 'YYYYMMDD') || ':' || TO_CHAR(p.prscno)
-          )
-        END                                 AS VISIT_KEY,
+        ${src.anExpr}                       AS AN,
+        ${src.visitKeyExpr}                 AS VISIT_KEY,
         d.sphmlct                           AS CLINIC_LCT,
         lct.name                            AS CLINIC_LCT_NAME,
         m.meditem                           AS MEDITEM,
@@ -92,47 +87,11 @@ export default async function handler(
         m.medname                           AS DRUG_NAME,
         d.qty                               AS QTY,
         CAST(NULL AS VARCHAR2(255))         AS WARD_NAME,
-        COALESCE(
-          NULLIF(
-            (
-              SELECT MAX(ms.costrate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
-              FROM MEDITEMSALEHST ms
-              WHERE ms.meditem = m.meditem
-                AND ms.effectdate <= TRUNC(p.prscdate)
-            ),
-            0
-          ),
-          (
-            SELECT MAX(ms.salerate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
-            FROM MEDITEMSALEHST ms
-            WHERE ms.meditem = m.meditem
-              AND ms.effectdate <= TRUNC(p.prscdate)
-          ),
-          NULLIF(d.costrate, 0),
-          d.salerate
-        ) AS UNIT_COST,
-        COALESCE(
-          (
-            SELECT MAX(ms.salerate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
-            FROM MEDITEMSALEHST ms
-            WHERE ms.meditem = m.meditem
-              AND ms.effectdate <= TRUNC(p.prscdate)
-          ),
-          d.salerate,
-          0
-        ) AS UNIT_SALE,
-        pt.name AS PTTYPE_NAME
-      FROM prsc p
-        INNER JOIN prscdt d ON p.prscno = d.prscno
-        INNER JOIN ovst ov ON ov.vn = p.vn
-        INNER JOIN meditem m ON d.meditem = m.meditem
-        INNER JOIN medtype t ON t.medtype = m.medtype
-        INNER JOIN medaccnation a ON a.accnation = m.accnation
-        LEFT JOIN lct ON d.sphmlct = lct.lct
-        LEFT JOIN pttype pt ON pt.pttype = p.pttype
-      WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-        ${whereVisitTypeSql}
-        AND ov.canceldate IS NULL
+        ${unitCost}                         AS UNIT_COST,
+        ${unitSale}                         AS UNIT_SALE,
+        pt.name                             AS PTTYPE_NAME
+      ${src.fromJoinSql}
+      WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')${src.whereAnchorSql}
     )
     SELECT
       HN,
@@ -169,12 +128,9 @@ export default async function handler(
   `;
 
   const sqlUniqueVisitCount = `
-    SELECT COUNT(DISTINCT ov.vn) AS UNIQUE_VISIT_COUNT
-    FROM prsc p
-    INNER JOIN ovst ov ON ov.vn = p.vn
-    WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-      ${whereVisitTypeSql}
-      AND ov.canceldate IS NULL
+    SELECT COUNT(DISTINCT ${src.visitCountExpr}) AS UNIQUE_VISIT_COUNT
+    ${src.fromJoinSql}
+    WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')${src.whereAnchorSql}
   `;
 
   try {

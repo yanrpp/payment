@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
-import { buildVisitTypeWhereSql } from "@/lib/db/visitTypeSql";
+import { buildDrugSourceSql } from "@/lib/db/drugSourceSql";
 
 type OptionRow = { VALUE: string | null };
 
@@ -61,60 +61,38 @@ export default async function handler(
     });
   }
 
-  const whereVisitTypeSql = buildVisitTypeWhereSql(includeOpd, includeIpd);
-
+  const src = buildDrugSourceSql(includeOpd, includeIpd);
   const params = { d1, d2 };
+  const whereDate = `WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')${src.whereAnchorSql}`;
 
   const sqlPttype = `
     SELECT DISTINCT pt.name AS VALUE
-    FROM prsc p
-    INNER JOIN prscdt d ON p.prscno = d.prscno
-    INNER JOIN ovst ov ON ov.vn = p.vn
-    LEFT JOIN pttype pt ON pt.pttype = p.pttype
-    WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-      ${whereVisitTypeSql}
-      AND ov.canceldate IS NULL
+    ${src.fromJoinSql}
+    ${whereDate}
       AND pt.name IS NOT NULL
     ORDER BY pt.name
   `;
 
   const sqlClinic = `
-    SELECT DISTINCT l.name AS VALUE
-    FROM prsc p
-    INNER JOIN prscdt d ON p.prscno = d.prscno
-    INNER JOIN ovst ov ON ov.vn = p.vn
-    LEFT JOIN lct l ON l.lct = d.sphmlct
-    WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-      ${whereVisitTypeSql}
-      AND ov.canceldate IS NULL
-      AND l.name IS NOT NULL
-    ORDER BY l.name
+    SELECT DISTINCT lct.name AS VALUE
+    ${src.fromJoinSql}
+    ${whereDate}
+      AND lct.name IS NOT NULL
+    ORDER BY lct.name
   `;
 
   const sqlMedtype = `
     SELECT DISTINCT t.name AS VALUE
-    FROM prsc p
-    INNER JOIN prscdt d ON p.prscno = d.prscno
-    INNER JOIN ovst ov ON ov.vn = p.vn
-    INNER JOIN meditem m ON d.meditem = m.meditem
-    INNER JOIN medtype t ON t.medtype = m.medtype
-    WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-      ${whereVisitTypeSql}
-      AND ov.canceldate IS NULL
+    ${src.fromJoinSql}
+    ${whereDate}
       AND t.name IS NOT NULL
     ORDER BY t.name
   `;
 
   const sqlAccnation = `
     SELECT DISTINCT a.name AS VALUE
-    FROM prsc p
-    INNER JOIN prscdt d ON p.prscno = d.prscno
-    INNER JOIN ovst ov ON ov.vn = p.vn
-    INNER JOIN meditem m ON d.meditem = m.meditem
-    INNER JOIN medaccnation a ON a.accnation = m.accnation
-    WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-      ${whereVisitTypeSql}
-      AND ov.canceldate IS NULL
+    ${src.fromJoinSql}
+    ${whereDate}
       AND a.name IS NOT NULL
     ORDER BY a.name
   `;

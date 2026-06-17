@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
-import { buildVisitTypeWhereSql } from "@/lib/db/visitTypeSql";
+import { buildDrugSourceSql } from "@/lib/db/drugSourceSql";
+import { sqlUnitCost, sqlUnitSale } from "@/lib/db/meditemRateSql";
 
 type GroupBy = "month" | "year";
 
@@ -90,7 +91,9 @@ export default async function handler(
     });
   }
 
-  const whereVisitTypeSql = buildVisitTypeWhereSql(includeOpd, includeIpd);
+  const src = buildDrugSourceSql(includeOpd, includeIpd);
+  const unitCost = sqlUnitCost("m", "d", "p");
+  const unitSale = sqlUnitSale("m", "d", "p");
 
   const groupByValue: GroupBy = groupBy === "year" ? "year" : "month";
   const periodExpr =
@@ -136,46 +139,10 @@ export default async function handler(
         TRUNC(p.prscdate) AS PRSCDATE,
         m.meditem         AS MEDITEM,
         d.qty             AS QTY,
-        COALESCE(
-          NULLIF(
-            (
-              SELECT MAX(ms.costrate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
-              FROM MEDITEMSALEHST ms
-              WHERE ms.meditem = m.meditem
-                AND ms.effectdate <= TRUNC(p.prscdate)
-            ),
-            0
-          ),
-          (
-            SELECT MAX(ms.salerate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
-            FROM MEDITEMSALEHST ms
-            WHERE ms.meditem = m.meditem
-              AND ms.effectdate <= TRUNC(p.prscdate)
-          ),
-          NULLIF(d.costrate, 0),
-          d.salerate
-        ) AS UNIT_COST,
-        COALESCE(
-          (
-            SELECT MAX(ms.salerate) KEEP (DENSE_RANK LAST ORDER BY ms.effectdate)
-            FROM MEDITEMSALEHST ms
-            WHERE ms.meditem = m.meditem
-              AND ms.effectdate <= TRUNC(p.prscdate)
-          ),
-          d.salerate,
-          0
-        ) AS UNIT_SALE
-      FROM prsc p
-      INNER JOIN prscdt d ON p.prscno = d.prscno
-      INNER JOIN ovst ov ON ov.vn = p.vn
-      INNER JOIN meditem m ON d.meditem = m.meditem
-      INNER JOIN medtype t ON t.medtype = m.medtype
-      INNER JOIN medaccnation a ON a.accnation = m.accnation
-      LEFT JOIN lct ON d.sphmlct = lct.lct
-      LEFT JOIN pttype pt ON pt.pttype = p.pttype
-      WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-        ${whereVisitTypeSql}
-        AND ov.canceldate IS NULL
+        ${unitCost}       AS UNIT_COST,
+        ${unitSale}       AS UNIT_SALE
+      ${src.fromJoinSql}
+      WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')${src.whereAnchorSql}
       ${whereFiltersSql}
     )
     , period_agg AS (
