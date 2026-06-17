@@ -13,55 +13,9 @@ import {
   monthsIsoToDateRange,
   sortMonthIsos,
 } from "@/lib/date/thaiDate";
-import { normalizeHnInput } from "@/lib/hn/normalize";
+import { formatHnDisplay, matchesHnFilter } from "@/lib/hn/normalize";
+import { filterStringOptions, normalizeFieldForFilter } from "@/lib/filter/options";
 import { siteConfig } from "@/config/site";
-
-/** Oracle / JSON อาจส่งค่าเป็นตัวเลข — ใช้ก่อน .toLowerCase() / เปรียบเทียบ */
-function normalizeFieldForFilter(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  return String(value).toLowerCase();
-}
-
-/** กรองรายการตัวเลือกหลายค่า (สิทธิ/คลินิก/ฯลฯ) ตามข้อความค้นหา */
-function filterStringOptions(options: string[], query: string): string[] {
-  const trimmed = query.trim();
-  if (!trimmed) return options;
-  const needle = normalizeFieldForFilter(trimmed);
-  return options.filter((opt) => normalizeFieldForFilter(opt).includes(needle));
-}
-
-function formatHnDisplay(value: unknown): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  if (raw.includes("/") || raw.includes("-")) return raw;
-
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length < 3) return raw;
-
-  const yearSuffix = digits.slice(0, 2);
-  const runningRaw = digits.slice(2);
-  const running = runningRaw.replace(/^0+/, "") || "0";
-  return `${running}/${yearSuffix}`;
-}
-
-function matchesHnFilter(hnValue: unknown, filterInput: string): boolean {
-  const input = filterInput.trim();
-  if (!input) return true;
-
-  const raw = String(hnValue ?? "").trim();
-  const rawDigits = raw.replace(/\D/g, "");
-  const display = formatHnDisplay(raw).toLowerCase();
-  const normalizedInput = normalizeHnInput(input);
-  const inputDigits = input.replace(/\D/g, "");
-  const inputLower = input.toLowerCase();
-
-  return (
-    raw.includes(normalizedInput) ||
-    rawDigits.includes(inputDigits) ||
-    display.includes(inputLower) ||
-    raw.toLowerCase().includes(inputLower)
-  );
-}
 
 const THAI_MONTH_SHORT = [
   "ม.ค.",
@@ -80,19 +34,24 @@ const THAI_MONTH_SHORT = [
 
 function formatPeriodLabelThai(periodValue: string, groupBy: PeriodGroupBy): string {
   const raw = String(periodValue ?? "").trim();
+
   if (!raw) return "-";
 
   if (groupBy === "year") {
     const year = Number(raw);
+
     if (Number.isFinite(year)) return `พ.ศ. ${year + 543}`;
+
     return raw;
   }
 
   const match = /^(\d{4})-(\d{2})$/.exec(raw);
+
   if (!match) return raw;
 
   const year = Number(match[1]);
   const month = Number(match[2]);
+
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return raw;
 
   return `${THAI_MONTH_SHORT[month - 1]} ${year + 543}`;
@@ -100,6 +59,8 @@ function formatPeriodLabelThai(periodValue: string, groupBy: PeriodGroupBy): str
 
 type DrugCostSummaryRow = {
   HN: string | number;
+  AN?: string | number | null;
+  WARD_NAME?: string | null;
   VISIT_KEY?: string | number | null;
   PTTYPE_NAME: string | null;
   CLINIC_LCT: string | null;
@@ -115,6 +76,7 @@ type DrugCostSummaryRow = {
 };
 
 type SummaryTab = "period" | "detail";
+type VisitType = "opd" | "ipd";
 type PeriodGroupBy = "month" | "year";
 
 type DrugCostSummaryPeriodRow = {
@@ -137,15 +99,19 @@ type DrugCostFilterOptions = {
 
 function normalizeFilterOptionList(values: unknown[]): string[] {
   const set = new Set<string>();
+
   for (const value of values) {
     const text = String(value ?? "").trim();
+
     if (text) set.add(text);
   }
+
   return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
 }
 
 function parseFilterOptionsData(data: unknown): DrugCostFilterOptions {
   const source = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+
   return {
     pttype: normalizeFilterOptionList(Array.isArray(source.pttype) ? source.pttype : []),
     clinic: normalizeFilterOptionList(Array.isArray(source.clinic) ? source.clinic : []),
@@ -162,15 +128,19 @@ function extractFilterOptionsFromRows(rows: DrugCostSummaryRow[]): DrugCostFilte
 
   for (const row of rows) {
     const pttypeName = String(row.PTTYPE_NAME ?? "").trim();
+
     if (pttypeName) pttype.add(pttypeName);
 
     const clinicName = String(row.CLINIC_LCT_NAME ?? row.CLINIC_LCT ?? "").trim();
+
     if (clinicName) clinic.add(clinicName);
 
     const medtypeName = String(row.MEDTYPE ?? "").trim();
+
     if (medtypeName) medtype.add(medtypeName);
 
     const accnationName = String(row.ACCNATION ?? "").trim();
+
     if (accnationName) accnation.add(accnationName);
   }
 
@@ -188,6 +158,7 @@ function resolveUiFilterOptions(
   tab: SummaryTab
 ): DrugCostFilterOptions {
   const fromRows = extractFilterOptionsFromRows(rows);
+
   if (tab === "period") return apiOptions;
 
   return {
@@ -201,6 +172,7 @@ function resolveUiFilterOptions(
 function isAllOptionsSelected(selected: string[], allOptions: string[]): boolean {
   if (allOptions.length === 0) return true;
   const selectedSet = new Set(selected);
+
   return allOptions.every((option) => selectedSet.has(option));
 }
 
@@ -217,6 +189,7 @@ function hasClearedMultiSelectFilters(
 function shouldApplyMultiSelectFilter(selected: string[], allOptions: string[]): boolean {
   if (allOptions.length === 0) return false;
   if (isAllOptionsSelected(selected, allOptions)) return false;
+
   return selected.length > 0;
 }
 
@@ -230,11 +203,13 @@ function matchesMultiSelectFilter(
   if (isAllOptionsSelected(selected, allOptions)) return true;
   if (selected.length === 0) return false;
   const value = normalizeValue(String(rawValue ?? "").trim());
+
   return selected.some((item) => normalizeValue(item) === value);
 }
 
 type SortKey =
   | "HN"
+  | "AN"
   | "PTTYPE"
   | "CLINIC"
   | "MEDITEM"
@@ -265,6 +240,7 @@ export default function DrugCostSummaryPage() {
     accnation: [],
   });
   const [activeTab, setActiveTab] = useState<SummaryTab>("detail");
+  const [visitType, setVisitType] = useState<VisitType>("opd");
   const [periodHasFetched, setPeriodHasFetched] = useState(false);
   const skipNextPeriodAutoRefreshRef = useRef(false);
 
@@ -285,21 +261,34 @@ export default function DrugCostSummaryPage() {
   const [filterNegativeProfitOnly, setFilterNegativeProfitOnly] = useState(false);
   const [excludeZeroSale, setExcludeZeroSale] = useState(false);
   const [excludeNegativeProfit, setExcludeNegativeProfit] = useState(false);
-  const [includeOpd, setIncludeOpd] = useState(true);
-  const [includeIpd, setIncludeIpd] = useState(false);
+
+  const includeOpd = visitType === "opd";
+  const includeIpd = visitType === "ipd";
+  const showAnColumn = visitType === "ipd";
 
   const [filterPttypeListQuery, setFilterPttypeListQuery] = useState("");
   const [filterClinicListQuery, setFilterClinicListQuery] = useState("");
   const [filterMedtypeListQuery, setFilterMedtypeListQuery] = useState("");
   const [filterAccnationListQuery, setFilterAccnationListQuery] = useState("");
 
-  const parseJsonSafe = async (res: Response): Promise<any> => {
+  type ApiEnvelope<TData = unknown> = {
+    success?: boolean;
+    message?: string;
+    count?: number;
+    uniqueItemCount?: number;
+    uniqueVisitCount?: number;
+    groupBy?: string;
+    data?: TData;
+  };
+
+  const parseJsonSafe = async <T extends object = ApiEnvelope>(res: Response): Promise<T> => {
     const text = await res.text();
-    if (!text) return {};
+
+    if (!text) return {} as T;
     try {
-      return JSON.parse(text);
+      return JSON.parse(text) as T;
     } catch {
-      return {};
+      return {} as T;
     }
   };
 
@@ -318,14 +307,17 @@ export default function DrugCostSummaryPage() {
     if (activeTab === "period") {
       if (periodMonths.length === 0) {
         setDateError("กรุณาเลือกอย่างน้อย 1 เดือน");
+
         return;
       }
       if (periodMonths.some((monthIso) => !isValidMonthIso(monthIso))) {
         setDateError("กรุณาเลือกเดือนที่ถูกต้อง");
+
         return;
       }
       if (periodMonths.length > 12) {
         setDateError("เลือกได้ไม่เกิน 12 เดือน");
+
         return;
       }
     } else {
@@ -334,25 +326,24 @@ export default function DrugCostSummaryPage() {
 
       if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
         setDateError("ช่วงวันที่ไม่ถูกต้อง");
+
         return;
       }
 
       if (from > to) {
         setDateError("วันที่เริ่มต้องไม่มากกว่าวันที่สิ้นสุด");
+
         return;
       }
 
       const diffMs = to.getTime() - from.getTime();
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
       if (diffDays > 31) {
         setDateError("แท็บรายคนกำหนดช่วงวันที่ได้ไม่เกิน 1 เดือน");
+
         return;
       }
-    }
-
-    if (!includeOpd && !includeIpd) {
-      setDateError("กรุณาเลือกอย่างน้อย 1 ประเภทบริการ (OPD หรือ IPD)");
-      return;
     }
 
     setLoading(true);
@@ -363,6 +354,7 @@ export default function DrugCostSummaryPage() {
     setPage(1);
 
     const query = new URLSearchParams();
+
     query.set("d1", searchD1);
     query.set("d2", searchD2);
     query.set("opd", includeOpd ? "1" : "0");
@@ -384,24 +376,29 @@ export default function DrugCostSummaryPage() {
           ),
         ]);
         const [jsonSummary, jsonOptions] = await Promise.all([
-          parseJsonSafe(resSummary),
+          parseJsonSafe<ApiEnvelope<DrugCostSummaryPeriodRow[]>>(resSummary),
           parseJsonSafe(resOptions),
         ]);
 
         if (!resSummary.ok || !jsonSummary.success) {
           setError(jsonSummary.message ?? "ค้นหาข้อมูลไม่สำเร็จ");
+
           return;
         }
         if (!resOptions.ok || !jsonOptions.success) {
           setError(jsonOptions.message ?? "ไม่สามารถโหลดตัวเลือกฟิลเตอร์ได้");
+
           return;
         }
 
         setPeriodRows(Array.isArray(jsonSummary.data) ? jsonSummary.data : []);
         setPeriodUniqueItemCount(
-          Number.isFinite(Number(jsonSummary.uniqueItemCount)) ? Number(jsonSummary.uniqueItemCount) : 0
+          Number.isFinite(Number(jsonSummary.uniqueItemCount))
+            ? Number(jsonSummary.uniqueItemCount)
+            : 0
         );
         const filterOptions = parseFilterOptionsData(jsonOptions.data);
+
         setPeriodFilterOptions(filterOptions);
         setFilterPttype([...filterOptions.pttype]);
         setFilterClinic([...filterOptions.clinic]);
@@ -418,11 +415,13 @@ export default function DrugCostSummaryPage() {
           ),
         ]);
         const [jsonDetail, jsonOptions] = await Promise.all([
-          parseJsonSafe(resDetail),
+          parseJsonSafe<ApiEnvelope<DrugCostSummaryRow[]>>(resDetail),
           parseJsonSafe(resOptions),
         ]);
+
         if (!resDetail.ok || !jsonDetail.success) {
           setError(jsonDetail.message ?? "ค้นหาข้อมูลไม่สำเร็จ");
+
           return;
         }
         const detailRows = Array.isArray(jsonDetail.data) ? jsonDetail.data : [];
@@ -431,6 +430,7 @@ export default function DrugCostSummaryPage() {
             ? parseFilterOptionsData(jsonOptions.data)
             : { pttype: [], clinic: [], medtype: [], accnation: [] };
         const uiFilterOptions = resolveUiFilterOptions(apiFilterOptions, detailRows, "detail");
+
         setPeriodFilterOptions(apiFilterOptions);
         setRows(detailRows);
         setFilterPttype([...uiFilterOptions.pttype]);
@@ -447,17 +447,13 @@ export default function DrugCostSummaryPage() {
 
   useEffect(() => {
     void performSearch();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab !== "period") return;
-    void performSearch();
-  }, [activeTab]);
+  }, [activeTab, visitType]);
 
   useEffect(() => {
     if (activeTab !== "period" || !periodHasFetched) return;
     if (skipNextPeriodAutoRefreshRef.current) {
       skipNextPeriodAutoRefreshRef.current = false;
+
       return;
     }
 
@@ -474,13 +470,17 @@ export default function DrugCostSummaryPage() {
           cache: "no-store",
           body: JSON.stringify(buildPeriodPayload()),
         });
-        const json = await parseJsonSafe(res);
+        const json = await parseJsonSafe<ApiEnvelope<DrugCostSummaryPeriodRow[]>>(res);
+
         if (!res.ok || !json.success) {
           setError(json.message ?? "ค้นหาข้อมูลไม่สำเร็จ");
+
           return;
         }
         setPeriodRows(Array.isArray(json.data) ? json.data : []);
-        setPeriodUniqueItemCount(Number.isFinite(Number(json.uniqueItemCount)) ? Number(json.uniqueItemCount) : 0);
+        setPeriodUniqueItemCount(
+          Number.isFinite(Number(json.uniqueItemCount)) ? Number(json.uniqueItemCount) : 0
+        );
       } catch (fetchError) {
         if (controller.signal.aborted) return;
         setError(fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด");
@@ -490,12 +490,12 @@ export default function DrugCostSummaryPage() {
     };
 
     void refreshPeriodSummary();
+
     return () => controller.abort();
   }, [
     activeTab,
     periodHasFetched,
-    includeOpd,
-    includeIpd,
+    visitType,
     filterPttype,
     filterClinic,
     filterMedtype,
@@ -504,48 +504,59 @@ export default function DrugCostSummaryPage() {
 
   const medtypeOptions = useMemo(() => {
     const set = new Set<string>();
+
     for (const r of rows) {
       if (r.MEDTYPE != null && String(r.MEDTYPE).trim() !== "") {
         set.add(String(r.MEDTYPE));
       }
     }
+
     return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
   }, [rows]);
 
   const accnationOptions = useMemo(() => {
     const set = new Set<string>();
+
     for (const r of rows) {
       if (r.ACCNATION != null && String(r.ACCNATION).trim() !== "") {
         set.add(String(r.ACCNATION));
       }
     }
+
     return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
   }, [rows]);
 
   const clinicOptionsFromRows = useMemo(() => {
     const set = new Set<string>();
+
     for (const r of rows) {
       const clinic = String(r.CLINIC_LCT_NAME ?? r.CLINIC_LCT ?? "").trim();
+
       if (clinic !== "") {
         set.add(clinic);
       }
     }
+
     return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
   }, [rows]);
 
   const pttypeOptionsFromRows = useMemo(() => {
     const set = new Set<string>();
+
     for (const r of rows) {
       const name = String(r.PTTYPE_NAME ?? "").trim();
+
       if (name !== "") {
         set.add(name);
       }
     }
+
     return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
   }, [rows]);
 
   const pttypeOptions = useMemo(() => {
     if (periodFilterOptions.pttype.length > 0) return periodFilterOptions.pttype;
+
     return pttypeOptionsFromRows;
   }, [periodFilterOptions.pttype, pttypeOptionsFromRows]);
   const clinicOptions = useMemo(
@@ -587,6 +598,7 @@ export default function DrugCostSummaryPage() {
       opd: includeOpd,
       ipd: includeIpd,
     };
+
     if (shouldApplyMultiSelectFilter(filterPttype, pttypeOptions)) {
       payload.pttype = filterPttype;
     }
@@ -599,6 +611,7 @@ export default function DrugCostSummaryPage() {
     if (shouldApplyMultiSelectFilter(filterAccnation, accnationOptionsForUi)) {
       payload.accnation = filterAccnation;
     }
+
     return payload;
   };
 
@@ -621,9 +634,7 @@ export default function DrugCostSummaryPage() {
       ) {
         return false;
       }
-      if (
-        !matchesMultiSelectFilter(r.PTTYPE_NAME, filterPttype, pttypeOptions, (value) => value)
-      ) {
+      if (!matchesMultiSelectFilter(r.PTTYPE_NAME, filterPttype, pttypeOptions, (value) => value)) {
         return false;
       }
       if (m && !normalizeFieldForFilter(r.MEDITEM).includes(m)) {
@@ -632,11 +643,18 @@ export default function DrugCostSummaryPage() {
       if (d && !normalizeFieldForFilter(r.DRUG_NAME).includes(d)) {
         return false;
       }
-      if (!matchesMultiSelectFilter(r.MEDTYPE, filterMedtype, medtypeOptionsForUi, (value) => value)) {
+      if (
+        !matchesMultiSelectFilter(r.MEDTYPE, filterMedtype, medtypeOptionsForUi, (value) => value)
+      ) {
         return false;
       }
       if (
-        !matchesMultiSelectFilter(r.ACCNATION, filterAccnation, accnationOptionsForUi, (value) => value)
+        !matchesMultiSelectFilter(
+          r.ACCNATION,
+          filterAccnation,
+          accnationOptionsForUi,
+          (value) => value
+        )
       ) {
         return false;
       }
@@ -652,6 +670,7 @@ export default function DrugCostSummaryPage() {
       if (excludeNegativeProfit && Number(r.TOTAL_PROFIT ?? 0) < 0) {
         return false;
       }
+
       return true;
     });
   }, [
@@ -684,6 +703,9 @@ export default function DrugCostSummaryPage() {
       switch (sortKey) {
         case "HN":
           compareValue = getText(a.HN).localeCompare(getText(b.HN), "th");
+          break;
+        case "AN":
+          compareValue = getText(a.AN).localeCompare(getText(b.AN), "th");
           break;
         case "PTTYPE":
           compareValue = getText(a.PTTYPE_NAME).localeCompare(getText(b.PTTYPE_NAME), "th");
@@ -741,6 +763,7 @@ export default function DrugCostSummaryPage() {
         acc.cost += r.TOTAL_COST ?? 0;
         acc.sale += r.TOTAL_SALE ?? 0;
         acc.profit += r.TOTAL_PROFIT ?? 0;
+
         return acc;
       },
       { qty: 0, cost: 0, sale: 0, profit: 0 }
@@ -749,19 +772,25 @@ export default function DrugCostSummaryPage() {
 
   const uniqueHnCount = useMemo(() => {
     const hnSet = new Set<string>();
+
     for (const row of filteredRows) {
       const hn = String(row.HN ?? "").trim();
+
       if (hn !== "") hnSet.add(hn);
     }
+
     return hnSet.size;
   }, [filteredRows]);
 
   const uniqueVisitCount = useMemo(() => {
     const visitSet = new Set<string>();
+
     for (const row of filteredRows) {
       const key = String(row.VISIT_KEY ?? "").trim();
+
       if (key !== "") visitSet.add(key);
     }
+
     return visitSet.size;
   }, [filteredRows]);
 
@@ -790,6 +819,7 @@ export default function DrugCostSummaryPage() {
       if (excludeNegativeProfit && Number(row.TOTAL_PROFIT ?? 0) < 0) {
         return false;
       }
+
       return true;
     });
   }, [
@@ -815,6 +845,7 @@ export default function DrugCostSummaryPage() {
         acc.cost += r.TOTAL_COST ?? 0;
         acc.sale += r.TOTAL_SALE ?? 0;
         acc.profit += r.TOTAL_PROFIT ?? 0;
+
         return acc;
       },
       { qty: 0, cost: 0, sale: 0, profit: 0 }
@@ -843,6 +874,7 @@ export default function DrugCostSummaryPage() {
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+
       return;
     }
     setSortKey(key);
@@ -852,6 +884,7 @@ export default function DrugCostSummaryPage() {
 
   const sortMark = (key: SortKey) => {
     if (sortKey !== key) return "↕";
+
     return sortDirection === "asc" ? "▲" : "▼";
   };
 
@@ -864,6 +897,7 @@ export default function DrugCostSummaryPage() {
       const header = [
         "NO",
         "HN",
+        ...(showAnColumn ? ["AN"] : []),
         "สิทธิการรักษา",
         "คลินิก",
         "รหัสยา",
@@ -879,6 +913,7 @@ export default function DrugCostSummaryPage() {
       const dataRows = sortedRows.map((row, index) => [
         index + 1,
         row.HN ?? "",
+        ...(showAnColumn ? [formatHnDisplay(row.AN) || ""] : []),
         row.PTTYPE_NAME ?? "",
         row.CLINIC_LCT_NAME ?? row.CLINIC_LCT ?? "",
         row.MEDITEM ?? "",
@@ -899,6 +934,7 @@ export default function DrugCostSummaryPage() {
       const totalRow = [
         "",
         "",
+        ...(showAnColumn ? [""] : []),
         "",
         "",
         "",
@@ -914,10 +950,12 @@ export default function DrugCostSummaryPage() {
 
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
       worksheet["!cols"] = [
-        { wch: 6 }, // NO
-        { wch: 14 }, // HN
-        { wch: 22 }, // สิทธิการรักษา
+        { wch: 6 },
+        { wch: 14 },
+        ...(showAnColumn ? [{ wch: 14 }] : []),
+        { wch: 22 },
         { wch: 28 }, // คลินิก
         { wch: 14 }, // รหัสยา
         { wch: 42 }, // ชื่อยา
@@ -930,11 +968,17 @@ export default function DrugCostSummaryPage() {
       ];
 
       const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+      const qtyCol = showAnColumn ? 9 : 8;
+      const costCol = qtyCol + 1;
+      const saleCol = qtyCol + 2;
+      const profitCol = qtyCol + 3;
+
       for (let r = 1; r <= range.e.r; r++) {
-        const qtyCell = XLSX.utils.encode_cell({ r, c: 8 });
-        const costCell = XLSX.utils.encode_cell({ r, c: 9 });
-        const saleCell = XLSX.utils.encode_cell({ r, c: 10 });
-        const profitCell = XLSX.utils.encode_cell({ r, c: 11 });
+        const qtyCell = XLSX.utils.encode_cell({ r, c: qtyCol });
+        const costCell = XLSX.utils.encode_cell({ r, c: costCol });
+        const saleCell = XLSX.utils.encode_cell({ r, c: saleCol });
+        const profitCell = XLSX.utils.encode_cell({ r, c: profitCol });
+
         if (worksheet[qtyCell]) worksheet[qtyCell].z = "#,##0";
         if (worksheet[costCell]) worksheet[costCell].z = "#,##0.00";
         if (worksheet[saleCell]) worksheet[saleCell].z = "#,##0.00";
@@ -944,7 +988,8 @@ export default function DrugCostSummaryPage() {
       XLSX.utils.book_append_sheet(workbook, worksheet, "DrugCostSummary");
 
       const fileDate = `${dateFrom}_to_${dateTo}`;
-      XLSX.writeFile(workbook, `drug-cost-summary_${fileDate}.xlsx`);
+
+      XLSX.writeFile(workbook, `drug-cost-summary_${visitType}_${fileDate}.xlsx`);
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : "ไม่สามารถ export Excel ได้");
     } finally {
@@ -981,14 +1026,24 @@ export default function DrugCostSummaryPage() {
 
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
-      worksheet["!cols"] = [{ wch: 6 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+
+      worksheet["!cols"] = [
+        { wch: 6 },
+        { wch: 18 },
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+      ];
 
       const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+
       for (let r = 1; r <= range.e.r; r++) {
         const qtyCell = XLSX.utils.encode_cell({ r, c: 2 });
         const costCell = XLSX.utils.encode_cell({ r, c: 3 });
         const saleCell = XLSX.utils.encode_cell({ r, c: 4 });
         const profitCell = XLSX.utils.encode_cell({ r, c: 5 });
+
         if (worksheet[qtyCell]) worksheet[qtyCell].z = "#,##0";
         if (worksheet[costCell]) worksheet[costCell].z = "#,##0.00";
         if (worksheet[saleCell]) worksheet[saleCell].z = "#,##0.00";
@@ -996,7 +1051,10 @@ export default function DrugCostSummaryPage() {
       }
 
       XLSX.utils.book_append_sheet(workbook, worksheet, "DrugCostSummaryPeriod");
-      XLSX.writeFile(workbook, `drug-cost-summary-period_${sortMonthIsos(periodMonths).join("_")}.xlsx`);
+      XLSX.writeFile(
+        workbook,
+        `drug-cost-summary-period_${visitType}_${sortMonthIsos(periodMonths).join("_")}.xlsx`
+      );
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : "ไม่สามารถ export Excel ได้");
     } finally {
@@ -1013,16 +1071,22 @@ export default function DrugCostSummaryPage() {
               สรุปต้นทุนและกำไรจากยา (ตามรายการยา)
             </h1>
             <p className="text-xs md:text-sm text-flow-muted mt-1">
-              ข้อมูลจาก PRSC / PRSCDT / MEDITEM — สิทธิการรักษาจาก PRSC.PTTYPE → PTTYPE.NAME — รวมตามรหัสยาและช่วงวันที่สั่งยา
+              ข้อมูลจาก PRSC / PRSCDT / MEDITEM — สิทธิการรักษาจาก PRSC.PTTYPE → PTTYPE.NAME —
+              รวมตามรหัสยาและช่วงวันที่สั่งยา
             </p>
           </div>
         </div>
       </header>
 
       <main className="flex-1 w-full px-4 md:px-6 py-6 md:py-8">
-        <section className="mb-4">
+        <section className="mb-4 flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-lg border border-flow-border bg-white p-1 text-xs">
             <button
+              className={`rounded-md px-3 py-1.5 font-medium ${
+                activeTab === "detail"
+                  ? "bg-brand-500 text-white"
+                  : "text-flow-text hover:bg-flow-input"
+              }`}
               type="button"
               onClick={() => {
                 setActiveTab("detail");
@@ -1030,15 +1094,15 @@ export default function DrugCostSummaryPage() {
                 setPeriodUniqueItemCount(0);
                 setError(null);
               }}
-              className={`rounded-md px-3 py-1.5 font-medium ${
-                activeTab === "detail"
-                  ? "bg-brand-500 text-white"
-                  : "text-flow-text hover:bg-flow-input"
-              }`}
             >
               รายละเอียดรายคน/รายยา
             </button>
             <button
+              className={`rounded-md px-3 py-1.5 font-medium ${
+                activeTab === "period"
+                  ? "bg-brand-500 text-white"
+                  : "text-flow-text hover:bg-flow-input"
+              }`}
               type="button"
               onClick={() => {
                 setActiveTab("period");
@@ -1048,23 +1112,55 @@ export default function DrugCostSummaryPage() {
                 setPeriodUniqueItemCount(0);
                 setError(null);
               }}
+            >
+              สรุปรายเดือน/รายปี
+            </button>
+          </div>
+
+          {/* สลับประเภทบริการ OPD / IPD (หน้าเดียวรองรับทั้งสองแบบ) */}
+          <div className="inline-flex rounded-lg border border-flow-border bg-white p-1 text-xs">
+            <button
               className={`rounded-md px-3 py-1.5 font-medium ${
-                activeTab === "period"
+                visitType === "opd"
                   ? "bg-brand-500 text-white"
                   : "text-flow-text hover:bg-flow-input"
               }`}
+              type="button"
+              onClick={() => {
+                if (visitType === "opd") return;
+                setVisitType("opd");
+                setRows([]);
+                setPeriodRows([]);
+                setPeriodUniqueItemCount(0);
+                setError(null);
+              }}
             >
-              สรุปรายเดือน/รายปี
+              OPD
+            </button>
+            <button
+              className={`rounded-md px-3 py-1.5 font-medium ${
+                visitType === "ipd"
+                  ? "bg-brand-500 text-white"
+                  : "text-flow-text hover:bg-flow-input"
+              }`}
+              type="button"
+              onClick={() => {
+                if (visitType === "ipd") return;
+                setVisitType("ipd");
+                setRows([]);
+                setPeriodRows([]);
+                setPeriodUniqueItemCount(0);
+                setError(null);
+              }}
+            >
+              IPD
             </button>
           </div>
         </section>
 
         {/* ฟอร์มค้นหา */}
         <section className="mb-6">
-          <form
-            onSubmit={handleSearch}
-            className="ui-panel-muted space-y-4"
-          >
+          <form className="ui-panel-muted space-y-4" onSubmit={handleSearch}>
             <div className="flex flex-wrap items-start gap-4">
               {activeTab === "detail" ? (
                 <div className="grid w-full max-w-xl grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-4">
@@ -1098,53 +1194,27 @@ export default function DrugCostSummaryPage() {
                   }}
                 />
               )}
-              <div className="mt-6 inline-flex items-center gap-3 rounded-lg border border-flow-border bg-white px-3 py-1.5 text-xs text-flow-text">
-                <span className="font-medium text-flow-text">ประเภทบริการ</span>
-                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="ui-checkbox"
-                    checked={includeOpd}
-                    onChange={(e) => {
-                      setIncludeOpd(e.target.checked);
-                      setDateError(null);
-                    }}
-                  />
-                  <span>OPD</span>
-                </label>
-                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="ui-checkbox"
-                    checked={includeIpd}
-                    onChange={(e) => {
-                      setIncludeIpd(e.target.checked);
-                      setDateError(null);
-                    }}
-                  />
-                  <span>IPD</span>
-                </label>
-              </div>
               <button
-                type="submit"
-                disabled={loading}
                 className="ui-btn-primary mt-6 h-9 text-xs md:text-sm"
+                disabled={loading}
+                type="submit"
               >
                 {loading ? "กำลังค้นหา..." : "ค้นหาข้อมูล"}
               </button>
               <button
+                className="ui-btn-secondary mt-6 h-9 text-xs md:text-sm"
                 type="button"
                 onClick={() => {
                   if (activeTab === "period") {
                     setPeriodMonths([localCurrentMonthIso()]);
                   } else {
                     const today = localTodayIso();
+
                     setDateFrom(today);
                     setDateTo(today);
                   }
                   setDateError(null);
                 }}
-                className="ui-btn-secondary mt-6 h-9 text-xs md:text-sm"
               >
                 {activeTab === "period" ? "เคลียร์เดือน" : "เคลียร์วันที่"}
               </button>
@@ -1161,8 +1231,8 @@ export default function DrugCostSummaryPage() {
           <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
             <div className="pointer-events-auto inline-flex items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-3 shadow-[0_12px_40px_rgba(45,156,219,0.18)]">
               <span
-                className="h-5 w-5 animate-spin rounded-full border-2 border-brand-500 border-t-transparent"
                 aria-hidden="true"
+                className="h-5 w-5 animate-spin rounded-full border-2 border-brand-500 border-t-transparent"
               />
               <div className="leading-tight">
                 <p className="text-sm font-semibold text-brand-900">กำลังค้นหาข้อมูล</p>
@@ -1178,294 +1248,302 @@ export default function DrugCostSummaryPage() {
             <h2 className="mb-3 text-xs font-semibold text-flow-text">กรองผลลัพธ์</h2>
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-stretch">
-              <div className="flex h-full flex-col gap-1">
-                <span className="text-[11px] font-medium text-flow-text" id="filterPttype-label">
-                  สิทธิการรักษา
-                </span>
-                <div className="flex items-center gap-2 text-[10px]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterPttype((prev) => {
-                        const next = new Set(prev);
-                        for (const o of pttypeOptionsFiltered) next.add(o);
-                        return Array.from(next);
-                      });
-                      setPage(1);
-                    }}
-                    className="rounded border border-flow-border bg-slate-50 px-2 py-0.5 text-flow-text hover:bg-brand-50"
-                  >
-                    เลือกทั้งหมด
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterPttype([]);
-                      setPage(1);
-                    }}
-                    className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
-                  >
-                    ไม่เลือกทั้งหมด
-                  </button>
-                </div>
-                <input
-                  type="search"
-                  value={filterPttypeListQuery}
-                  onChange={(e) => setFilterPttypeListQuery(e.target.value)}
-                  placeholder="ค้นหาในรายการ..."
-                  aria-labelledby="filterPttype-label"
-                  className="ui-input-sm"
-                />
-                <div
-                  className="h-24 overflow-y-auto rounded-lg border border-flow-border bg-white px-2 py-1.5"
-                  role="group"
-                  aria-labelledby="filterPttype-label"
-                >
-                  <div className="space-y-1">
-                    {pttypeOptions.length === 0 ? (
-                      <p className="text-[10px] text-neutral-400">ไม่มีชื่อสิทธิในชุดข้อมูลนี้</p>
-                    ) : pttypeOptionsFiltered.length === 0 ? (
-                      <p className="text-[10px] text-neutral-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
-                    ) : (
-                      pttypeOptionsFiltered.map((opt) => (
-                        <label
-                          key={opt}
-                          className="inline-flex w-full cursor-pointer items-center gap-2 text-[11px] text-flow-text"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={filterPttype.includes(opt)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFilterPttype((prev) => [...prev, opt]);
-                              } else {
-                                setFilterPttype((prev) => prev.filter((item) => item !== opt));
-                              }
-                              setPage(1);
-                            }}
-                            className="ui-checkbox"
-                          />
-                          <span className="truncate">{opt}</span>
-                        </label>
-                      ))
-                    )}
+                <div className="flex h-full flex-col gap-1">
+                  <span className="text-[11px] font-medium text-flow-text" id="filterPttype-label">
+                    สิทธิการรักษา
+                  </span>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button
+                      className="rounded border border-flow-border bg-slate-50 px-2 py-0.5 text-flow-text hover:bg-brand-50"
+                      type="button"
+                      onClick={() => {
+                        setFilterPttype((prev) => {
+                          const next = new Set(prev);
+
+                          for (const o of pttypeOptionsFiltered) next.add(o);
+
+                          return Array.from(next);
+                        });
+                        setPage(1);
+                      }}
+                    >
+                      เลือกทั้งหมด
+                    </button>
+                    <button
+                      className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
+                      type="button"
+                      onClick={() => {
+                        setFilterPttype([]);
+                        setPage(1);
+                      }}
+                    >
+                      ไม่เลือกทั้งหมด
+                    </button>
                   </div>
-                </div>
-                <p className="text-[10px] text-flow-muted">เลือกได้หลายรายการ</p>
-              </div>
-              <div className="flex h-full flex-col gap-1">
-                <label className="text-[11px] font-medium text-flow-text" htmlFor="filterClinic">
-                  คลินิก
-                </label>
-                <div className="flex items-center gap-2 text-[10px]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterClinic((prev) => {
-                        const next = new Set(prev);
-                        for (const o of clinicOptionsFiltered) next.add(o);
-                        return Array.from(next);
-                      });
-                      setPage(1);
-                    }}
-                    className="rounded border border-flow-border bg-slate-50 px-2 py-0.5 text-flow-text hover:bg-brand-50"
+                  <input
+                    aria-labelledby="filterPttype-label"
+                    className="ui-input-sm"
+                    placeholder="ค้นหาในรายการ..."
+                    type="search"
+                    value={filterPttypeListQuery}
+                    onChange={(e) => setFilterPttypeListQuery(e.target.value)}
+                  />
+                  <div
+                    aria-labelledby="filterPttype-label"
+                    className="h-24 overflow-y-auto rounded-lg border border-flow-border bg-white px-2 py-1.5"
+                    role="group"
                   >
-                    เลือกทั้งหมด
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterClinic([]);
-                      setPage(1);
-                    }}
-                    className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
-                  >
-                    ไม่เลือกทั้งหมด
-                  </button>
-                </div>
-                <input
-                  type="search"
-                  value={filterClinicListQuery}
-                  onChange={(e) => setFilterClinicListQuery(e.target.value)}
-                  placeholder="ค้นหาในรายการ..."
-                  aria-label="ค้นหาคลินิกในรายการ"
-                  className="ui-input-sm"
-                />
-                <div className="h-24 overflow-y-auto rounded-lg border border-flow-border bg-white px-2 py-1.5">
-                  <div className="space-y-1">
-                    {clinicOptions.length === 0 ? (
-                      <p className="text-[10px] text-neutral-400">ไม่มีคลินิกในชุดข้อมูลนี้</p>
-                    ) : clinicOptionsFiltered.length === 0 ? (
-                      <p className="text-[10px] text-neutral-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
-                    ) : (
-                      clinicOptionsFiltered.map((opt) => (
-                        <label
-                          key={opt}
-                          className="inline-flex w-full cursor-pointer items-center gap-2 text-[11px] text-flow-text"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={filterClinic.includes(opt)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFilterClinic((prev) => [...prev, opt]);
-                              } else {
-                                setFilterClinic((prev) => prev.filter((item) => item !== opt));
-                              }
-                              setPage(1);
-                            }}
-                            className="ui-checkbox"
-                          />
-                          <span className="truncate">{opt}</span>
-                        </label>
-                      ))
-                    )}
+                    <div className="space-y-1">
+                      {pttypeOptions.length === 0 ? (
+                        <p className="text-[10px] text-neutral-400">ไม่มีชื่อสิทธิในชุดข้อมูลนี้</p>
+                      ) : pttypeOptionsFiltered.length === 0 ? (
+                        <p className="text-[10px] text-neutral-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
+                      ) : (
+                        pttypeOptionsFiltered.map((opt) => (
+                          <label
+                            key={opt}
+                            className="inline-flex w-full cursor-pointer items-center gap-2 text-[11px] text-flow-text"
+                          >
+                            <input
+                              checked={filterPttype.includes(opt)}
+                              className="ui-checkbox"
+                              type="checkbox"
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFilterPttype((prev) => [...prev, opt]);
+                                } else {
+                                  setFilterPttype((prev) => prev.filter((item) => item !== opt));
+                                }
+                                setPage(1);
+                              }}
+                            />
+                            <span className="truncate">{opt}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
                   </div>
+                  <p className="text-[10px] text-flow-muted">เลือกได้หลายรายการ</p>
                 </div>
-                <p className="text-[10px] text-flow-muted">เลือกได้หลายรายการ</p>
-              </div>
-              <div className="flex h-full flex-col gap-1">
-                <label className="text-[11px] font-medium text-flow-text" htmlFor="filterMedtype">
-                  ประเภทยา
-                </label>
-                <div className="flex items-center gap-2 text-[10px]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterMedtype((prev) => {
-                        const next = new Set(prev);
-                        for (const o of medtypeOptionsFiltered) next.add(o);
-                        return Array.from(next);
-                      });
-                      setPage(1);
-                    }}
-                    className="rounded border border-flow-border bg-slate-50 px-2 py-0.5 text-flow-text hover:bg-brand-50"
-                  >
-                    เลือกทั้งหมด
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterMedtype([]);
-                      setPage(1);
-                    }}
-                    className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
-                  >
-                    ไม่เลือกทั้งหมด
-                  </button>
-                </div>
-                <input
-                  type="search"
-                  value={filterMedtypeListQuery}
-                  onChange={(e) => setFilterMedtypeListQuery(e.target.value)}
-                  placeholder="ค้นหาในรายการ..."
-                  aria-label="ค้นหาประเภทยาในรายการ"
-                  className="ui-input-sm"
-                />
-                <div className="h-24 overflow-y-auto rounded-lg border border-flow-border bg-white px-2 py-1.5">
-                  <div className="space-y-1">
-                    {medtypeOptionsForUi.length === 0 ? (
-                      <p className="text-[10px] text-neutral-400">ไม่มีประเภทยาในชุดข้อมูลนี้</p>
-                    ) : medtypeOptionsFiltered.length === 0 ? (
-                      <p className="text-[10px] text-neutral-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
-                    ) : (
-                      medtypeOptionsFiltered.map((opt) => (
-                        <label
-                          key={opt}
-                          className="inline-flex w-full cursor-pointer items-center gap-2 text-[11px] text-flow-text"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={filterMedtype.includes(opt)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFilterMedtype((prev) => [...prev, opt]);
-                              } else {
-                                setFilterMedtype((prev) => prev.filter((item) => item !== opt));
-                              }
-                              setPage(1);
-                            }}
-                            className="ui-checkbox"
-                          />
-                          <span className="truncate">{opt}</span>
-                        </label>
-                      ))
-                    )}
+                <div className="flex h-full flex-col gap-1">
+                  <label className="text-[11px] font-medium text-flow-text" htmlFor="filterClinic">
+                    คลินิก
+                  </label>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button
+                      className="rounded border border-flow-border bg-slate-50 px-2 py-0.5 text-flow-text hover:bg-brand-50"
+                      type="button"
+                      onClick={() => {
+                        setFilterClinic((prev) => {
+                          const next = new Set(prev);
+
+                          for (const o of clinicOptionsFiltered) next.add(o);
+
+                          return Array.from(next);
+                        });
+                        setPage(1);
+                      }}
+                    >
+                      เลือกทั้งหมด
+                    </button>
+                    <button
+                      className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
+                      type="button"
+                      onClick={() => {
+                        setFilterClinic([]);
+                        setPage(1);
+                      }}
+                    >
+                      ไม่เลือกทั้งหมด
+                    </button>
                   </div>
-                </div>
-                <p className="text-[10px] text-flow-muted">เลือกได้หลายรายการ</p>
-              </div>
-              <div className="flex h-full flex-col gap-1">
-                <label className="text-[11px] font-medium text-flow-text">
-                  บัญชียาหลัก
-                </label>
-                <div className="flex items-center gap-2 text-[10px]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterAccnation((prev) => {
-                        const next = new Set(prev);
-                        for (const o of accnationOptionsFiltered) next.add(o);
-                        return Array.from(next);
-                      });
-                      setPage(1);
-                    }}
-                    className="rounded border border-flow-border bg-slate-50 px-2 py-0.5 text-flow-text hover:bg-brand-50"
-                  >
-                    เลือกทั้งหมด
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterAccnation([]);
-                      setPage(1);
-                    }}
-                    className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
-                  >
-                    ไม่เลือกทั้งหมด
-                  </button>
-                </div>
-                <input
-                  type="search"
-                  value={filterAccnationListQuery}
-                  onChange={(e) => setFilterAccnationListQuery(e.target.value)}
-                  placeholder="ค้นหาในรายการ..."
-                  aria-label="ค้นหาบัญชียาหลักในรายการ"
-                  className="ui-input-sm"
-                />
-                <div className="h-24 overflow-y-auto rounded-lg border border-flow-border bg-white px-2 py-1.5">
-                  <div className="space-y-1">
-                    {accnationOptionsForUi.length === 0 ? (
-                      <p className="text-[10px] text-neutral-400">ไม่มีบัญชียาหลักในชุดข้อมูลนี้</p>
-                    ) : accnationOptionsFiltered.length === 0 ? (
-                      <p className="text-[10px] text-neutral-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
-                    ) : (
-                      accnationOptionsFiltered.map((opt) => (
-                        <label
-                          key={opt}
-                          className="inline-flex w-full cursor-pointer items-center gap-2 text-[11px] text-flow-text"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={filterAccnation.includes(opt)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFilterAccnation((prev) => [...prev, opt]);
-                              } else {
-                                setFilterAccnation((prev) => prev.filter((item) => item !== opt));
-                              }
-                              setPage(1);
-                            }}
-                            className="ui-checkbox"
-                          />
-                          <span className="truncate">{opt}</span>
-                        </label>
-                      ))
-                    )}
+                  <input
+                    aria-label="ค้นหาคลินิกในรายการ"
+                    className="ui-input-sm"
+                    placeholder="ค้นหาในรายการ..."
+                    type="search"
+                    value={filterClinicListQuery}
+                    onChange={(e) => setFilterClinicListQuery(e.target.value)}
+                  />
+                  <div className="h-24 overflow-y-auto rounded-lg border border-flow-border bg-white px-2 py-1.5">
+                    <div className="space-y-1">
+                      {clinicOptions.length === 0 ? (
+                        <p className="text-[10px] text-neutral-400">ไม่มีคลินิกในชุดข้อมูลนี้</p>
+                      ) : clinicOptionsFiltered.length === 0 ? (
+                        <p className="text-[10px] text-neutral-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
+                      ) : (
+                        clinicOptionsFiltered.map((opt) => (
+                          <label
+                            key={opt}
+                            className="inline-flex w-full cursor-pointer items-center gap-2 text-[11px] text-flow-text"
+                          >
+                            <input
+                              checked={filterClinic.includes(opt)}
+                              className="ui-checkbox"
+                              type="checkbox"
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFilterClinic((prev) => [...prev, opt]);
+                                } else {
+                                  setFilterClinic((prev) => prev.filter((item) => item !== opt));
+                                }
+                                setPage(1);
+                              }}
+                            />
+                            <span className="truncate">{opt}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
                   </div>
+                  <p className="text-[10px] text-flow-muted">เลือกได้หลายรายการ</p>
                 </div>
-                <p className="text-[10px] text-flow-muted">เลือกได้หลายรายการ</p>
-              </div>
+                <div className="flex h-full flex-col gap-1">
+                  <label className="text-[11px] font-medium text-flow-text" htmlFor="filterMedtype">
+                    ประเภทยา
+                  </label>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button
+                      className="rounded border border-flow-border bg-slate-50 px-2 py-0.5 text-flow-text hover:bg-brand-50"
+                      type="button"
+                      onClick={() => {
+                        setFilterMedtype((prev) => {
+                          const next = new Set(prev);
+
+                          for (const o of medtypeOptionsFiltered) next.add(o);
+
+                          return Array.from(next);
+                        });
+                        setPage(1);
+                      }}
+                    >
+                      เลือกทั้งหมด
+                    </button>
+                    <button
+                      className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
+                      type="button"
+                      onClick={() => {
+                        setFilterMedtype([]);
+                        setPage(1);
+                      }}
+                    >
+                      ไม่เลือกทั้งหมด
+                    </button>
+                  </div>
+                  <input
+                    aria-label="ค้นหาประเภทยาในรายการ"
+                    className="ui-input-sm"
+                    placeholder="ค้นหาในรายการ..."
+                    type="search"
+                    value={filterMedtypeListQuery}
+                    onChange={(e) => setFilterMedtypeListQuery(e.target.value)}
+                  />
+                  <div className="h-24 overflow-y-auto rounded-lg border border-flow-border bg-white px-2 py-1.5">
+                    <div className="space-y-1">
+                      {medtypeOptionsForUi.length === 0 ? (
+                        <p className="text-[10px] text-neutral-400">ไม่มีประเภทยาในชุดข้อมูลนี้</p>
+                      ) : medtypeOptionsFiltered.length === 0 ? (
+                        <p className="text-[10px] text-neutral-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
+                      ) : (
+                        medtypeOptionsFiltered.map((opt) => (
+                          <label
+                            key={opt}
+                            className="inline-flex w-full cursor-pointer items-center gap-2 text-[11px] text-flow-text"
+                          >
+                            <input
+                              checked={filterMedtype.includes(opt)}
+                              className="ui-checkbox"
+                              type="checkbox"
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFilterMedtype((prev) => [...prev, opt]);
+                                } else {
+                                  setFilterMedtype((prev) => prev.filter((item) => item !== opt));
+                                }
+                                setPage(1);
+                              }}
+                            />
+                            <span className="truncate">{opt}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-flow-muted">เลือกได้หลายรายการ</p>
+                </div>
+                <div className="flex h-full flex-col gap-1">
+                  <label className="text-[11px] font-medium text-flow-text">บัญชียาหลัก</label>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button
+                      className="rounded border border-flow-border bg-slate-50 px-2 py-0.5 text-flow-text hover:bg-brand-50"
+                      type="button"
+                      onClick={() => {
+                        setFilterAccnation((prev) => {
+                          const next = new Set(prev);
+
+                          for (const o of accnationOptionsFiltered) next.add(o);
+
+                          return Array.from(next);
+                        });
+                        setPage(1);
+                      }}
+                    >
+                      เลือกทั้งหมด
+                    </button>
+                    <button
+                      className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
+                      type="button"
+                      onClick={() => {
+                        setFilterAccnation([]);
+                        setPage(1);
+                      }}
+                    >
+                      ไม่เลือกทั้งหมด
+                    </button>
+                  </div>
+                  <input
+                    aria-label="ค้นหาบัญชียาหลักในรายการ"
+                    className="ui-input-sm"
+                    placeholder="ค้นหาในรายการ..."
+                    type="search"
+                    value={filterAccnationListQuery}
+                    onChange={(e) => setFilterAccnationListQuery(e.target.value)}
+                  />
+                  <div className="h-24 overflow-y-auto rounded-lg border border-flow-border bg-white px-2 py-1.5">
+                    <div className="space-y-1">
+                      {accnationOptionsForUi.length === 0 ? (
+                        <p className="text-[10px] text-neutral-400">
+                          ไม่มีบัญชียาหลักในชุดข้อมูลนี้
+                        </p>
+                      ) : accnationOptionsFiltered.length === 0 ? (
+                        <p className="text-[10px] text-neutral-400">ไม่พบรายการที่ตรงกับการค้นหา</p>
+                      ) : (
+                        accnationOptionsFiltered.map((opt) => (
+                          <label
+                            key={opt}
+                            className="inline-flex w-full cursor-pointer items-center gap-2 text-[11px] text-flow-text"
+                          >
+                            <input
+                              checked={filterAccnation.includes(opt)}
+                              className="ui-checkbox"
+                              type="checkbox"
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFilterAccnation((prev) => [...prev, opt]);
+                                } else {
+                                  setFilterAccnation((prev) => prev.filter((item) => item !== opt));
+                                }
+                                setPage(1);
+                              }}
+                            />
+                            <span className="truncate">{opt}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-flow-muted">เลือกได้หลายรายการ</p>
+                </div>
               </div>
 
               {activeTab === "detail" && (
@@ -1475,47 +1553,53 @@ export default function DrugCostSummaryPage() {
                       HN
                     </label>
                     <input
+                      className="ui-input text-xs py-1.5 px-2"
                       id="filterHn"
+                      placeholder="เช่น 1666/69 หรือ 69001666"
                       type="text"
                       value={filterHn}
                       onChange={(e) => {
                         setFilterHn(e.target.value);
                         setPage(1);
                       }}
-                      className="ui-input text-xs py-1.5 px-2"
-                      placeholder="เช่น 1666/69 หรือ 69001666"
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium text-flow-text" htmlFor="filterMeditem">
+                    <label
+                      className="text-[11px] font-medium text-flow-text"
+                      htmlFor="filterMeditem"
+                    >
                       รหัสยา (มีส่วนของข้อความ)
                     </label>
                     <input
+                      className="ui-input text-xs py-1.5 px-2"
                       id="filterMeditem"
+                      placeholder="เช่น 5010"
                       type="text"
                       value={filterMeditem}
                       onChange={(e) => {
                         setFilterMeditem(e.target.value);
                         setPage(1);
                       }}
-                      className="ui-input text-xs py-1.5 px-2"
-                      placeholder="เช่น 5010"
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium text-flow-text" htmlFor="filterDrugName">
+                    <label
+                      className="text-[11px] font-medium text-flow-text"
+                      htmlFor="filterDrugName"
+                    >
                       ชื่อยา (มีส่วนของข้อความ)
                     </label>
                     <input
+                      className="ui-input text-xs py-1.5 px-2"
                       id="filterDrugName"
+                      placeholder="ค้นหาชื่อยา"
                       type="text"
                       value={filterDrugName}
                       onChange={(e) => {
                         setFilterDrugName(e.target.value);
                         setPage(1);
                       }}
-                      className="ui-input text-xs py-1.5 px-2"
-                      placeholder="ค้นหาชื่อยา"
                     />
                   </div>
                 </div>
@@ -1525,87 +1609,88 @@ export default function DrugCostSummaryPage() {
               <div className="flex flex-wrap items-center gap-4">
                 <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-flow-text">
                   <input
-                    type="checkbox"
                     checked={filterNegativeProfitOnly}
+                    className="ui-checkbox"
+                    type="checkbox"
                     onChange={(e) => {
                       setFilterNegativeProfitOnly(e.target.checked);
                       setPage(1);
                     }}
-                    className="ui-checkbox"
                   />
                   แสดงเฉพาะรายการที่กำไรรวมติดลบ
                 </label>
                 <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-flow-text">
                   <input
-                    type="checkbox"
                     checked={excludeZeroSale}
+                    className="ui-checkbox"
+                    type="checkbox"
                     onChange={(e) => {
                       setExcludeZeroSale(e.target.checked);
                       setPage(1);
                     }}
-                    className="ui-checkbox"
                   />
                   ไม่แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
                 </label>
                 <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-flow-text">
                   <input
-                    type="checkbox"
                     checked={excludeNegativeProfit}
+                    className="ui-checkbox"
+                    type="checkbox"
                     onChange={(e) => {
                       setExcludeNegativeProfit(e.target.checked);
                       setPage(1);
                     }}
-                    className="ui-checkbox"
                   />
                   ไม่แสดงเฉพาะรายการที่กำไรรวมติดลบ
                 </label>
                 <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-flow-text">
                   <input
-                    type="checkbox"
                     checked={filterZeroSaleOnly}
+                    className="ui-checkbox"
+                    type="checkbox"
                     onChange={(e) => {
                       setFilterZeroSaleOnly(e.target.checked);
                       setPage(1);
                     }}
-                    className="ui-checkbox"
                   />
                   แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
                 </label>
               </div>
               <button
+                className="rounded-lg border border-flow-border bg-flow-input px-3 py-1.5 text-xs font-medium text-flow-text hover:bg-brand-50"
                 type="button"
                 onClick={clearFilters}
-                className="rounded-lg border border-flow-border bg-flow-input px-3 py-1.5 text-xs font-medium text-flow-text hover:bg-brand-50"
               >
                 ล้างฟิลเตอร์
               </button>
             </div>
-            {activeTab === "detail" && (filterHn ||
-              filterClinic.length > 0 ||
-              filterPttype.length > 0 ||
-              filterMeditem ||
-              filterDrugName ||
-              filterMedtype.length > 0 ||
-              filterAccnation.length > 0 ||
-              filterZeroSaleOnly ||
-              filterNegativeProfitOnly ||
-              excludeZeroSale ||
-              excludeNegativeProfit) && (
-              <p className="mt-2 text-[11px] text-flow-muted">
-                แสดง {filteredRows.length.toLocaleString("th-TH")} จาก {rows.length.toLocaleString("th-TH")}{" "}
-                รายการ 
-              </p>
-            )}
+            {activeTab === "detail" &&
+              (filterHn ||
+                filterClinic.length > 0 ||
+                filterPttype.length > 0 ||
+                filterMeditem ||
+                filterDrugName ||
+                filterMedtype.length > 0 ||
+                filterAccnation.length > 0 ||
+                filterZeroSaleOnly ||
+                filterNegativeProfitOnly ||
+                excludeZeroSale ||
+                excludeNegativeProfit) && (
+                <p className="mt-2 text-[11px] text-flow-muted">
+                  แสดง {filteredRows.length.toLocaleString("th-TH")} จาก{" "}
+                  {rows.length.toLocaleString("th-TH")} รายการ
+                </p>
+              )}
             {activeTab === "period" &&
               (filterZeroSaleOnly ||
                 filterNegativeProfitOnly ||
                 excludeZeroSale ||
                 excludeNegativeProfit) && (
-              <p className="mt-2 text-[11px] text-flow-muted">
-                แสดง {filteredPeriodRows.length.toLocaleString("th-TH")} จาก{" "}
-                {periodRows.length.toLocaleString("th-TH")} ช่วงเวลา
-              </p>
-            )}
+                <p className="mt-2 text-[11px] text-flow-muted">
+                  แสดง {filteredPeriodRows.length.toLocaleString("th-TH")} จาก{" "}
+                  {periodRows.length.toLocaleString("th-TH")} ช่วงเวลา
+                </p>
+              )}
           </section>
         )}
 
@@ -1668,7 +1753,9 @@ export default function DrugCostSummaryPage() {
             >
               <p
                 className={
-                  totals.profit >= 0 ? "text-[11px] font-medium text-brand-600" : "text-[11px] font-medium text-rose-700"
+                  totals.profit >= 0
+                    ? "text-[11px] font-medium text-brand-600"
+                    : "text-[11px] font-medium text-rose-700"
                 }
               >
                 กำไรรวม (sale - cost)
@@ -1756,6 +1843,9 @@ export default function DrugCostSummaryPage() {
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-flow-text">
               ผลลัพธ์การค้นหา{" "}
+              <span className="font-normal text-flow-muted">
+                ({visitType === "opd" ? "OPD" : "IPD"})
+              </span>{" "}
               {activeTab === "detail" && rows.length > 0
                 ? `(${filteredRows.length} แถว, หน้า ${currentPage}/${totalPages})`
                 : activeTab === "period" && periodRows.length > 0
@@ -1765,27 +1855,27 @@ export default function DrugCostSummaryPage() {
             {activeTab === "detail" && rows.length > 0 && (
               <div className="flex items-center gap-3 text-[11px] text-flow-muted">
                 <p>
-                  ช่วงวันที่{" "}
-                  {isoToThaiDisplay(dateFrom)} – {isoToThaiDisplay(dateTo)}
+                  ช่วงวันที่ {isoToThaiDisplay(dateFrom)} – {isoToThaiDisplay(dateTo)}
                 </p>
                 <button
+                  className="rounded border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={exporting || sortedRows.length === 0}
                   type="button"
                   onClick={handleExportExcel}
-                  disabled={exporting || sortedRows.length === 0}
-                  className="rounded border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {exporting ? "กำลัง Export..." : "Export Excel"}
                 </button>
                 <div className="flex items-center gap-1">
                   <span>แสดงต่อหน้า:</span>
                   <select
+                    className="rounded border border-flow-border bg-white px-1 py-0.5 text-[11px] text-flow-text focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
                     value={pageSize}
                     onChange={(event) => {
                       const newSize = Number(event.target.value) || 20;
+
                       setPageSize(newSize);
                       setPage(1);
                     }}
-                    className="rounded border border-flow-border bg-white px-1 py-0.5 text-[11px] text-flow-text focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
                   >
                     <option value={20}>20</option>
                     <option value={50}>50</option>
@@ -1803,10 +1893,10 @@ export default function DrugCostSummaryPage() {
                   {isoToThaiDisplay(monthsIsoToDateRange(periodMonths).d2)})
                 </p>
                 <button
+                  className="rounded border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={exporting || filteredPeriodRows.length === 0}
                   type="button"
                   onClick={handleExportPeriodExcel}
-                  disabled={exporting || filteredPeriodRows.length === 0}
-                  className="rounded border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {exporting ? "กำลัง Export..." : "Export Excel"}
                 </button>
@@ -1822,15 +1912,19 @@ export default function DrugCostSummaryPage() {
 
           {activeTab === "period" && periodRows.length === 0 && !loading && !error && (
             <p className="text-xs md:text-sm text-flow-muted">
-              ยังไม่มีข้อมูลสรุปแสดง กรุณาเลือกเดือน (เลือกได้หลายเดือน) แล้วกด &quot;ค้นหาข้อมูล&quot;
+              ยังไม่มีข้อมูลสรุปแสดง กรุณาเลือกเดือน (เลือกได้หลายเดือน) แล้วกด
+              &quot;ค้นหาข้อมูล&quot;
             </p>
           )}
 
-          {activeTab === "period" && periodRows.length > 0 && filteredPeriodRows.length === 0 && !loading && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs md:text-sm text-amber-900">
-              ไม่มีช่วงเวลาที่ตรงกับฟิลเตอร์ กรุณาปรับเงื่อนไขหรือกด &quot;ล้างฟิลเตอร์&quot;
-            </p>
-          )}
+          {activeTab === "period" &&
+            periodRows.length > 0 &&
+            filteredPeriodRows.length === 0 &&
+            !loading && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs md:text-sm text-amber-900">
+                ไม่มีช่วงเวลาที่ตรงกับฟิลเตอร์ กรุณาปรับเงื่อนไขหรือกด &quot;ล้างฟิลเตอร์&quot;
+              </p>
+            )}
 
           {rows.length > 0 && filteredRows.length === 0 && !loading && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs md:text-sm text-amber-900">
@@ -1847,72 +1941,111 @@ export default function DrugCostSummaryPage() {
                       NO.
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort("HN")} className="text-white hover:text-brand-200">
+                      <button
+                        className="text-white hover:text-brand-200"
+                        type="button"
+                        onClick={() => toggleSort("HN")}
+                      >
                         HN {sortMark("HN")}
                       </button>
                     </th>
+                    {showAnColumn && (
+                      <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
+                        <button
+                          className="text-white hover:text-brand-200"
+                          type="button"
+                          onClick={() => toggleSort("AN")}
+                        >
+                          AN {sortMark("AN")}
+                        </button>
+                      </th>
+                    )}
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort("PTTYPE")} className="text-white hover:text-brand-200">
+                      <button
+                        className="text-white hover:text-brand-200"
+                        type="button"
+                        onClick={() => toggleSort("PTTYPE")}
+                      >
                         สิทธิการรักษา {sortMark("PTTYPE")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort("CLINIC")} className="text-white hover:text-brand-200">
+                      <button
+                        className="text-white hover:text-brand-200"
+                        type="button"
+                        onClick={() => toggleSort("CLINIC")}
+                      >
                         คลินิก {sortMark("CLINIC")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort("MEDITEM")} className="text-white hover:text-brand-200">
+                      <button
+                        className="text-white hover:text-brand-200"
+                        type="button"
+                        onClick={() => toggleSort("MEDITEM")}
+                      >
                         รหัสยา {sortMark("MEDITEM")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort("DRUG_NAME")} className="text-white hover:text-brand-200">
+                      <button
+                        className="text-white hover:text-brand-200"
+                        type="button"
+                        onClick={() => toggleSort("DRUG_NAME")}
+                      >
                         ชื่อยา {sortMark("DRUG_NAME")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort("MEDTYPE")} className="text-white hover:text-brand-200">
+                      <button
+                        className="text-white hover:text-brand-200"
+                        type="button"
+                        onClick={() => toggleSort("MEDTYPE")}
+                      >
                         ประเภทยา {sortMark("MEDTYPE")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort("ACCNATION")} className="text-white hover:text-brand-200">
+                      <button
+                        className="text-white hover:text-brand-200"
+                        type="button"
+                        onClick={() => toggleSort("ACCNATION")}
+                      >
                         บัญชียาหลัก {sortMark("ACCNATION")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
                       <button
+                        className="text-white hover:text-brand-200"
                         type="button"
                         onClick={() => toggleSort("TOTAL_QTY")}
-                        className="text-white hover:text-brand-200"
                       >
                         จำนวนรวม {sortMark("TOTAL_QTY")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
                       <button
+                        className="text-white hover:text-brand-200"
                         type="button"
                         onClick={() => toggleSort("TOTAL_COST")}
-                        className="text-white hover:text-brand-200"
                       >
                         ต้นทุนรวม {sortMark("TOTAL_COST")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
                       <button
+                        className="text-white hover:text-brand-200"
                         type="button"
                         onClick={() => toggleSort("TOTAL_SALE")}
-                        className="text-white hover:text-brand-200"
                       >
                         มูลค่าขายรวม {sortMark("TOTAL_SALE")}
                       </button>
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
                       <button
+                        className="text-white hover:text-brand-200"
                         type="button"
                         onClick={() => toggleSort("TOTAL_PROFIT")}
-                        className="text-white hover:text-brand-200"
                       >
                         กำไรรวม {sortMark("TOTAL_PROFIT")}
                       </button>
@@ -1922,7 +2055,7 @@ export default function DrugCostSummaryPage() {
                 <tbody>
                   {pagedRows.map((row, index) => (
                     <tr
-                      key={`${row.HN}-${row.MEDITEM}-${String(row.PTTYPE_NAME ?? "")}-${startIndex + index}`}
+                      key={`${row.HN}-${String(row.AN ?? "")}-${row.MEDITEM}-${String(row.PTTYPE_NAME ?? "")}-${startIndex + index}`}
                       className={`border-b border-slate-100 hover:bg-flow-input ${
                         Number(row.TOTAL_PROFIT ?? 0) < 0 ? "text-brand-700" : ""
                       }`}
@@ -1933,7 +2066,18 @@ export default function DrugCostSummaryPage() {
                       <td className="px-3 py-2 text-flow-text whitespace-nowrap">
                         {formatHnDisplay(row.HN)}
                       </td>
-                      <td className="px-3 py-2 text-flow-text whitespace-nowrap max-w-[14rem] truncate" title={row.PTTYPE_NAME ?? undefined}>
+                      {showAnColumn && (
+                        <td
+                          className="px-3 py-2 text-flow-text whitespace-nowrap"
+                          title={row.WARD_NAME ? `หอผู้ป่วย: ${row.WARD_NAME}` : undefined}
+                        >
+                          {row.AN ? formatHnDisplay(row.AN) : "—"}
+                        </td>
+                      )}
+                      <td
+                        className="px-3 py-2 text-flow-text whitespace-nowrap max-w-[14rem] truncate"
+                        title={row.PTTYPE_NAME ?? undefined}
+                      >
                         {row.PTTYPE_NAME ?? "—"}
                       </td>
                       <td className="px-3 py-2 text-flow-text whitespace-nowrap">
@@ -1985,10 +2129,10 @@ export default function DrugCostSummaryPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  type="button"
-                  disabled={currentPage <= 1}
-                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                   className="rounded border border-flow-border bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-flow-input"
+                  disabled={currentPage <= 1}
+                  type="button"
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 >
                   ก่อนหน้า
                 </button>
@@ -1996,10 +2140,10 @@ export default function DrugCostSummaryPage() {
                   หน้า {currentPage} / {totalPages}
                 </span>
                 <button
-                  type="button"
-                  disabled={currentPage >= totalPages}
-                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                   className="rounded border border-flow-border bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-flow-input"
+                  disabled={currentPage >= totalPages}
+                  type="button"
+                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 >
                   ถัดไป
                 </button>
@@ -2016,10 +2160,11 @@ export default function DrugCostSummaryPage() {
                       NO.
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap">
-                      เดือน ปี 
+                      เดือน ปี
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
-                      จำนวนรวม ({Number(periodUniqueItemCount ?? 0).toLocaleString("th-TH")} รายการยา)
+                      จำนวนรวม ({Number(periodUniqueItemCount ?? 0).toLocaleString("th-TH")}{" "}
+                      รายการยา)
                     </th>
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
                       ต้นทุนรวม
@@ -2034,10 +2179,18 @@ export default function DrugCostSummaryPage() {
                 </thead>
                 <tbody>
                   {filteredPeriodRows.map((row, index) => (
-                    <tr key={row.PERIOD_KEY} className="border-b border-slate-100 hover:bg-flow-input">
-                      <td className="px-3 py-2 text-flow-text whitespace-nowrap text-right">{index + 1}</td>
+                    <tr
+                      key={row.PERIOD_KEY}
+                      className="border-b border-slate-100 hover:bg-flow-input"
+                    >
+                      <td className="px-3 py-2 text-flow-text whitespace-nowrap text-right">
+                        {index + 1}
+                      </td>
                       <td className="px-3 py-2 text-flow-text whitespace-nowrap">
-                        {formatPeriodLabelThai(String(row.PERIOD_KEY ?? row.PERIOD_LABEL ?? ""), "month")}
+                        {formatPeriodLabelThai(
+                          String(row.PERIOD_KEY ?? row.PERIOD_LABEL ?? ""),
+                          "month"
+                        )}
                       </td>
                       <td className="px-3 py-2 text-flow-text whitespace-nowrap text-right">
                         {Number(row.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
@@ -2065,7 +2218,10 @@ export default function DrugCostSummaryPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-flow-border bg-slate-50 font-semibold">
-                    <td className="px-3 py-2 text-flow-text whitespace-nowrap text-right" colSpan={2}>
+                    <td
+                      className="px-3 py-2 text-flow-text whitespace-nowrap text-right"
+                      colSpan={2}
+                    >
                       รวมทั้งหมด
                     </td>
                     <td className="px-3 py-2 text-flow-text whitespace-nowrap text-right">
@@ -2099,11 +2255,14 @@ export default function DrugCostSummaryPage() {
         <section className="mt-4 text-[11px] md:text-xs text-flow-muted">
           <p>
             เวอร์ชันระบบต้นแบบ: {siteConfig.version} — API:{" "}
-            <code>{activeTab === "period" ? "/api/db/drug-cost-summary-period" : "/api/db/drug-cost-summary"}</code>
+            <code>
+              {activeTab === "period"
+                ? "/api/db/drug-cost-summary-period"
+                : "/api/db/drug-cost-summary"}
+            </code>
           </p>
         </section>
       </main>
     </div>
   );
 }
-

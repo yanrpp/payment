@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
+import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
+import { buildVisitTypeWhereSql } from "@/lib/db/visitTypeSql";
 
 type OptionRow = { VALUE: string | null };
 
@@ -39,6 +41,7 @@ export default async function handler(
   }
 
   const { d1, d2, opd, ipd } = req.query;
+
   if (!d1 || !d2 || typeof d1 !== "string" || typeof d2 !== "string") {
     return res.status(400).json({
       success: false,
@@ -46,8 +49,10 @@ export default async function handler(
     });
   }
 
-  const includeOpd = opd == null ? true : String(opd) === "1" || String(opd).toLowerCase() === "true";
-  const includeIpd = ipd == null ? false : String(ipd) === "1" || String(ipd).toLowerCase() === "true";
+  const includeOpd =
+    opd == null ? true : String(opd) === "1" || String(opd).toLowerCase() === "true";
+  const includeIpd =
+    ipd == null ? false : String(ipd) === "1" || String(ipd).toLowerCase() === "true";
 
   if (!includeOpd && !includeIpd) {
     return res.status(400).json({
@@ -56,19 +61,20 @@ export default async function handler(
     });
   }
 
-  const whereVisitTypeSql =
-    includeOpd && includeIpd
-      ? ""
-      : includeOpd
-        ? "\n      AND ov.an IS NULL"
-        : "\n      AND ov.an IS NOT NULL";
+  const whereVisitTypeSql = buildVisitTypeWhereSql(includeOpd, includeIpd);
 
   const params = { d1, d2 };
 
   const sqlPttype = `
     SELECT DISTINCT pt.name AS VALUE
-    FROM pttype pt
-    WHERE pt.name IS NOT NULL
+    FROM prsc p
+    INNER JOIN prscdt d ON p.prscno = d.prscno
+    INNER JOIN ovst ov ON ov.vn = p.vn
+    LEFT JOIN pttype pt ON pt.pttype = p.pttype
+    WHERE p.prscdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+      ${whereVisitTypeSql}
+      AND ov.canceldate IS NULL
+      AND pt.name IS NOT NULL
     ORDER BY pt.name
   `;
 
@@ -115,7 +121,7 @@ export default async function handler(
 
   try {
     const [pttypeResult, clinicResult, medtypeResult, accnationResult] = await Promise.all([
-      executeQuery<OptionRow>(sqlPttype, {}),
+      executeQuery<OptionRow>(sqlPttype, params),
       executeQuery<OptionRow>(sqlClinic, params),
       executeQuery<OptionRow>(sqlMedtype, params),
       executeQuery<OptionRow>(sqlAccnation, params),
@@ -131,11 +137,6 @@ export default async function handler(
       },
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return res.status(500).json({
-      success: false,
-      message: "ไม่สามารถดึงตัวเลือกฟิลเตอร์ได้",
-      error: errorMessage,
-    });
+    return respondError(res, "ไม่สามารถดึงตัวเลือกฟิลเตอร์ได้", error);
   }
 }

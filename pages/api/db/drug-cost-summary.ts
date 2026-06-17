@@ -1,9 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
+import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
+import { buildVisitTypeWhereSql, sqlCoalesceAn } from "@/lib/db/visitTypeSql";
 
 type DrugCostSummaryRow = {
   HN: string;
+  AN: string | null;
+  WARD_NAME: string | null;
   VISIT_KEY: string;
   /** ชื่อสิทธิจาก pttype.name (ผูกจาก prsc.pttype) */
   PTTYPE_NAME: string | null;
@@ -52,8 +56,10 @@ export default async function handler(
     });
   }
 
-  const includeOpd = opd == null ? true : String(opd) === "1" || String(opd).toLowerCase() === "true";
-  const includeIpd = ipd == null ? false : String(ipd) === "1" || String(ipd).toLowerCase() === "true";
+  const includeOpd =
+    opd == null ? true : String(opd) === "1" || String(opd).toLowerCase() === "true";
+  const includeIpd =
+    ipd == null ? false : String(ipd) === "1" || String(ipd).toLowerCase() === "true";
 
   if (!includeOpd && !includeIpd) {
     return res.status(400).json({
@@ -62,21 +68,22 @@ export default async function handler(
     });
   }
 
-  const whereVisitTypeSql =
-    includeOpd && includeIpd
-      ? ""
-      : includeOpd
-        ? "\n        AND ov.an IS NULL"
-        : "\n        AND ov.an IS NOT NULL";
+  const whereVisitTypeSql = buildVisitTypeWhereSql(includeOpd, includeIpd);
+  const anExpr = sqlCoalesceAn();
 
   const sql = `
     WITH base AS (
       SELECT
         p.hn                                AS HN,
-        COALESCE(
-          NULLIF(TRIM(p.vn), ''),
-          p.hn || ':' || TO_CHAR(TRUNC(p.prscdate), 'YYYYMMDD') || ':' || TO_CHAR(p.prscno)
-        )                                   AS VISIT_KEY,
+        ${anExpr}                           AS AN,
+        CASE
+          WHEN ${anExpr} IS NOT NULL THEN
+            ${anExpr} || ':' || COALESCE(NULLIF(TRIM(p.vn), ''), TO_CHAR(p.prscno))
+          ELSE COALESCE(
+            NULLIF(TRIM(p.vn), ''),
+            p.hn || ':' || TO_CHAR(TRUNC(p.prscdate), 'YYYYMMDD') || ':' || TO_CHAR(p.prscno)
+          )
+        END                                 AS VISIT_KEY,
         d.sphmlct                           AS CLINIC_LCT,
         lct.name                            AS CLINIC_LCT_NAME,
         m.meditem                           AS MEDITEM,
@@ -84,6 +91,7 @@ export default async function handler(
         a.name                              AS ACCNATION,
         m.medname                           AS DRUG_NAME,
         d.qty                               AS QTY,
+        CAST(NULL AS VARCHAR2(255))         AS WARD_NAME,
         COALESCE(
           NULLIF(
             (
@@ -128,6 +136,8 @@ export default async function handler(
     )
     SELECT
       HN,
+      AN,
+      WARD_NAME,
       VISIT_KEY,
       PTTYPE_NAME,
       CLINIC_LCT,
@@ -143,6 +153,8 @@ export default async function handler(
     FROM base
     GROUP BY
       HN,
+      AN,
+      WARD_NAME,
       VISIT_KEY,
       PTTYPE_NAME,
       CLINIC_LCT,
@@ -180,12 +192,6 @@ export default async function handler(
       data: rows,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    return res.status(500).json({
-      success: false,
-      message: "ไม่สามารถดึงข้อมูลสรุปต้นทุนยาได้",
-      error: errorMessage,
-    });
+    return respondError(res, "ไม่สามารถดึงข้อมูลสรุปต้นทุนยาได้", error);
   }
 }

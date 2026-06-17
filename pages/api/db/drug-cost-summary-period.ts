@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
+import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
+import { buildVisitTypeWhereSql } from "@/lib/db/visitTypeSql";
 
 type GroupBy = "month" | "year";
 
@@ -44,6 +46,7 @@ type PeriodRequestPayload = {
 function parsePipeList(value: string | string[] | undefined): string[] {
   if (!value) return [];
   const raw = Array.isArray(value) ? value.join("|") : value;
+
   return raw
     .split("|")
     .map((v) => v.trim())
@@ -62,7 +65,9 @@ export default async function handler(
   }
 
   const source: PeriodRequestPayload =
-    req.method === "POST" ? ((req.body ?? {}) as PeriodRequestPayload) : ((req.query ?? {}) as PeriodRequestPayload);
+    req.method === "POST"
+      ? ((req.body ?? {}) as PeriodRequestPayload)
+      : ((req.query ?? {}) as PeriodRequestPayload);
 
   const { d1, d2, groupBy, opd, ipd, pttype, clinic, medtype, accnation } = source;
 
@@ -73,8 +78,10 @@ export default async function handler(
     });
   }
 
-  const includeOpd = opd == null ? true : String(opd) === "1" || String(opd).toLowerCase() === "true";
-  const includeIpd = ipd == null ? false : String(ipd) === "1" || String(ipd).toLowerCase() === "true";
+  const includeOpd =
+    opd == null ? true : String(opd) === "1" || String(opd).toLowerCase() === "true";
+  const includeIpd =
+    ipd == null ? false : String(ipd) === "1" || String(ipd).toLowerCase() === "true";
 
   if (!includeOpd && !includeIpd) {
     return res.status(400).json({
@@ -83,16 +90,13 @@ export default async function handler(
     });
   }
 
-  const whereVisitTypeSql =
-    includeOpd && includeIpd
-      ? ""
-      : includeOpd
-        ? "\n        AND ov.an IS NULL"
-        : "\n        AND ov.an IS NOT NULL";
+  const whereVisitTypeSql = buildVisitTypeWhereSql(includeOpd, includeIpd);
 
   const groupByValue: GroupBy = groupBy === "year" ? "year" : "month";
   const periodExpr =
-    groupByValue === "year" ? "TO_CHAR(TRUNC(p.prscdate), 'YYYY')" : "TO_CHAR(TRUNC(p.prscdate), 'YYYY-MM')";
+    groupByValue === "year"
+      ? "TO_CHAR(TRUNC(p.prscdate), 'YYYY')"
+      : "TO_CHAR(TRUNC(p.prscdate), 'YYYY-MM')";
   const pttypeList = parsePipeList(pttype);
   const clinicList = parsePipeList(clinic);
   const medtypeList = parsePipeList(medtype);
@@ -105,9 +109,12 @@ export default async function handler(
     if (values.length === 0) return;
     const bindNames = values.map((value, idx) => {
       const name = `${prefix}${idx}`;
+
       params[name] = value;
+
       return `:${name}`;
     });
+
     whereParts.push(`${columnSql} IN (${bindNames.join(", ")})`);
   };
 
@@ -115,7 +122,8 @@ export default async function handler(
   bindList(clinicList, "clinic", "lct.name");
   bindList(medtypeList, "medtype", "t.name");
   bindList(accnationList, "accnation", "a.name");
-  const whereFiltersSql = whereParts.length > 0 ? `\n      AND ${whereParts.join("\n      AND ")}` : "";
+  const whereFiltersSql =
+    whereParts.length > 0 ? `\n      AND ${whereParts.join("\n      AND ")}` : "";
 
   /*
    * ใช้สูตรเดียวกับ API รายละเอียด (/api/db/drug-cost-summary)
@@ -212,12 +220,6 @@ export default async function handler(
       data: rows,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    return res.status(500).json({
-      success: false,
-      message: "ไม่สามารถดึงข้อมูลสรุปต้นทุนยาแบบรายช่วงเวลาได้",
-      error: errorMessage,
-    });
+    return respondError(res, "ไม่สามารถดึงข้อมูลสรุปต้นทุนยาแบบรายช่วงเวลาได้", error);
   }
 }
