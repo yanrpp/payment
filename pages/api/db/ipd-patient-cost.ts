@@ -27,7 +27,7 @@ export default async function handler(
 ) {
   if (req.method !== "GET")
     return res.status(405).json({ success: false, message: "Method not allowed" });
-  const { d1, d2, hn, cardno } = req.query;
+  const { d1, d2, hn, cardno, an } = req.query;
 
   if (!d1 || !d2 || typeof d1 !== "string" || typeof d2 !== "string") {
     return res
@@ -37,8 +37,11 @@ export default async function handler(
 
   const hnValue = typeof hn === "string" && hn.trim() !== "" ? hn.trim() : null;
   const cardnoValue = typeof cardno === "string" && cardno.trim() !== "" ? cardno.trim() : null;
+  const anValue = typeof an === "string" && an.trim() !== "" ? an.trim() : null;
   const whereHn = hnValue != null ? " AND ipt.hn = :hn" : "";
   const whereCardno = cardnoValue != null ? " AND ptno.cardno = :cardno" : "";
+  // ค้นหา AN แบบมีส่วนของข้อความ (รองรับพิมพ์เลข AN บางส่วน)
+  const whereAn = anValue != null ? " AND TO_CHAR(ipt.an) LIKE :an" : "";
 
   const unitCost = sqlUnitCost("m", "d", "p");
   const unitSale = sqlUnitSale("m", "d", "p");
@@ -68,6 +71,7 @@ export default async function handler(
       WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
         ${whereHn}
         ${whereCardno}
+        ${whereAn}
     )
     SELECT
       AN,
@@ -95,6 +99,7 @@ export default async function handler(
 
   if (hnValue != null) params.hn = hnValue;
   if (cardnoValue != null) params.cardno = cardnoValue;
+  if (anValue != null) params.an = `%${anValue}%`;
 
   try {
     const result = await executeQuery<PatientCostRow>(sql, params);

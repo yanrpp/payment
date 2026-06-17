@@ -252,6 +252,7 @@ export default function DrugCostSummaryPage() {
   /** ฟิลเตอร์หลังโหลดข้อมูล (กรองฝั่ง client) */
   const [filterMeditem, setFilterMeditem] = useState("");
   const [filterHn, setFilterHn] = useState("");
+  const [filterAn, setFilterAn] = useState("");
   const [filterClinic, setFilterClinic] = useState<string[]>([]);
   const [filterPttype, setFilterPttype] = useState<string[]>([]);
   const [filterDrugName, setFilterDrugName] = useState("");
@@ -617,12 +618,21 @@ export default function DrugCostSummaryPage() {
 
   const filteredRows = useMemo(() => {
     const h = filterHn.trim();
+    const an = filterAn.trim().toLowerCase();
     const m = filterMeditem.trim().toLowerCase();
     const d = filterDrugName.trim().toLowerCase();
 
     return rows.filter((r) => {
       if (!matchesHnFilter(r.HN, h)) {
         return false;
+      }
+      if (an) {
+        const rawAn = String(r.AN ?? "").toLowerCase();
+        const dispAn = formatHnDisplay(r.AN).toLowerCase();
+
+        if (!rawAn.includes(an) && !dispAn.includes(an)) {
+          return false;
+        }
       }
       if (
         !matchesMultiSelectFilter(
@@ -676,6 +686,7 @@ export default function DrugCostSummaryPage() {
   }, [
     rows,
     filterHn,
+    filterAn,
     filterClinic,
     filterPttype,
     filterMeditem,
@@ -867,6 +878,7 @@ export default function DrugCostSummaryPage() {
 
   const clearFilters = () => {
     setFilterHn("");
+    setFilterAn("");
     setFilterPttype([...pttypeOptions]);
     setFilterClinic([...clinicOptions]);
     setFilterMeditem("");
@@ -1578,6 +1590,22 @@ export default function DrugCostSummaryPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-medium text-flow-text" htmlFor="filterAn">
+                      AN (มีส่วนของข้อความ)
+                    </label>
+                    <input
+                      className="ui-input text-xs py-1.5 px-2"
+                      id="filterAn"
+                      placeholder="เช่น 2947/69 หรือ เลข AN"
+                      type="text"
+                      value={filterAn}
+                      onChange={(e) => {
+                        setFilterAn(e.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
                     <label
                       className="text-[11px] font-medium text-flow-text"
                       htmlFor="filterMeditem"
@@ -1679,6 +1707,7 @@ export default function DrugCostSummaryPage() {
             </div>
             {activeTab === "detail" &&
               (filterHn ||
+                filterAn ||
                 filterClinic.length > 0 ||
                 filterPttype.length > 0 ||
                 filterMeditem ||

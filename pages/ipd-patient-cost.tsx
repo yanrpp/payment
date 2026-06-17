@@ -73,6 +73,7 @@ export default function IpdPatientCostPage() {
   const [dateTo, setDateTo] = useState<string>(() => localTodayIso());
   const [hn, setHn] = useState<string>("");
   const [cardno, setCardno] = useState<string>("");
+  const [an, setAn] = useState<string>("");
   const [filterPttype, setFilterPttype] = useState<string[]>([]);
   const [filterPttypeListQuery, setFilterPttypeListQuery] = useState("");
   const [pttypeDropdownOpen, setPttypeDropdownOpen] = useState(false);
@@ -104,6 +105,7 @@ export default function IpdPatientCostPage() {
     d2: string;
     hnValue: string;
     cardnoValue: string;
+    anValue: string;
   }) => {
     searchAbortRef.current?.abort();
     const controller = new AbortController();
@@ -135,6 +137,9 @@ export default function IpdPatientCostPage() {
         query.set("cardno", normalizedCard);
       }
     }
+    if (params.anValue.trim()) {
+      query.set("an", params.anValue.trim());
+    }
 
     try {
       const res = await fetch(`/api/db/ipd-patient-cost?${query.toString()}`, {
@@ -159,13 +164,13 @@ export default function IpdPatientCostPage() {
 
   const handleSearch = async (event: React.FormEvent) => {
     event.preventDefault();
-    await runSearch({ d1: dateFrom, d2: dateTo, hnValue: hn, cardnoValue: cardno });
+    await runSearch({ d1: dateFrom, d2: dateTo, hnValue: hn, cardnoValue: cardno, anValue: an });
   };
 
   useEffect(() => {
     const today = localTodayIso();
 
-    void runSearch({ d1: today, d2: today, hnValue: "", cardnoValue: "" });
+    void runSearch({ d1: today, d2: today, hnValue: "", cardnoValue: "", anValue: "" });
   }, []);
 
   const pttypeOptions = useMemo(() => {
@@ -365,6 +370,19 @@ export default function IpdPatientCostPage() {
 
                     setCardno(digitsOnly);
                   }}
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-xs font-medium text-flow-text" htmlFor="an">
+                  AN (เลข Admit)
+                </label>
+                <input
+                  className="ui-input w-full text-sm py-1.5 px-3"
+                  id="an"
+                  placeholder="เช่น 690013173 (พิมพ์บางส่วนได้)"
+                  type="text"
+                  value={an}
+                  onChange={(event) => setAn(event.target.value)}
                 />
               </div>
             </div>
