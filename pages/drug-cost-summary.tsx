@@ -1154,6 +1154,7 @@ export default function DrugCostSummaryPage() {
               onClick={() => {
                 if (visitType === "opd") return;
                 setVisitType("opd");
+                setFilterAn("");
                 setRows([]);
                 setPeriodRows([]);
                 setPeriodUniqueItemCount(0);
@@ -1589,22 +1590,24 @@ export default function DrugCostSummaryPage() {
                       }}
                     />
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium text-flow-text" htmlFor="filterAn">
-                      AN (มีส่วนของข้อความ)
-                    </label>
-                    <input
-                      className="ui-input text-xs py-1.5 px-2"
-                      id="filterAn"
-                      placeholder="เช่น 2947/69 หรือ เลข AN"
-                      type="text"
-                      value={filterAn}
-                      onChange={(e) => {
-                        setFilterAn(e.target.value);
-                        setPage(1);
-                      }}
-                    />
-                  </div>
+                  {visitType === "ipd" && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-medium text-flow-text" htmlFor="filterAn">
+                        AN (มีส่วนของข้อความ)
+                      </label>
+                      <input
+                        className="ui-input text-xs py-1.5 px-2"
+                        id="filterAn"
+                        placeholder="เช่น 2947/69 หรือ เลข AN"
+                        type="text"
+                        value={filterAn}
+                        onChange={(e) => {
+                          setFilterAn(e.target.value);
+                          setPage(1);
+                        }}
+                      />
+                    </div>
+                  )}
                   <div className="flex flex-col gap-1">
                     <label
                       className="text-[11px] font-medium text-flow-text"
