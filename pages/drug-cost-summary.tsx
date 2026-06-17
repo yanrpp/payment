@@ -782,6 +782,19 @@ export default function DrugCostSummaryPage() {
     return hnSet.size;
   }, [filteredRows]);
 
+  // IPD: นับจำนวน AN (Admission) ไม่ซ้ำ แทนการนับ HN
+  const uniqueAnCount = useMemo(() => {
+    const anSet = new Set<string>();
+
+    for (const row of filteredRows) {
+      const an = String(row.AN ?? "").trim();
+
+      if (an !== "") anSet.add(an);
+    }
+
+    return anSet.size;
+  }, [filteredRows]);
+
   const uniqueVisitCount = useMemo(() => {
     const visitSet = new Set<string>();
 
@@ -1711,9 +1724,13 @@ export default function DrugCostSummaryPage() {
               </p>
             </div>
             <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
-              <p className="text-[11px] font-medium text-brand-600">จำนวน HN ไม่ซ้ำ </p>
+              <p className="text-[11px] font-medium text-brand-600">
+                {visitType === "ipd" ? "จำนวน AN ไม่ซ้ำ" : "จำนวน HN ไม่ซ้ำ"}{" "}
+              </p>
               <p className="mt-1 text-base font-semibold tabular-nums text-flow-text">
-                {uniqueHnCount.toLocaleString("th-TH")} HN
+                {visitType === "ipd"
+                  ? `${uniqueAnCount.toLocaleString("th-TH")} AN`
+                  : `${uniqueHnCount.toLocaleString("th-TH")} HN`}
               </p>
             </div>
             <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
