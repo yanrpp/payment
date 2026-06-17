@@ -20,12 +20,15 @@ type PatientCostRow = {
   TOTAL_QTY: number;
   TOTAL_SALE: number;
   TOTAL_COST: number;
+  TOTAL_PROFIT: number;
 };
 
 /** รายการยา/เวชภัณฑ์ของ AN (จาก ipd-patient-drug-by-an) */
 type DrugItemRow = {
   MEDITEM: string | number;
   DRUG_NAME: string | null;
+  MEDTYPE: string | null;
+  ACCNATION: string | null;
   TOTAL_QTY: number;
   TOTAL_COST: number;
   TOTAL_SALE: number;
@@ -199,10 +202,11 @@ export default function IpdPatientCostPage() {
         (acc, r) => {
           acc.cost += Number(r.TOTAL_COST ?? 0);
           acc.sale += Number(r.TOTAL_SALE ?? 0);
+          acc.profit += Number(r.TOTAL_PROFIT ?? 0);
 
           return acc;
         },
-        { cost: 0, sale: 0 }
+        { cost: 0, sale: 0, profit: 0 }
       ),
     [filteredRows]
   );
@@ -216,10 +220,11 @@ export default function IpdPatientCostPage() {
         acc.qty += Number(r.TOTAL_QTY ?? 0);
         acc.cost += Number(r.TOTAL_COST ?? 0);
         acc.sale += Number(r.TOTAL_SALE ?? 0);
+        acc.profit += Number(r.TOTAL_PROFIT ?? 0);
 
         return acc;
       },
-      { qty: 0, cost: 0, sale: 0 }
+      { qty: 0, cost: 0, sale: 0, profit: 0 }
     );
   }, [drugItems]);
 
@@ -508,8 +513,8 @@ export default function IpdPatientCostPage() {
 
             <div className="flex items-center justify-between gap-4 pt-2">
               <p className="text-[11px] md:text-xs text-flow-muted">
-                เงื่อนไขตาม SQL: IPD เท่านั้น (มี AN/เลข Admit) — รวมต้นทุน/ยอดขายยาจาก PRSC/PRSCDT
-                ต่อ AN
+                ข้อมูลจากผู้ป่วยที่ admit จริง (ตาราง IPT) — ต้นทุน/ราคาขายอ้างเรตล่าสุดจาก
+                MEDITEMSALEHST เช่นเดียวกับหน้าสรุปต้นทุนและกำไรจากยา
               </p>
               <button
                 className="ui-btn-primary text-xs md:text-sm"
@@ -540,7 +545,7 @@ export default function IpdPatientCostPage() {
               <div className="flex flex-wrap items-center gap-3 text-[11px] text-flow-muted lg:justify-end">
                 <p>
                   รวมต้นทุน {formatBaht(grandTotals.cost)} · รวมยอดขาย{" "}
-                  {formatBaht(grandTotals.sale)}
+                  {formatBaht(grandTotals.sale)} · กำไร {formatBaht(grandTotals.profit)}
                 </p>
                 <div className="flex items-center gap-1">
                   <span>แสดงต่อหน้า:</span>
@@ -575,15 +580,16 @@ export default function IpdPatientCostPage() {
               <table className="w-full min-w-full table-fixed border-separate border-spacing-0 text-xs md:text-sm text-left">
                 <colgroup>
                   <col className="w-[5%]" />
+                  <col className="w-[10%]" />
                   <col className="w-[11%]" />
+                  <col className="w-[8%]" />
                   <col className="w-[12%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[13%]" />
-                  <col className="w-[18%]" />
-                  <col className="w-[14%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[12%]" />
                   <col className="w-[6%]" />
-                  <col className="w-[6%]" />
-                  <col className="w-[6%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[7%]" />
                 </colgroup>
                 <thead>
                   <tr className="bg-black">
@@ -617,6 +623,9 @@ export default function IpdPatientCostPage() {
                     <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
                       ยอดขายรวม
                     </th>
+                    <th className="border-b border-neutral-800 bg-black px-3 py-2 text-right font-semibold text-white whitespace-nowrap">
+                      กำไรรวม
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -624,7 +633,7 @@ export default function IpdPatientCostPage() {
                     <tr>
                       <td
                         className="px-3 py-6 text-center text-xs text-amber-900 md:text-sm"
-                        colSpan={10}
+                        colSpan={11}
                       >
                         ไม่มีแถวที่ตรงกับสิทธิที่เลือก กรุณาเลือกสิทธิเพิ่มหรือกด
                         &quot;ล้างฟิลเตอร์สิทธิ&quot;
@@ -682,6 +691,13 @@ export default function IpdPatientCostPage() {
                         <td className="px-3 py-2 text-right text-flow-text whitespace-nowrap">
                           {formatBaht(row.TOTAL_SALE)}
                         </td>
+                        <td
+                          className={`px-3 py-2 text-right whitespace-nowrap ${
+                            Number(row.TOTAL_PROFIT ?? 0) < 0 ? "text-red-600" : "text-flow-text"
+                          }`}
+                        >
+                          {formatBaht(row.TOTAL_PROFIT)}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -737,7 +753,7 @@ export default function IpdPatientCostPage() {
           <div
             aria-labelledby="ipd-drug-modal-title"
             aria-modal="true"
-            className="relative z-10 w-full max-w-3xl rounded-xl border border-flow-border bg-white shadow-xl"
+            className="relative z-10 w-full max-w-5xl rounded-xl border border-flow-border bg-white shadow-xl"
             role="dialog"
           >
             <div className="flex items-start justify-between gap-4 border-b border-flow-border px-4 py-3">
@@ -779,9 +795,14 @@ export default function IpdPatientCostPage() {
                   <table className="min-w-full border-collapse text-[11px] md:text-xs text-left">
                     <thead>
                       <tr className="border-b border-flow-border bg-slate-100">
+                        <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                          รหัสยา
+                        </th>
                         <th className="px-2 py-1.5 font-semibold text-flow-text">
                           ชื่อยา/เวชภัณฑ์
                         </th>
+                        <th className="px-2 py-1.5 font-semibold text-flow-text">ประเภทยา</th>
+                        <th className="px-2 py-1.5 font-semibold text-flow-text">บัญชียาหลัก</th>
                         <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
                           จำนวน
                         </th>
@@ -791,6 +812,9 @@ export default function IpdPatientCostPage() {
                         <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
                           ยอดขายรวม
                         </th>
+                        <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
+                          กำไรรวม
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -799,7 +823,12 @@ export default function IpdPatientCostPage() {
                           key={`${drug.MEDITEM}-${idx}`}
                           className="border-b border-slate-100 hover:bg-flow-input"
                         >
+                          <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
+                            {drug.MEDITEM}
+                          </td>
                           <td className="px-2 py-1.5 text-flow-text">{drug.DRUG_NAME ?? "—"}</td>
+                          <td className="px-2 py-1.5 text-flow-text">{drug.MEDTYPE ?? "—"}</td>
+                          <td className="px-2 py-1.5 text-flow-text">{drug.ACCNATION ?? "—"}</td>
                           <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
                             {Number(drug.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
                           </td>
@@ -809,10 +838,19 @@ export default function IpdPatientCostPage() {
                           <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
                             {formatBaht(drug.TOTAL_SALE)}
                           </td>
+                          <td
+                            className={`px-2 py-1.5 text-right whitespace-nowrap ${
+                              Number(drug.TOTAL_PROFIT ?? 0) < 0 ? "text-red-600" : "text-flow-text"
+                            }`}
+                          >
+                            {formatBaht(drug.TOTAL_PROFIT)}
+                          </td>
                         </tr>
                       ))}
                       <tr className="bg-flow-input font-semibold text-flow-text">
-                        <td className="px-2 py-1.5 whitespace-nowrap">รวม</td>
+                        <td className="px-2 py-1.5 whitespace-nowrap" colSpan={4}>
+                          รวม
+                        </td>
                         <td className="px-2 py-1.5 text-right whitespace-nowrap">
                           {drugTotals.qty.toLocaleString("th-TH")}
                         </td>
@@ -821,6 +859,9 @@ export default function IpdPatientCostPage() {
                         </td>
                         <td className="px-2 py-1.5 text-right whitespace-nowrap">
                           {formatBaht(drugTotals.sale)}
+                        </td>
+                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                          {formatBaht(drugTotals.profit)}
                         </td>
                       </tr>
                     </tbody>

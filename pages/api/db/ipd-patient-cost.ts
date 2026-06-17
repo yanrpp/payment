@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
+import { sqlUnitCost, sqlUnitSale } from "@/lib/db/meditemRateSql";
 
 interface PatientCostRow {
   AN: string;
@@ -12,8 +13,9 @@ interface PatientCostRow {
   PTTYPE_NAME: string | null;
   ITEM_COUNT: number;
   TOTAL_QTY: number;
-  TOTAL_SALE: number;
   TOTAL_COST: number;
+  TOTAL_SALE: number;
+  TOTAL_PROFIT: number;
 }
 
 type SuccessResponse = { success: true; count: number; data: PatientCostRow[] };
@@ -38,35 +40,55 @@ export default async function handler(
   const whereHn = hnValue != null ? " AND ipt.hn = :hn" : "";
   const whereCardno = cardnoValue != null ? " AND ptno.cardno = :cardno" : "";
 
-  // 1 AN = 1 แถว — รวมต้นทุน/ยอดขายของยาทั้งหมดในแต่ละ Admission (AN)
+  const unitCost = sqlUnitCost("m", "d", "p");
+  const unitSale = sqlUnitSale("m", "d", "p");
+
+  // 1 AN = 1 แถว — ดึงผู้ป่วยที่ admit จริงจากตาราง IPT แล้วรวมต้นทุน/ยอดขายยาของทั้ง Admission
+  // ต้นทุน/ราคาขายต่อหน่วยใช้เรตล่าสุดจาก MEDITEMSALEHST (วิธีเดียวกับหน้า drug-cost-summary)
   const sql = `
+    WITH base AS (
+      SELECT
+        ipt.an        AS AN,
+        ipt.hn        AS HN,
+        ipt.rgtdate   AS RGTDATE,
+        ptno.cardno   AS CARDNO,
+        pt.dspname    AS DSPNAME,
+        pty.name      AS PTTYPE_NAME,
+        m.meditem     AS MEDITEM,
+        d.qty         AS QTY,
+        ${unitCost}   AS UNIT_COST,
+        ${unitSale}   AS UNIT_SALE
+      FROM ipt
+      JOIN pt ON ipt.hn = pt.hn
+      LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
+      JOIN prsc p ON p.an = ipt.an
+      JOIN prscdt d ON d.prscno = p.prscno
+      JOIN meditem m ON m.meditem = d.meditem
+      LEFT JOIN pttype pty ON pty.pttype = p.pttype
+      WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+        ${whereHn}
+        ${whereCardno}
+    )
     SELECT
-      ipt.an                              AS AN,
-      ipt.hn                              AS HN,
-      MAX(ptno.cardno)                    AS CARDNO,
-      MAX(pt.dspname)                     AS DSPNAME,
-      ipt.rgtdate                         AS RGTDATE,
-      MAX(pty.name)                       AS PTTYPE_NAME,
-      COUNT(DISTINCT prscdt.meditem)      AS ITEM_COUNT,
-      SUM(prscdt.qty)                     AS TOTAL_QTY,
-      SUM(prscdt.qty * prscdt.salerate)   AS TOTAL_SALE,
-      SUM(prscdt.qty * prscdt.costrate)   AS TOTAL_COST
-    FROM ipt
-    JOIN pt ON ipt.hn = pt.hn
-    LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
-    JOIN prsc ON ipt.an = prsc.an
-    JOIN prscdt ON prsc.prscno = prscdt.prscno
-    LEFT JOIN pttype pty ON pty.pttype = prsc.pttype
-    WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-      ${whereHn}
-      ${whereCardno}
+      AN,
+      HN,
+      RGTDATE,
+      MAX(CARDNO)                         AS CARDNO,
+      MAX(DSPNAME)                        AS DSPNAME,
+      MAX(PTTYPE_NAME)                    AS PTTYPE_NAME,
+      COUNT(DISTINCT MEDITEM)             AS ITEM_COUNT,
+      SUM(QTY)                            AS TOTAL_QTY,
+      SUM(QTY * UNIT_COST)                AS TOTAL_COST,
+      SUM(QTY * UNIT_SALE)                AS TOTAL_SALE,
+      SUM(QTY * (UNIT_SALE - UNIT_COST))  AS TOTAL_PROFIT
+    FROM base
     GROUP BY
-      ipt.an,
-      ipt.hn,
-      ipt.rgtdate
+      AN,
+      HN,
+      RGTDATE
     ORDER BY
-      ipt.rgtdate,
-      ipt.an
+      RGTDATE,
+      AN
   `;
 
   const params: Record<string, unknown> = { d1, d2 };
