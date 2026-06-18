@@ -84,7 +84,9 @@ shown to users are in Thai. Follow this shape for new endpoints.
 ### Frontend
 
 - **HeroUI v2** components (`@heroui/*`) + **Tailwind CSS v4** + Framer Motion. Theme via
-  `next-themes`; layout primitives in `components/layout/` (`MainLayout`, `AppTopbar`, `AppFooter`).
+  `next-themes`; layout primitives in `components/layout/` — enterprise shell with a left
+  sidebar: `MainLayout` → `AppShell` (sidebar + topbar + content), `AppSidebar` (grouped nav from
+  `lib/navigation/mainNav.ts` `MAIN_NAV_GROUPS` + `NavIcon`), `AppHeaderBar`, `AppFooter`.
 - **Navigation is centralized in `lib/navigation/mainNav.ts`** — add a page to `MAIN_NAV_ITEMS`
   there (single source for the topbar), not ad hoc in components.
 - Thai-specific input/display helpers live under `lib/`: `lib/hn/normalize.ts` (HN formats like

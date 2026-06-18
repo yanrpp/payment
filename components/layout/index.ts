@@ -1,3 +1,5 @@
 export { default as MainLayout } from "./MainLayout";
-export { AppTopbar } from "./AppTopbar";
+export { AppShell } from "./AppShell";
+export { AppSidebar } from "./AppSidebar";
+export { AppHeaderBar } from "./AppHeaderBar";
 export { AppFooter } from "./AppFooter";
