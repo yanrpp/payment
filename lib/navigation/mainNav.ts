@@ -12,4 +12,5 @@ export const MAIN_NAV_ITEMS: MainNavItem[] = [
   { href: "/patient-cost", label: "ต้นทุนรายผู้ป่วย" },
   { href: "/drug-cost-summary", label: "สรุปต้นทุนและกำไรจากยา" },
   { href: "/ipd-patient-cost", label: "ต้นทุนรายผู้ป่วย (IPD)" },
+  { href: "/mrli-revenue-worklist", label: "MRLI: รายการรอทำเบิก" },
 ];

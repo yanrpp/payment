@@ -1,0 +1,379 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { ThaiDatePicker } from "@/components/ThaiDatePicker";
+import { formatHnDisplay } from "@/lib/hn/normalize";
+import { isoToThaiDisplay, localTodayIso } from "@/lib/date/thaiDate";
+
+type WorklistRow = {
+  AN: string | number;
+  HN: string;
+  RGTDATE: string;
+  DSPNAME: string | null;
+  CARDNO: string | null;
+  PTTYPE_NAME: string | null;
+  TOTAL_CHARGE: number;
+  CHARGE_ITEM_COUNT: number;
+  DRUG_ORDER_COUNT: number;
+  DX_COUNT: number | null;
+  DCH_DATE: string | null;
+};
+
+type Meta = { dxAvailable: boolean; dischargeAvailable: boolean };
+
+function apiDateToIsoLocal(value: unknown): string {
+  if (value == null) return "";
+  const d =
+    typeof value === "string"
+      ? new Date(value)
+      : value instanceof Date
+        ? value
+        : new Date(String(value));
+
+  if (Number.isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1;
+  const day = d.getDate();
+
+  return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day
+    .toString()
+    .padStart(2, "0")}`;
+}
+
+function formatBaht(value: unknown): string {
+  return Number(value ?? 0).toLocaleString("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** รายการ "รอตรวจสอบ/ทำเบิก" = ไม่มีค่าใช้จ่าย หรือ (รู้ Dx แล้วแต่ไม่มี Dx) */
+function isIncomplete(row: WorklistRow): boolean {
+  if (Number(row.TOTAL_CHARGE ?? 0) <= 0) return true;
+  if (row.DX_COUNT !== null && Number(row.DX_COUNT) <= 0) return true;
+
+  return false;
+}
+
+export default function MrliRevenueWorklistPage() {
+  const [dateFrom, setDateFrom] = useState<string>(() => localTodayIso());
+  const [dateTo, setDateTo] = useState<string>(() => localTodayIso());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<WorklistRow[]>([]);
+  const [meta, setMeta] = useState<Meta>({ dxAvailable: false, dischargeAvailable: false });
+  const [onlyIncomplete, setOnlyIncomplete] = useState(true);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+
+  const abortRef = useRef<AbortController | null>(null);
+
+  const runSearch = async (d1: string, d2: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+
+    abortRef.current = controller;
+    setLoading(true);
+    setError(null);
+    setRows([]);
+    setPage(1);
+
+    try {
+      const res = await fetch(
+        `/api/db/mrli-revenue-worklist?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}`,
+        { signal: controller.signal }
+      );
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        setError(json.message ?? "ค้นหาข้อมูลไม่สำเร็จ");
+
+        return;
+      }
+
+      setRows(Array.isArray(json.data) ? json.data : []);
+      setMeta(json.meta ?? { dxAvailable: false, dischargeAvailable: false });
+    } catch (fetchError) {
+      if (controller.signal.aborted) return;
+      setError(fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด");
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
+  };
+
+  const handleSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await runSearch(dateFrom, dateTo);
+  };
+
+  useEffect(() => {
+    const today = localTodayIso();
+
+    void runSearch(today, today);
+  }, []);
+
+  const summary = useMemo(() => {
+    let incomplete = 0;
+    let noCharge = 0;
+    let noDx = 0;
+    let totalCharge = 0;
+
+    for (const r of rows) {
+      totalCharge += Number(r.TOTAL_CHARGE ?? 0);
+      if (Number(r.TOTAL_CHARGE ?? 0) <= 0) noCharge += 1;
+      if (r.DX_COUNT !== null && Number(r.DX_COUNT) <= 0) noDx += 1;
+      if (isIncomplete(r)) incomplete += 1;
+    }
+
+    return { total: rows.length, incomplete, noCharge, noDx, totalCharge };
+  }, [rows]);
+
+  const visibleRows = useMemo(
+    () => (onlyIncomplete ? rows.filter(isIncomplete) : rows),
+    [rows, onlyIncomplete]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageSize) || 1);
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  const pagedRows = visibleRows.slice(startIndex, startIndex + pageSize);
+
+  return (
+    <div className="flex w-full flex-1 flex-col">
+      <header className="border-b border-accent-border bg-neutral-50">
+        <div className="w-full px-4 py-4 md:px-6">
+          <h1 className="text-xl md:text-2xl font-bold text-flow-text">
+            MRLI · Revenue Integrity Worklist (รายการรอทำเบิก/ตรวจสอบ)
+          </h1>
+          <p className="mt-1 text-xs md:text-sm text-flow-muted">
+            ผู้ป่วยใน (IPT) ที่ข้อมูลเบิกอาจไม่ครบ — ยังไม่ลงค่าใช้จ่าย หรือไม่มีรหัสวินิจฉัย
+            (ICD-10) เพื่อลด Lost Revenue
+          </p>
+        </div>
+      </header>
+
+      <main className="flex-1 w-full px-4 py-6 md:px-6 md:py-8">
+        <section className="mb-6">
+          <form
+            className="rounded-xl border border-accent-border bg-white p-4 shadow-sm space-y-4"
+            onSubmit={handleSearch}
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <ThaiDatePicker
+                id="dateFrom"
+                label="วันที่รับเข้า (จาก)"
+                value={dateFrom}
+                onChange={(iso) => setDateFrom(iso)}
+              />
+              <ThaiDatePicker
+                id="dateTo"
+                label="วันที่รับเข้า (ถึง)"
+                value={dateTo}
+                onChange={(iso) => setDateTo(iso)}
+              />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] md:text-xs text-flow-text">
+                <input
+                  checked={onlyIncomplete}
+                  className="ui-checkbox"
+                  type="checkbox"
+                  onChange={(e) => {
+                    setOnlyIncomplete(e.target.checked);
+                    setPage(1);
+                  }}
+                />
+                แสดงเฉพาะรายการที่ต้องตรวจสอบ
+              </label>
+              <button
+                className="ui-btn-primary text-xs md:text-sm"
+                disabled={loading}
+                type="submit"
+              >
+                {loading ? "กำลังค้นหา..." : "ค้นหาข้อมูล"}
+              </button>
+            </div>
+            {(!meta.dxAvailable || !meta.dischargeAvailable) && rows.length > 0 && (
+              <p className="text-[10px] text-amber-700">
+                หมายเหตุ: {!meta.dxAvailable && "ไม่พบตาราง iptdiag (คอลัมน์ Dx แสดงเป็น —) "}
+                {!meta.dischargeAvailable && "ไม่พบคอลัมน์ ipt.dchdate (วันจำหน่ายแสดงเป็น —)"}
+              </p>
+            )}
+          </form>
+        </section>
+
+        {error && (
+          <section className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs md:text-sm text-red-800">
+            {error}
+          </section>
+        )}
+
+        {rows.length > 0 && (
+          <section className="mb-4 grid gap-3 md:grid-cols-4">
+            <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
+              <p className="text-[11px] font-medium text-brand-600">Admission ทั้งหมด</p>
+              <p className="mt-1 text-base font-semibold tabular-nums text-flow-text">
+                {summary.total.toLocaleString("th-TH")} AN
+              </p>
+            </div>
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 shadow-sm">
+              <p className="text-[11px] font-medium text-amber-700">ต้องตรวจสอบ</p>
+              <p className="mt-1 text-base font-semibold tabular-nums text-amber-900">
+                {summary.incomplete.toLocaleString("th-TH")} AN
+              </p>
+            </div>
+            <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
+              <p className="text-[11px] font-medium text-brand-600">ยังไม่ลงค่าใช้จ่าย</p>
+              <p className="mt-1 text-base font-semibold tabular-nums text-flow-text">
+                {summary.noCharge.toLocaleString("th-TH")} AN
+              </p>
+            </div>
+            <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
+              <p className="text-[11px] font-medium text-brand-600">ค่าใช้จ่ายรวม (ทุก AN)</p>
+              <p className="mt-1 text-sm font-semibold tabular-nums text-flow-text">
+                {formatBaht(summary.totalCharge)} บาท
+              </p>
+            </div>
+          </section>
+        )}
+
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-flow-text">
+            {rows.length > 0
+              ? `รายการ (${visibleRows.length.toLocaleString("th-TH")} AN, หน้า ${currentPage}/${totalPages})`
+              : "รายการ"}
+          </h2>
+
+          {rows.length === 0 && !loading && !error && (
+            <p className="text-xs md:text-sm text-flow-muted">
+              ยังไม่มีข้อมูล กรุณาเลือกช่วงวันที่ แล้วกด &quot;ค้นหาข้อมูล&quot;
+            </p>
+          )}
+
+          {visibleRows.length > 0 && (
+            <div className="mb-4 w-full overflow-x-auto rounded-xl border border-flow-border bg-white shadow-sm">
+              <table className="w-full min-w-full border-separate border-spacing-0 text-xs md:text-sm text-left">
+                <thead>
+                  <tr className="bg-black">
+                    {[
+                      "NO.",
+                      "วันที่รับเข้า",
+                      "AN",
+                      "HN",
+                      "ชื่อผู้ป่วย",
+                      "สิทธิการรักษา",
+                      "ค่าใช้จ่ายรวม",
+                      "รายการ",
+                      "ใบสั่งยา",
+                      "Dx",
+                      "สถานะ",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="border-b border-neutral-800 bg-black px-3 py-2 font-semibold text-white whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedRows.map((row, index) => (
+                    <tr
+                      key={`${row.AN}-${index}`}
+                      className={`border-b border-slate-100 ${
+                        isIncomplete(row) ? "bg-amber-50/60" : ""
+                      }`}
+                    >
+                      <td className="px-3 py-2 text-right text-flow-text whitespace-nowrap">
+                        {startIndex + index + 1}
+                      </td>
+                      <td className="px-3 py-2 text-flow-text whitespace-nowrap">
+                        {isoToThaiDisplay(apiDateToIsoLocal(row.RGTDATE))}
+                      </td>
+                      <td className="px-3 py-2 font-medium text-flow-text whitespace-nowrap">
+                        {row.AN}
+                      </td>
+                      <td className="px-3 py-2 text-flow-text whitespace-nowrap">
+                        {formatHnDisplay(row.HN)}
+                      </td>
+                      <td className="px-3 py-2 text-flow-text">{row.DSPNAME ?? "—"}</td>
+                      <td className="px-3 py-2 text-flow-text">{row.PTTYPE_NAME ?? "—"}</td>
+                      <td className="px-3 py-2 text-right text-flow-text whitespace-nowrap">
+                        {formatBaht(row.TOTAL_CHARGE)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-flow-text whitespace-nowrap">
+                        {Number(row.CHARGE_ITEM_COUNT ?? 0).toLocaleString("th-TH")}
+                      </td>
+                      <td className="px-3 py-2 text-right text-flow-text whitespace-nowrap">
+                        {Number(row.DRUG_ORDER_COUNT ?? 0).toLocaleString("th-TH")}
+                      </td>
+                      <td className="px-3 py-2 text-right text-flow-text whitespace-nowrap">
+                        {row.DX_COUNT === null ? "—" : Number(row.DX_COUNT).toLocaleString("th-TH")}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="flex flex-wrap gap-1">
+                          {Number(row.TOTAL_CHARGE ?? 0) <= 0 && (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
+                              ไม่มีค่าใช้จ่าย
+                            </span>
+                          )}
+                          {row.DX_COUNT !== null && Number(row.DX_COUNT) <= 0 && (
+                            <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">
+                              ไม่มี Dx
+                            </span>
+                          )}
+                          {meta.dischargeAvailable && row.DCH_DATE && (
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                              จำหน่ายแล้ว
+                            </span>
+                          )}
+                          {!isIncomplete(row) && (
+                            <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-800">
+                              ครบ
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {visibleRows.length === 0 && rows.length > 0 && !loading && (
+            <p className="text-xs md:text-sm text-flow-muted">
+              ไม่มีรายการที่ต้องตรวจสอบในช่วงวันที่นี้ 🎉
+            </p>
+          )}
+
+          {visibleRows.length > 0 && (
+            <div className="flex items-center justify-end gap-2 text-[11px] text-flow-muted">
+              <button
+                className="rounded border border-flow-border bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-flow-input"
+                disabled={currentPage <= 1}
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ก่อนหน้า
+              </button>
+              <span>
+                หน้า {currentPage} / {totalPages}
+              </span>
+              <button
+                className="rounded border border-flow-border bg-white px-2 py-0.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-flow-input"
+                disabled={currentPage >= totalPages}
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                ถัดไป
+              </button>
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
