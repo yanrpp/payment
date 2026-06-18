@@ -1,0 +1,163 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+
+import { respondError } from "@/lib/api/respond";
+import { executeQuery } from "@/lib/db/connection";
+import {
+  evaluateScrub,
+  getActiveScrubRules,
+  getDefaultActiveScrubRules,
+  type ActiveScrubRule,
+  type ScrubFinding,
+} from "@/lib/db/mrli/scrub";
+
+type ScrubRow = {
+  AN: string;
+  HN: string;
+  RGTDATE: string;
+  DSPNAME: string | null;
+  CARDNO: string | null;
+  PTTYPE_NAME: string | null;
+  TOTAL_CHARGE: number;
+  DRUG_ORDER_COUNT: number;
+  DX_COUNT: number | null;
+  NON_FORMULARY_COUNT: number;
+  findings: ScrubFinding[];
+};
+
+type BaseRow = {
+  AN: string;
+  HN: string;
+  RGTDATE: string;
+  DSPNAME: string | null;
+  CARDNO: string | null;
+  PTTYPE_NAME: string | null;
+  TOTAL_CHARGE: number;
+  DRUG_ORDER_COUNT: number;
+};
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "GET")
+    return res.status(405).json({ success: false, message: "Method not allowed" });
+  const { d1, d2 } = req.query;
+
+  if (!d1 || !d2 || typeof d1 !== "string" || typeof d2 !== "string") {
+    return res
+      .status(400)
+      .json({ success: false, message: "กรุณาระบุช่วงวันที่ d1 และ d2 (รูปแบบ YYYY-MM-DD)" });
+  }
+
+  const params = { d1, d2 };
+
+  const sqlBase = `
+    SELECT
+      ipt.an       AS AN,
+      ipt.hn       AS HN,
+      ipt.rgtdate  AS RGTDATE,
+      MAX(pt.dspname)  AS DSPNAME,
+      MAX(ptno.cardno) AS CARDNO,
+      (
+        SELECT MAX(pty.name) FROM prsc pr JOIN pttype pty ON pty.pttype = pr.pttype WHERE pr.an = ipt.an
+      ) AS PTTYPE_NAME,
+      NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
+      (SELECT COUNT(*) FROM prsc pr WHERE pr.an = ipt.an) AS DRUG_ORDER_COUNT
+    FROM ipt
+    JOIN pt ON ipt.hn = pt.hn
+    LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
+    LEFT JOIN incpt ic ON ic.an = ipt.an
+    WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+    GROUP BY ipt.an, ipt.hn, ipt.rgtdate
+    ORDER BY ipt.rgtdate, ipt.an
+  `;
+
+  // ยานอกบัญชียาหลัก ต่อ AN (เชื่อถือได้ — ใช้ตารางที่ verify แล้ว)
+  const sqlNonFormulary = `
+    SELECT ipt.an AS AN, COUNT(DISTINCT m.meditem) AS CNT
+    FROM ipt
+    JOIN prsc p ON p.an = ipt.an
+    JOIN prscdt d ON d.prscno = p.prscno
+    JOIN meditem m ON m.meditem = d.meditem
+    LEFT JOIN medaccnation a ON a.accnation = m.accnation
+    WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+      AND a.name LIKE 'ยานอก%'
+    GROUP BY ipt.an
+  `;
+
+  try {
+    const [baseResult, nfResult] = await Promise.all([
+      executeQuery<BaseRow>(sqlBase, params),
+      executeQuery<{ AN: string; CNT: number }>(sqlNonFormulary, params),
+    ]);
+    const baseRows = baseResult.rows ?? [];
+
+    const nfMap = new Map<string, number>();
+
+    for (const r of nfResult.rows ?? []) nfMap.set(String(r.AN), Number(r.CNT ?? 0));
+
+    // Dx ผู้ป่วยใน (iptdiag) — defensive
+    const dxMap = new Map<string, number>();
+    let dxAvailable = false;
+
+    try {
+      const dxResult = await executeQuery<{ AN: string; CNT: number }>(
+        `
+        SELECT id.an AS AN, COUNT(*) AS CNT
+        FROM iptdiag id
+        JOIN ipt ON ipt.an = id.an
+        WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+        GROUP BY id.an
+      `,
+        params
+      );
+
+      dxAvailable = true;
+      for (const r of dxResult.rows ?? []) dxMap.set(String(r.AN), Number(r.CNT ?? 0));
+    } catch {
+      // iptdiag อาจไม่มี — ปล่อยกฎ NO_DIAGNOSIS ไม่ทำงาน
+    }
+
+    // โหลดกฎที่เปิดใช้งานจาก mrli_rule; ถ้า MySQL ไม่พร้อมใช้กฎ default
+    let activeRules: ActiveScrubRule[];
+    let rulesFromStore = false;
+
+    try {
+      activeRules = await getActiveScrubRules();
+      rulesFromStore = true;
+    } catch {
+      activeRules = getDefaultActiveScrubRules();
+    }
+
+    const data: ScrubRow[] = baseRows.map((r) => {
+      const an = String(r.AN);
+      const dxCount = dxAvailable ? (dxMap.get(an) ?? 0) : null;
+      const nonFormularyCount = nfMap.get(an) ?? 0;
+      const findings = evaluateScrub(
+        {
+          totalCharge: Number(r.TOTAL_CHARGE ?? 0),
+          dxCount,
+          nonFormularyCount,
+          drugOrderCount: Number(r.DRUG_ORDER_COUNT ?? 0),
+        },
+        activeRules
+      );
+
+      return { ...r, DX_COUNT: dxCount, NON_FORMULARY_COUNT: nonFormularyCount, findings };
+    });
+
+    const summary = {
+      total: data.length,
+      withFindings: data.filter((r) => r.findings.length > 0).length,
+      error: data.filter((r) => r.findings.some((f) => f.severity === "error")).length,
+      warning: data.filter((r) => r.findings.some((f) => f.severity === "warning")).length,
+    };
+
+    return res.status(200).json({
+      success: true,
+      count: data.length,
+      data,
+      summary,
+      meta: { dxAvailable, rulesFromStore },
+    });
+  } catch (error) {
+    return respondError(res, "ไม่สามารถรัน Pre-Claim Scrubbing ได้", error);
+  }
+}
