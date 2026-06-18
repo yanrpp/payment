@@ -156,6 +156,32 @@ export async function setClaimStatus(args: {
   return rows[0];
 }
 
+/** เขียน audit log แบบทั่วไป (ใช้ร่วมกับโมดูลอื่น เช่น rule admin) */
+export async function writeAudit(args: {
+  entity: string;
+  entityKey: string;
+  action: string;
+  oldValue?: string | null;
+  newValue?: string | null;
+  note?: string | null;
+  actor?: string | null;
+}): Promise<void> {
+  await ensureMrliSchema();
+  await executeUpdate(
+    `INSERT INTO mrli_audit_log (entity, entity_key, action, old_value, new_value, note, actor)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      args.entity,
+      args.entityKey,
+      args.action,
+      args.oldValue ?? null,
+      args.newValue ?? null,
+      args.note ?? null,
+      args.actor ?? null,
+    ]
+  );
+}
+
 /** ประวัติ audit ของ AN (ล่าสุดก่อน) */
 export async function getAuditForAn(an: string, limit = 50): Promise<AuditRow[]> {
   await ensureMrliSchema();

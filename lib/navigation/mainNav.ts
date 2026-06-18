@@ -14,4 +14,5 @@ export const MAIN_NAV_ITEMS: MainNavItem[] = [
   { href: "/ipd-patient-cost", label: "ต้นทุนรายผู้ป่วย (IPD)" },
   { href: "/mrli-revenue-worklist", label: "MRLI: รายการรอทำเบิก" },
   { href: "/mrli-preclaim-scrub", label: "MRLI: ตรวจก่อนเบิก" },
+  { href: "/mrli-rule-admin", label: "MRLI: ตั้งค่ากฎ" },
 ];

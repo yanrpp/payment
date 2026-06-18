@@ -5,7 +5,7 @@
  * (การแก้กฎแบบ no-code เต็มรูปแบบจะอยู่ในเฟส 3 Admin Portal)
  */
 import { executeQuery, executeUpdate } from "@/lib/db/mysql";
-import { ensureMrliSchema } from "@/lib/db/mrli/store";
+import { ensureMrliSchema, writeAudit } from "@/lib/db/mrli/store";
 
 export type ScrubSeverity = "error" | "warning" | "info";
 
@@ -139,6 +139,116 @@ export function getDefaultActiveScrubRules(): ActiveScrubRule[] {
     code: r.code,
     severity: r.defaultSeverity,
   }));
+}
+
+// ---- Admin Portal (เฟส 3): จัดการกฎผ่าน UI ----
+
+export type ScrubRuleAdmin = {
+  code: string;
+  label: string;
+  description: string;
+  severity: ScrubSeverity;
+  active: boolean;
+  inRegistry: boolean;
+};
+
+function severityFromConfig(configJson: string | null, fallback: ScrubSeverity): ScrubSeverity {
+  try {
+    const cfg = configJson ? JSON.parse(configJson) : null;
+
+    if (cfg && isSeverity(cfg.severity)) return cfg.severity;
+  } catch {
+    // config_json อาจไม่ใช่ JSON
+  }
+
+  return fallback;
+}
+
+/** รายการกฎ scrub ทั้งหมด (รวมที่ปิดอยู่) + metadata จาก registry สำหรับหน้า Admin */
+export async function listScrubRulesAdmin(): Promise<ScrubRuleAdmin[]> {
+  await ensureDefaultScrubRules();
+  const rows = await executeQuery<{
+    rule_code: string;
+    description: string | null;
+    config_json: string | null;
+    active: number;
+  }>(
+    `SELECT rule_code, description, config_json, active
+     FROM mrli_rule WHERE rule_type = 'scrub' ORDER BY rule_code`
+  );
+
+  return rows.map((r) => {
+    const def = DEF_BY_CODE.get(r.rule_code);
+
+    return {
+      code: r.rule_code,
+      label: def?.label ?? r.rule_code,
+      description: r.description ?? def?.description ?? "",
+      severity: severityFromConfig(r.config_json, def?.defaultSeverity ?? "warning"),
+      active: Number(r.active) === 1,
+      inRegistry: Boolean(def),
+    };
+  });
+}
+
+/** อัปเดตกฎ scrub (เปิด/ปิด, ความรุนแรง, คำอธิบาย) + เขียน audit */
+export async function updateScrubRule(args: {
+  code: string;
+  active?: boolean;
+  severity?: ScrubSeverity;
+  description?: string | null;
+  actor?: string | null;
+}): Promise<ScrubRuleAdmin> {
+  await ensureMrliSchema();
+  const code = args.code;
+  const cur = await executeQuery<{
+    description: string | null;
+    config_json: string | null;
+    active: number;
+  }>(
+    `SELECT description, config_json, active FROM mrli_rule WHERE rule_code = ? AND rule_type = 'scrub'`,
+    [code]
+  );
+
+  if (cur.length === 0) throw new Error("ไม่พบกฎที่ระบุ");
+  const def = DEF_BY_CODE.get(code);
+  const oldSeverity = severityFromConfig(cur[0].config_json, def?.defaultSeverity ?? "warning");
+  const oldActive = Number(cur[0].active) === 1;
+  const oldDesc = cur[0].description ?? def?.description ?? "";
+
+  const newActive = args.active ?? oldActive;
+  const newSeverity = args.severity ?? oldSeverity;
+  const newDesc = args.description ?? oldDesc;
+
+  await executeUpdate(
+    `UPDATE mrli_rule SET active = ?, config_json = ?, description = ?, updated_by = ?
+     WHERE rule_code = ? AND rule_type = 'scrub'`,
+    [
+      newActive ? 1 : 0,
+      JSON.stringify({ severity: newSeverity }),
+      newDesc,
+      args.actor ?? null,
+      code,
+    ]
+  );
+
+  await writeAudit({
+    entity: "rule",
+    entityKey: code,
+    action: "update_rule",
+    oldValue: `active=${oldActive};severity=${oldSeverity}`,
+    newValue: `active=${newActive};severity=${newSeverity}`,
+    actor: args.actor ?? null,
+  });
+
+  return {
+    code,
+    label: def?.label ?? code,
+    description: newDesc,
+    severity: newSeverity,
+    active: newActive,
+    inRegistry: Boolean(def),
+  };
 }
 
 /** ประเมิน AN ตามกฎที่เปิดใช้งาน */
