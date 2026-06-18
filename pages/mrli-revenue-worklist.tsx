@@ -22,6 +22,22 @@ type WorklistRow = {
 
 type Meta = { dxAvailable: boolean; dischargeAvailable: boolean };
 
+type ClaimStatusRow = {
+  status: string;
+  note: string | null;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+const STATUS_OPTIONS = ["pending", "reviewed", "submitted", "rejected", "no_claim"] as const;
+const STATUS_LABELS: Record<string, string> = {
+  pending: "รอดำเนินการ",
+  reviewed: "ตรวจแล้ว",
+  submitted: "ส่งเบิกแล้ว",
+  rejected: "ถูกปฏิเสธ",
+  no_claim: "ไม่เบิก",
+};
+
 function apiDateToIsoLocal(value: unknown): string {
   if (value == null) return "";
   const d =
@@ -67,7 +83,83 @@ export default function MrliRevenueWorklistPage() {
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
+  const [statuses, setStatuses] = useState<Record<string, ClaimStatusRow>>({});
+  const [storeUnavailable, setStoreUnavailable] = useState(false);
+  const [actor, setActor] = useState<string>("");
+
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem("mrli_actor") : null;
+
+    if (saved) setActor(saved);
+  }, []);
+
+  const handleActorChange = (v: string) => {
+    setActor(v);
+    if (typeof window !== "undefined") window.localStorage.setItem("mrli_actor", v);
+  };
+
+  // โหลดสถานะการเบิกทั้งหมด (ตารางมีเฉพาะ AN ที่เคยบันทึก) เมื่อผลลัพธ์เปลี่ยน
+  useEffect(() => {
+    if (rows.length === 0) {
+      setStatuses({});
+
+      return;
+    }
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/db/mrli-claim-status");
+        const json = await res.json();
+
+        if (cancelled) return;
+        if (res.ok && json.success) {
+          setStatuses(json.statuses ?? {});
+          setStoreUnavailable(false);
+        } else {
+          setStoreUnavailable(Boolean(json.storeUnavailable));
+        }
+      } catch {
+        if (!cancelled) setStoreUnavailable(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows]);
+
+  const updateStatus = async (an: string, status: string) => {
+    setStatuses((prev) => ({
+      ...prev,
+      [an]: {
+        status,
+        note: prev[an]?.note ?? null,
+        updated_by: actor || null,
+        updated_at: prev[an]?.updated_at ?? "",
+      },
+    }));
+
+    try {
+      const res = await fetch("/api/db/mrli-claim-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ an, status, actor }),
+      });
+      const json = await res.json();
+
+      if (res.ok && json.success) {
+        setStatuses((prev) => ({ ...prev, [an]: json.status }));
+        setStoreUnavailable(false);
+      } else {
+        setStoreUnavailable(Boolean(json.storeUnavailable));
+      }
+    } catch {
+      setStoreUnavailable(true);
+    }
+  };
 
   const runSearch = async (d1: string, d2: string) => {
     abortRef.current?.abort();
@@ -174,18 +266,30 @@ export default function MrliRevenueWorklistPage() {
               />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] md:text-xs text-flow-text">
-                <input
-                  checked={onlyIncomplete}
-                  className="ui-checkbox"
-                  type="checkbox"
-                  onChange={(e) => {
-                    setOnlyIncomplete(e.target.checked);
-                    setPage(1);
-                  }}
-                />
-                แสดงเฉพาะรายการที่ต้องตรวจสอบ
-              </label>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] md:text-xs text-flow-text">
+                  <input
+                    checked={onlyIncomplete}
+                    className="ui-checkbox"
+                    type="checkbox"
+                    onChange={(e) => {
+                      setOnlyIncomplete(e.target.checked);
+                      setPage(1);
+                    }}
+                  />
+                  แสดงเฉพาะรายการที่ต้องตรวจสอบ
+                </label>
+                <label className="inline-flex items-center gap-2 text-[11px] md:text-xs text-flow-text">
+                  ผู้ดำเนินการ
+                  <input
+                    className="ui-input text-xs py-1 px-2"
+                    placeholder="ชื่อผู้ตรวจ (สำหรับ audit)"
+                    type="text"
+                    value={actor}
+                    onChange={(e) => handleActorChange(e.target.value)}
+                  />
+                </label>
+              </div>
               <button
                 className="ui-btn-primary text-xs md:text-sm"
                 disabled={loading}
@@ -206,6 +310,13 @@ export default function MrliRevenueWorklistPage() {
         {error && (
           <section className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs md:text-sm text-red-800">
             {error}
+          </section>
+        )}
+
+        {storeUnavailable && (
+          <section className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            MRLI store (MySQL) ยังไม่พร้อมใช้งาน — บันทึกสถานะเบิกไม่ได้ ตรวจสอบการตั้งค่า
+            DB_HOST/DB_USER/DB_PASSWORD/DB_NAME ใน .env.local (ส่วนรายงานอื่นยังทำงานปกติ)
           </section>
         )}
 
@@ -268,6 +379,7 @@ export default function MrliRevenueWorklistPage() {
                       "ใบสั่งยา",
                       "Dx",
                       "สถานะ",
+                      "สถานะเบิก",
                     ].map((h) => (
                       <th
                         key={h}
@@ -335,6 +447,25 @@ export default function MrliRevenueWorklistPage() {
                             </span>
                           )}
                         </div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <select
+                          className="rounded border border-flow-border bg-white px-1 py-0.5 text-[11px] text-flow-text focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={storeUnavailable}
+                          title={
+                            statuses[String(row.AN)]?.updated_by
+                              ? `แก้ไขล่าสุดโดย ${statuses[String(row.AN)]?.updated_by}`
+                              : "ยังไม่บันทึกสถานะ"
+                          }
+                          value={statuses[String(row.AN)]?.status ?? "pending"}
+                          onChange={(e) => updateStatus(String(row.AN), e.target.value)}
+                        >
+                          {STATUS_OPTIONS.map((s) => (
+                            <option key={s} value={s}>
+                              {STATUS_LABELS[s]}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                     </tr>
                   ))}
