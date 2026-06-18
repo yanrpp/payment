@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/router";
 
 import { ThaiDatePicker } from "@/components/ThaiDatePicker";
 import { normalizeThaiCardInput } from "@/lib/card/normalize";
@@ -91,6 +92,7 @@ function isLabCategory(name: string): boolean {
 }
 
 export default function IpdPatientCostPage() {
+  const router = useRouter();
   const [dateFrom, setDateFrom] = useState<string>(() => localTodayIso());
   const [dateTo, setDateTo] = useState<string>(() => localTodayIso());
   const [hn, setHn] = useState<string>("");
@@ -197,10 +199,15 @@ export default function IpdPatientCostPage() {
   };
 
   useEffect(() => {
+    if (!router.isReady) return;
     const today = localTodayIso();
+    const qHn = typeof router.query.hn === "string" ? router.query.hn : "";
+    const qAn = typeof router.query.an === "string" ? router.query.an : "";
 
-    void runSearch({ d1: today, d2: today, hnValue: "", cardnoValue: "", anValue: "" });
-  }, []);
+    if (qHn) setHn(qHn);
+    if (qAn) setAn(qAn);
+    void runSearch({ d1: today, d2: today, hnValue: qHn, cardnoValue: "", anValue: qAn });
+  }, [router.isReady]);
 
   const pttypeOptions = useMemo(() => {
     const set = new Set<string>();

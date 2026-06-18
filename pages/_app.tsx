@@ -10,12 +10,7 @@ import "@/styles/globals.css";
 export default function App({ Component, pageProps }: AppProps) {
   return (
     <HeroUIProvider>
-      <NextThemesProvider
-        attribute="class"
-        defaultTheme="light"
-        enableSystem={false}
-        forcedTheme="light"
-      >
+      <NextThemesProvider attribute="class" defaultTheme="light" enableSystem={false}>
         <MainLayout>
           <Component {...pageProps} />
         </MainLayout>

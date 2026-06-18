@@ -6,6 +6,9 @@
 @source '../pages/**/*.{js,ts,jsx,tsx}';
 @source '../components/**/*.{js,ts,jsx,tsx}';
 
+/* เปิดใช้ dark variant แบบ class-based (next-themes ใส่ class="dark" ที่ <html>) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "font", sans-serif;
   --font-mono: "monospace", monospace;
@@ -41,7 +44,9 @@
     color: var(--color-flow-text);
   }
 
-  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not(
+      [type="reset"]
+    ),
   select,
   textarea {
     background-color: #ffffff;
@@ -86,4 +91,53 @@
 nextjs-portal {
   left: unset !important;
   top: unset !important;
+}
+
+/* ===== Dark mode (retrofit) =====
+   ปรับ token + remap surface utilities ที่หน้าเดิมใช้บ่อย เพื่อให้ dark ทั้งแอป
+   โดยไม่ต้องแก้ทุกหน้า — การ์ดสีพาสเทล (bg-*-50/100) คงไว้ให้ "เด่น" บนพื้นเข้ม */
+.dark {
+  --color-flow-text: #e5e7eb;
+  --color-flow-muted: #94a3b8;
+  --color-flow-border: #334155;
+  --color-flow-input: #1e293b;
+}
+
+.dark body {
+  background-color: #0b1220;
+}
+
+.dark .bg-white {
+  background-color: #111827 !important;
+}
+
+.dark .bg-neutral-50 {
+  background-color: #0f172a !important;
+}
+
+.dark .bg-slate-50 {
+  background-color: #0b1220 !important;
+}
+
+.dark .bg-black {
+  background-color: #0f172a !important;
+}
+
+.dark
+  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not(
+    [type="reset"]
+  ),
+.dark select,
+.dark textarea {
+  background-color: #1e293b;
+  color: var(--color-flow-text);
+}
+
+.dark .ui-input,
+.dark .ui-input-sm,
+.dark .ui-select,
+.dark .ui-btn-secondary,
+.dark .ui-panel,
+.dark .ui-panel-muted {
+  background-color: #111827;
 }
