@@ -45,6 +45,13 @@ type ChargeRow = {
   AMOUNT: number;
 };
 
+/** รายการตรวจ Lab/พยาธิจริง (จาก ipd-patient-lab-detail-by-an) */
+type LabDetailRow = {
+  ORDER_NO: string | null;
+  LAB_NAME: string | null;
+  RESULT: string | null;
+};
+
 function pttypeDisplayName(row: PatientCostRow): string {
   const n = row.PTTYPE_NAME?.trim();
 
@@ -78,6 +85,11 @@ function formatBaht(value: unknown): string {
   });
 }
 
+/** ตรวจว่าหมวดเป็น Lab/พยาธิหรือไม่ (เพื่อแสดงรายการตรวจจากระบบ Lab เพิ่มเติม) */
+function isLabCategory(name: string): boolean {
+  return /พยาธิ|เทคนิคการแพทย์|ห้องปฏิบัติการ|แล็?บ|lab/i.test(name);
+}
+
 export default function IpdPatientCostPage() {
   const [dateFrom, setDateFrom] = useState<string>(() => localTodayIso());
   const [dateTo, setDateTo] = useState<string>(() => localTodayIso());
@@ -109,6 +121,9 @@ export default function IpdPatientCostPage() {
   const [chargesLoading, setChargesLoading] = useState(false);
   const [chargesError, setChargesError] = useState<string | null>(null);
   const [activeModalTab, setActiveModalTab] = useState<string>("drug");
+  const [labDetail, setLabDetail] = useState<LabDetailRow[] | null>(null);
+  const [labDetailLoading, setLabDetailLoading] = useState(false);
+  const [labDetailError, setLabDetailError] = useState<string | null>(null);
 
   // กัน race condition: ยกเลิก request เก่าเมื่อเริ่มค้นหา/คลิกแถวใหม่
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -311,6 +326,9 @@ export default function IpdPatientCostPage() {
     setCharges(null);
     setChargesError(null);
     setChargesLoading(false);
+    setLabDetail(null);
+    setLabDetailError(null);
+    setLabDetailLoading(false);
     setActiveModalTab("drug");
   };
 
@@ -348,6 +366,9 @@ export default function IpdPatientCostPage() {
     setCharges(null);
     setChargesError(null);
     setChargesLoading(true);
+    setLabDetail(null);
+    setLabDetailError(null);
+    setLabDetailLoading(true);
 
     const loadDrugs = async () => {
       try {
@@ -389,7 +410,30 @@ export default function IpdPatientCostPage() {
       }
     };
 
-    await Promise.all([loadDrugs(), loadCharges()]);
+    const loadLab = async () => {
+      try {
+        const res = await fetch(
+          `/api/db/ipd-patient-lab-detail-by-an?an=${encodeURIComponent(an)}`,
+          { signal }
+        );
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          setLabDetailError(json.message ?? "โหลดรายการตรวจ Lab ไม่สำเร็จ");
+        } else {
+          setLabDetail(Array.isArray(json.data) ? json.data : []);
+        }
+      } catch (err) {
+        if (signal.aborted) return;
+        setLabDetailError(
+          err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดรายการตรวจ Lab"
+        );
+      } finally {
+        if (!signal.aborted) setLabDetailLoading(false);
+      }
+    };
+
+    await Promise.all([loadDrugs(), loadCharges(), loadLab()]);
   };
 
   return (
@@ -1079,6 +1123,63 @@ export default function IpdPatientCostPage() {
                           </tr>
                         </tbody>
                       </table>
+                    </div>
+                  )}
+                  {activeCategory && isLabCategory(activeCategory.name) && (
+                    <div className="mt-4">
+                      <p className="mb-2 text-[11px] font-semibold text-flow-text">
+                        รายการตรวจที่ทำจริง (จากระบบ Lab)
+                      </p>
+                      {labDetailLoading && (
+                        <p className="py-3 text-center text-xs text-flow-muted">
+                          กำลังโหลดรายการตรวจ...
+                        </p>
+                      )}
+                      {labDetailError && (
+                        <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                          {labDetailError}
+                        </p>
+                      )}
+                      {!labDetailLoading && !labDetailError && (labDetail?.length ?? 0) === 0 && (
+                        <p className="py-3 text-center text-xs text-flow-muted">
+                          ไม่พบรายการตรวจในระบบ Lab สำหรับ AN นี้
+                        </p>
+                      )}
+                      {!labDetailLoading && !labDetailError && (labDetail?.length ?? 0) > 0 && (
+                        <div className="overflow-x-auto rounded border border-flow-border">
+                          <table className="min-w-full border-collapse text-[11px] md:text-xs text-left">
+                            <thead>
+                              <tr className="border-b border-flow-border bg-slate-100">
+                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                                  ใบสั่งตรวจ
+                                </th>
+                                <th className="px-2 py-1.5 font-semibold text-flow-text">
+                                  ชื่อการตรวจ
+                                </th>
+                                <th className="px-2 py-1.5 font-semibold text-flow-text">ผล</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(labDetail ?? []).map((lab, idx) => (
+                                <tr
+                                  key={`${lab.ORDER_NO ?? ""}-${idx}`}
+                                  className="border-b border-slate-100 hover:bg-flow-input"
+                                >
+                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
+                                    {lab.ORDER_NO ?? "—"}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-flow-text">
+                                    {lab.LAB_NAME ?? "—"}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-flow-text">
+                                    {lab.RESULT ?? "—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
