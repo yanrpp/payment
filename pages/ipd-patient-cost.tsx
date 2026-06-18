@@ -35,6 +35,16 @@ type DrugItemRow = {
   TOTAL_PROFIT: number;
 };
 
+/** ค่าใช้จ่ายต่อ income แยกตามหมวด (จาก ipd-patient-charges-by-an) */
+type ChargeRow = {
+  INCGRP: number | null;
+  INCGRP_NAME: string | null;
+  INCOME: string | null;
+  INCOME_NAME: string | null;
+  ITEM_COUNT: number;
+  AMOUNT: number;
+};
+
 function pttypeDisplayName(row: PatientCostRow): string {
   const n = row.PTTYPE_NAME?.trim();
 
@@ -95,6 +105,10 @@ export default function IpdPatientCostPage() {
   const [drugItems, setDrugItems] = useState<DrugItemRow[] | null>(null);
   const [drugLoading, setDrugLoading] = useState(false);
   const [drugError, setDrugError] = useState<string | null>(null);
+  const [charges, setCharges] = useState<ChargeRow[] | null>(null);
+  const [chargesLoading, setChargesLoading] = useState(false);
+  const [chargesError, setChargesError] = useState<string | null>(null);
+  const [activeModalTab, setActiveModalTab] = useState<string>("drug");
 
   // กัน race condition: ยกเลิก request เก่าเมื่อเริ่มค้นหา/คลิกแถวใหม่
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -233,6 +247,46 @@ export default function IpdPatientCostPage() {
     );
   }, [drugItems]);
 
+  // จัดกลุ่มค่าใช้จ่ายตามหมวด (incgrp) เพื่อแยกเป็นแท็บใน modal
+  const chargeCategories = useMemo(() => {
+    const map = new Map<
+      string,
+      { key: string; incgrp: number | null; name: string; total: number; items: ChargeRow[] }
+    >();
+
+    for (const c of charges ?? []) {
+      const key = c.INCGRP != null ? String(c.INCGRP) : "none";
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          incgrp: c.INCGRP ?? null,
+          name: c.INCGRP_NAME?.trim() || "ไม่ระบุหมวด",
+          total: 0,
+          items: [],
+        });
+      }
+      const g = map.get(key)!;
+
+      g.total += Number(c.AMOUNT ?? 0);
+      g.items.push(c);
+    }
+
+    return Array.from(map.values()).sort(
+      (a, b) => Number(a.incgrp ?? 99999) - Number(b.incgrp ?? 99999)
+    );
+  }, [charges]);
+
+  const chargesGrandTotal = useMemo(
+    () => (charges ?? []).reduce((s, c) => s + Number(c.AMOUNT ?? 0), 0),
+    [charges]
+  );
+
+  const activeCategory =
+    activeModalTab === "drug"
+      ? null
+      : (chargeCategories.find((c) => c.key === activeModalTab) ?? null);
+
   useEffect(() => {
     if (!pttypeDropdownOpen) return;
     const closeOnOutside = (e: MouseEvent) => {
@@ -254,6 +308,10 @@ export default function IpdPatientCostPage() {
     setDrugItems(null);
     setDrugError(null);
     setDrugLoading(false);
+    setCharges(null);
+    setChargesError(null);
+    setChargesLoading(false);
+    setActiveModalTab("drug");
   };
 
   // ปิด modal ด้วยปุ่ม Escape
@@ -283,27 +341,55 @@ export default function IpdPatientCostPage() {
       dspname: row.DSPNAME ?? "",
       rgtdate: row.RGTDATE,
     });
+    setActiveModalTab("drug");
     setDrugItems(null);
     setDrugError(null);
     setDrugLoading(true);
+    setCharges(null);
+    setChargesError(null);
+    setChargesLoading(true);
 
-    try {
-      const res = await fetch(`/api/db/ipd-patient-drug-by-an?an=${encodeURIComponent(an)}`, {
-        signal,
-      });
-      const json = await res.json();
+    const loadDrugs = async () => {
+      try {
+        const res = await fetch(`/api/db/ipd-patient-drug-by-an?an=${encodeURIComponent(an)}`, {
+          signal,
+        });
+        const json = await res.json();
 
-      if (!res.ok || !json.success) {
-        setDrugError(json.message ?? "โหลดรายการยาไม่สำเร็จ");
-      } else {
-        setDrugItems(Array.isArray(json.data) ? json.data : []);
+        if (!res.ok || !json.success) {
+          setDrugError(json.message ?? "โหลดรายการยาไม่สำเร็จ");
+        } else {
+          setDrugItems(Array.isArray(json.data) ? json.data : []);
+        }
+      } catch (err) {
+        if (signal.aborted) return;
+        setDrugError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดรายการยา");
+      } finally {
+        if (!signal.aborted) setDrugLoading(false);
       }
-    } catch (err) {
-      if (signal.aborted) return;
-      setDrugError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดรายการยา");
-    } finally {
-      if (!signal.aborted) setDrugLoading(false);
-    }
+    };
+
+    const loadCharges = async () => {
+      try {
+        const res = await fetch(`/api/db/ipd-patient-charges-by-an?an=${encodeURIComponent(an)}`, {
+          signal,
+        });
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          setChargesError(json.message ?? "โหลดค่าใช้จ่ายไม่สำเร็จ");
+        } else {
+          setCharges(Array.isArray(json.data) ? json.data : []);
+        }
+      } catch (err) {
+        if (signal.aborted) return;
+        setChargesError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดค่าใช้จ่าย");
+      } finally {
+        if (!signal.aborted) setChargesLoading(false);
+      }
+    };
+
+    await Promise.all([loadDrugs(), loadCharges()]);
   };
 
   return (
@@ -777,13 +863,18 @@ export default function IpdPatientCostPage() {
             <div className="flex items-start justify-between gap-4 border-b border-flow-border px-4 py-3">
               <div className="min-w-0">
                 <h3 className="text-sm font-bold text-flow-text" id="ipd-drug-modal-title">
-                  รายการยา/เวชภัณฑ์ของ AN {selectedAn.an}
+                  ค่าใช้จ่ายของ AN {selectedAn.an}
                 </h3>
                 <p className="mt-0.5 text-[11px] text-flow-muted">
                   HN {formatHnDisplay(selectedAn.hn)}
                   {selectedAn.dspname ? ` · ${selectedAn.dspname}` : ""} · วันที่รับบริการ{" "}
                   {isoToThaiDisplay(apiDateToIsoLocal(selectedAn.rgtdate))}
                 </p>
+                {!chargesLoading && !chargesError && (charges?.length ?? 0) > 0 && (
+                  <p className="mt-0.5 text-[11px] font-medium text-brand-600">
+                    ค่าใช้จ่ายรวมทุกหมวด {formatBaht(chargesGrandTotal)} บาท
+                  </p>
+                )}
               </div>
               <button
                 className="shrink-0 rounded border border-flow-border bg-white px-3 py-1 text-xs text-flow-text hover:bg-flow-input"
@@ -794,97 +885,203 @@ export default function IpdPatientCostPage() {
               </button>
             </div>
 
+            {/* แท็บ: ยา/เวชภัณฑ์ (ต้นทุน-กำไร) + แต่ละหมวดค่าใช้จ่าย */}
+            <div className="flex flex-wrap gap-1 border-b border-flow-border bg-neutral-50 px-3 pt-2">
+              <button
+                className={`rounded-t-md px-3 py-1.5 text-[11px] font-medium ${
+                  activeModalTab === "drug"
+                    ? "border border-b-0 border-flow-border bg-white text-brand-600"
+                    : "text-flow-muted hover:bg-flow-input"
+                }`}
+                type="button"
+                onClick={() => setActiveModalTab("drug")}
+              >
+                ยา/เวชภัณฑ์ (ต้นทุน-กำไร)
+              </button>
+              {chargeCategories.map((cat) => (
+                <button
+                  key={cat.key}
+                  className={`rounded-t-md px-3 py-1.5 text-[11px] font-medium ${
+                    activeModalTab === cat.key
+                      ? "border border-b-0 border-flow-border bg-white text-brand-600"
+                      : "text-flow-muted hover:bg-flow-input"
+                  }`}
+                  type="button"
+                  onClick={() => setActiveModalTab(cat.key)}
+                >
+                  {cat.name} ({formatBaht(cat.total)})
+                </button>
+              ))}
+            </div>
+
             <div className="px-4 py-3">
-              {drugLoading && (
-                <p className="py-4 text-center text-xs text-flow-muted">กำลังโหลดรายการยา...</p>
-              )}
-              {drugError && (
-                <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
-                  {drugError}
-                </p>
-              )}
-              {!drugLoading && !drugError && (drugItems?.length ?? 0) === 0 && (
-                <p className="py-4 text-center text-xs text-flow-muted">
-                  ไม่พบรายการยา/เวชภัณฑ์สำหรับ AN นี้
-                </p>
-              )}
-              {!drugLoading && !drugError && (drugItems?.length ?? 0) > 0 && (
-                <div className="overflow-x-auto rounded border border-flow-border">
-                  <table className="min-w-full border-collapse text-[11px] md:text-xs text-left">
-                    <thead>
-                      <tr className="border-b border-flow-border bg-slate-100">
-                        <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
-                          รหัสยา
-                        </th>
-                        <th className="px-2 py-1.5 font-semibold text-flow-text">
-                          ชื่อยา/เวชภัณฑ์
-                        </th>
-                        <th className="px-2 py-1.5 font-semibold text-flow-text">ประเภทยา</th>
-                        <th className="px-2 py-1.5 font-semibold text-flow-text">บัญชียาหลัก</th>
-                        <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
-                          จำนวน
-                        </th>
-                        <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
-                          ต้นทุนรวม
-                        </th>
-                        <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
-                          ยอดขายรวม
-                        </th>
-                        <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
-                          กำไรรวม
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(drugItems ?? []).map((drug, idx) => (
-                        <tr
-                          key={`${drug.MEDITEM}-${idx}`}
-                          className="border-b border-slate-100 hover:bg-flow-input"
-                        >
-                          <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
-                            {drug.MEDITEM}
-                          </td>
-                          <td className="px-2 py-1.5 text-flow-text">{drug.DRUG_NAME ?? "—"}</td>
-                          <td className="px-2 py-1.5 text-flow-text">{drug.MEDTYPE ?? "—"}</td>
-                          <td className="px-2 py-1.5 text-flow-text">{drug.ACCNATION ?? "—"}</td>
-                          <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
-                            {Number(drug.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
-                          </td>
-                          <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
-                            {formatBaht(drug.TOTAL_COST)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
-                            {formatBaht(drug.TOTAL_SALE)}
-                          </td>
-                          <td
-                            className={`px-2 py-1.5 text-right whitespace-nowrap ${
-                              Number(drug.TOTAL_PROFIT ?? 0) < 0 ? "text-red-600" : "text-flow-text"
-                            }`}
-                          >
-                            {formatBaht(drug.TOTAL_PROFIT)}
-                          </td>
-                        </tr>
-                      ))}
-                      <tr className="bg-flow-input font-semibold text-flow-text">
-                        <td className="px-2 py-1.5 whitespace-nowrap" colSpan={4}>
-                          รวม
-                        </td>
-                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                          {drugTotals.qty.toLocaleString("th-TH")}
-                        </td>
-                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                          {formatBaht(drugTotals.cost)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                          {formatBaht(drugTotals.sale)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                          {formatBaht(drugTotals.profit)}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+              {activeModalTab === "drug" ? (
+                <>
+                  {drugLoading && (
+                    <p className="py-4 text-center text-xs text-flow-muted">กำลังโหลดรายการยา...</p>
+                  )}
+                  {drugError && (
+                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                      {drugError}
+                    </p>
+                  )}
+                  {!drugLoading && !drugError && (drugItems?.length ?? 0) === 0 && (
+                    <p className="py-4 text-center text-xs text-flow-muted">
+                      ไม่พบรายการยา/เวชภัณฑ์สำหรับ AN นี้
+                    </p>
+                  )}
+                  {!drugLoading && !drugError && (drugItems?.length ?? 0) > 0 && (
+                    <div className="overflow-x-auto rounded border border-flow-border">
+                      <table className="min-w-full border-collapse text-[11px] md:text-xs text-left">
+                        <thead>
+                          <tr className="border-b border-flow-border bg-slate-100">
+                            <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                              รหัสยา
+                            </th>
+                            <th className="px-2 py-1.5 font-semibold text-flow-text">
+                              ชื่อยา/เวชภัณฑ์
+                            </th>
+                            <th className="px-2 py-1.5 font-semibold text-flow-text">ประเภทยา</th>
+                            <th className="px-2 py-1.5 font-semibold text-flow-text">
+                              บัญชียาหลัก
+                            </th>
+                            <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
+                              จำนวน
+                            </th>
+                            <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
+                              ต้นทุนรวม
+                            </th>
+                            <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
+                              ยอดขายรวม
+                            </th>
+                            <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
+                              กำไรรวม
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(drugItems ?? []).map((drug, idx) => (
+                            <tr
+                              key={`${drug.MEDITEM}-${idx}`}
+                              className="border-b border-slate-100 hover:bg-flow-input"
+                            >
+                              <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
+                                {drug.MEDITEM}
+                              </td>
+                              <td className="px-2 py-1.5 text-flow-text">
+                                {drug.DRUG_NAME ?? "—"}
+                              </td>
+                              <td className="px-2 py-1.5 text-flow-text">{drug.MEDTYPE ?? "—"}</td>
+                              <td className="px-2 py-1.5 text-flow-text">
+                                {drug.ACCNATION ?? "—"}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
+                                {Number(drug.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
+                                {formatBaht(drug.TOTAL_COST)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
+                                {formatBaht(drug.TOTAL_SALE)}
+                              </td>
+                              <td
+                                className={`px-2 py-1.5 text-right whitespace-nowrap ${
+                                  Number(drug.TOTAL_PROFIT ?? 0) < 0
+                                    ? "text-red-600"
+                                    : "text-flow-text"
+                                }`}
+                              >
+                                {formatBaht(drug.TOTAL_PROFIT)}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="bg-flow-input font-semibold text-flow-text">
+                            <td className="px-2 py-1.5 whitespace-nowrap" colSpan={4}>
+                              รวม
+                            </td>
+                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                              {drugTotals.qty.toLocaleString("th-TH")}
+                            </td>
+                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                              {formatBaht(drugTotals.cost)}
+                            </td>
+                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                              {formatBaht(drugTotals.sale)}
+                            </td>
+                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                              {formatBaht(drugTotals.profit)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {chargesLoading && (
+                    <p className="py-4 text-center text-xs text-flow-muted">
+                      กำลังโหลดค่าใช้จ่าย...
+                    </p>
+                  )}
+                  {chargesError && (
+                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                      {chargesError}
+                    </p>
+                  )}
+                  {!chargesLoading && !chargesError && !activeCategory && (
+                    <p className="py-4 text-center text-xs text-flow-muted">ไม่พบรายการในหมวดนี้</p>
+                  )}
+                  {!chargesLoading && !chargesError && activeCategory && (
+                    <div className="overflow-x-auto rounded border border-flow-border">
+                      <table className="min-w-full border-collapse text-[11px] md:text-xs text-left">
+                        <thead>
+                          <tr className="border-b border-flow-border bg-slate-100">
+                            <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                              รหัสรายการ
+                            </th>
+                            <th className="px-2 py-1.5 font-semibold text-flow-text">ชื่อรายการ</th>
+                            <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
+                              จำนวน
+                            </th>
+                            <th className="px-2 py-1.5 text-right font-semibold text-flow-text whitespace-nowrap">
+                              จำนวนเงิน (บาท)
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeCategory.items.map((item, idx) => (
+                            <tr
+                              key={`${item.INCOME ?? ""}-${idx}`}
+                              className="border-b border-slate-100 hover:bg-flow-input"
+                            >
+                              <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
+                                {item.INCOME ?? "—"}
+                              </td>
+                              <td className="px-2 py-1.5 text-flow-text">
+                                {item.INCOME_NAME ?? "—"}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
+                                {Number(item.ITEM_COUNT ?? 0).toLocaleString("th-TH")}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-flow-text whitespace-nowrap">
+                                {formatBaht(item.AMOUNT)}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="bg-flow-input font-semibold text-flow-text">
+                            <td className="px-2 py-1.5 whitespace-nowrap" colSpan={3}>
+                              รวมหมวด {activeCategory.name}
+                            </td>
+                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                              {formatBaht(activeCategory.total)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
