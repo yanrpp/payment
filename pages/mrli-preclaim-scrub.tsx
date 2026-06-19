@@ -111,7 +111,9 @@ export default function MrliPreclaimScrubPage() {
       const json = await res.json();
 
       if (!res.ok || !json.success) {
-        setError(json.message ?? "ค้นหาข้อมูลไม่สำเร็จ");
+        const base = json.message ?? "ค้นหาข้อมูลไม่สำเร็จ";
+
+        setError(json.error ? `${base} — ${json.error}` : base);
 
         return;
       }

@@ -158,12 +158,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       : `SELECT ${OPD_KEY} AS K, COUNT(*) AS C FROM ovstdiag od JOIN ovst ov ON ov.vn = od.vn
          WHERE ov.vstdate ${dateRange} AND ov.an IS NULL GROUP BY ov.hn, ov.vstdate`;
 
+  // query ย่อยไม่ได้ใช้ bind ของตัวกรอง (pt*/cl*) — ส่งเฉพาะ d1/d2 กัน bind เกิน
+  const dateParams = { d1, d2 };
+
   try {
     const [baseResult, pttypeResult, drugResult, nfResult] = await Promise.all([
       executeQuery<BaseRow>(sqlBase, params),
-      executeQuery<{ K: string; NM: string | null }>(sqlPttype, params),
-      executeQuery<{ K: string; C: number }>(sqlDrug, params),
-      executeQuery<{ K: string; C: number }>(sqlNonFormulary, params),
+      executeQuery<{ K: string; NM: string | null }>(sqlPttype, dateParams),
+      executeQuery<{ K: string; C: number }>(sqlDrug, dateParams),
+      executeQuery<{ K: string; C: number }>(sqlNonFormulary, dateParams),
     ]);
     const baseRows = baseResult.rows ?? [];
 
@@ -184,7 +187,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let dxAvailable = false;
 
     try {
-      const dxResult = await executeQuery<{ K: string; C: number }>(sqlDx, params);
+      const dxResult = await executeQuery<{ K: string; C: number }>(sqlDx, dateParams);
 
       dxAvailable = true;
       for (const r of dxResult.rows ?? []) dxMap.set(String(r.K), Number(r.C ?? 0));
