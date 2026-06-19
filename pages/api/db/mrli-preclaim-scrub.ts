@@ -47,8 +47,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const mode = String(req.query.mode ?? "ipd").toLowerCase() === "opd" ? "opd" : "ipd";
-  const params = { d1, d2 };
   const dateRange = "BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')";
+
+  // กรองสิทธิการรักษา (ฝั่ง server) เพื่อลดข้อมูลก่อนแสดง
+  const pttypeRaw = req.query.pttype;
+  const pttypeList = (Array.isArray(pttypeRaw) ? pttypeRaw.join("|") : (pttypeRaw ?? ""))
+    .toString()
+    .split("|")
+    .map((v) => v.trim())
+    .filter((v) => v !== "");
+
+  const params: Record<string, unknown> = { d1, d2 };
+  let pttypeFilter = "";
+
+  if (pttypeList.length > 0) {
+    const binds = pttypeList.map((v, i) => {
+      params[`pt${i}`] = v;
+
+      return `:pt${i}`;
+    });
+
+    pttypeFilter =
+      mode === "ipd"
+        ? ` AND EXISTS (SELECT 1 FROM prsc pr2 JOIN pttype p2 ON p2.pttype = pr2.pttype WHERE pr2.an = ipt.an AND p2.name IN (${binds.join(", ")}))`
+        : ` AND EXISTS (SELECT 1 FROM incpt i2 JOIN pttype p2 ON p2.pttype = i2.pttype WHERE i2.hn = ov.hn AND i2.fn = ov.fn AND i2.vn = ov.vn AND p2.name IN (${binds.join(", ")}))`;
+  }
 
   const sqlBase =
     mode === "ipd"
@@ -66,7 +89,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     JOIN pt ON ipt.hn = pt.hn
     LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
     LEFT JOIN incpt ic ON ic.an = ipt.an
-    WHERE ipt.rgtdate ${dateRange}
+    WHERE ipt.rgtdate ${dateRange}${pttypeFilter}
     GROUP BY ipt.an, ipt.hn, ipt.rgtdate
     ORDER BY ipt.rgtdate, ipt.an
   `
@@ -91,7 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     LEFT JOIN incpt ic ON ic.hn = ov.hn AND ic.fn = ov.fn AND ic.vn = ov.vn
     WHERE ov.vstdate ${dateRange}
       AND ov.an IS NULL
-      AND ov.canceldate IS NULL
+      AND ov.canceldate IS NULL${pttypeFilter}
     GROUP BY ov.hn, ov.vstdate
     ORDER BY ov.vstdate, ov.hn
   `;

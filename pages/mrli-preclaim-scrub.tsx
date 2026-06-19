@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { PttypeMultiSelect } from "@/components/PttypeMultiSelect";
 import { ThaiDatePicker } from "@/components/ThaiDatePicker";
 import { formatHnDisplay } from "@/lib/hn/normalize";
 import { isoToThaiDisplay, localTodayIso } from "@/lib/date/thaiDate";
@@ -75,6 +76,11 @@ export default function MrliPreclaimScrubPage() {
   const idLabel = mode === "opd" ? "อ้างอิง (HN/วัน)" : "AN";
   const dateLabel = mode === "opd" ? "วันที่รับบริการ" : "วันที่รับเข้า";
 
+  const [pttypeOptions, setPttypeOptions] = useState<string[]>([]);
+  const [pttypeLoading, setPttypeLoading] = useState(true);
+  const [selectedPttype, setSelectedPttype] = useState<string[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
+
   const abortRef = useRef<AbortController | null>(null);
 
   const runSearch = async (d1: string, d2: string, m: "ipd" | "opd" = mode) => {
@@ -86,10 +92,14 @@ export default function MrliPreclaimScrubPage() {
     setError(null);
     setRows([]);
     setPage(1);
+    setHasSearched(true);
+
+    const pttypeQuery =
+      selectedPttype.length > 0 ? `&pttype=${encodeURIComponent(selectedPttype.join("|"))}` : "";
 
     try {
       const res = await fetch(
-        `/api/db/mrli-preclaim-scrub?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}&mode=${m}`,
+        `/api/db/mrli-preclaim-scrub?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}&mode=${m}${pttypeQuery}`,
         { signal: controller.signal }
       );
       const json = await res.json();
@@ -116,10 +126,21 @@ export default function MrliPreclaimScrubPage() {
     await runSearch(dateFrom, dateTo, mode);
   };
 
+  // เปิดหน้า: โหลดเฉพาะรายการสิทธิ (เบา) ยังไม่ตรวจจนกว่าจะกดค้นหา
   useEffect(() => {
-    const today = localTodayIso();
+    void (async () => {
+      try {
+        const res = await fetch("/api/db/mrli-pttype-options");
+        const json = await res.json();
 
-    void runSearch(today, today, "ipd");
+        if (res.ok && json.success)
+          setPttypeOptions(Array.isArray(json.options) ? json.options : []);
+      } catch {
+        // ไม่เป็นไร — ตัวกรองสิทธิจะว่าง
+      } finally {
+        setPttypeLoading(false);
+      }
+    })();
   }, []);
 
   const visibleRows = useMemo(
@@ -164,7 +185,8 @@ export default function MrliPreclaimScrubPage() {
                     if (mode === m) return;
                     setMode(m);
                     setPage(1);
-                    void runSearch(dateFrom, dateTo, m);
+                    setRows([]);
+                    setHasSearched(false);
                   }}
                 >
                   {m === "ipd" ? "ผู้ป่วยใน (IPD)" : "ผู้ป่วยนอก (OPD)"}
@@ -184,6 +206,18 @@ export default function MrliPreclaimScrubPage() {
                 value={dateTo}
                 onChange={(iso) => setDateTo(iso)}
               />
+            </div>
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามสิทธิการรักษา</p>
+              <PttypeMultiSelect
+                loading={pttypeLoading}
+                options={pttypeOptions}
+                selected={selectedPttype}
+                onChange={setSelectedPttype}
+              />
+              <p className="mt-1 text-[10px] text-flow-muted">
+                ไม่เลือก = ทุกสิทธิ · เลือกแล้วระบบจะกรองตอนตรวจ (ช่วยให้โหลดเร็วขึ้น)
+              </p>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] md:text-xs text-flow-text">
@@ -259,9 +293,10 @@ export default function MrliPreclaimScrubPage() {
               : "ผลตรวจ"}
           </h2>
 
-          {rows.length === 0 && !loading && !error && (
+          {!hasSearched && !loading && (
             <p className="text-xs md:text-sm text-flow-muted">
-              ยังไม่มีข้อมูล กรุณาเลือกช่วงวันที่ แล้วกด &quot;ตรวจสอบ (Scrub)&quot;
+              เลือกช่วงวันที่และสิทธิการรักษา (ถ้าต้องการกรอง) แล้วกด &quot;ตรวจสอบ (Scrub)&quot;
+              เพื่อแสดงผล
             </p>
           )}
 
