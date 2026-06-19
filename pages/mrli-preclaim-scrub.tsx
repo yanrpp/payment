@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 
-import { PttypeMultiSelect } from "@/components/PttypeMultiSelect";
+import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { ThaiDatePicker } from "@/components/ThaiDatePicker";
 import { formatHnDisplay } from "@/lib/hn/normalize";
 import { isoToThaiDisplay, localTodayIso } from "@/lib/date/thaiDate";
@@ -80,6 +80,9 @@ export default function MrliPreclaimScrubPage() {
   const [pttypeOptions, setPttypeOptions] = useState<string[]>([]);
   const [pttypeLoading, setPttypeLoading] = useState(true);
   const [selectedPttype, setSelectedPttype] = useState<string[]>([]);
+  const [clinicOptions, setClinicOptions] = useState<string[]>([]);
+  const [clinicLoading, setClinicLoading] = useState(true);
+  const [selectedClinic, setSelectedClinic] = useState<string[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -97,10 +100,12 @@ export default function MrliPreclaimScrubPage() {
 
     const pttypeQuery =
       selectedPttype.length > 0 ? `&pttype=${encodeURIComponent(selectedPttype.join("|"))}` : "";
+    const clinicQuery =
+      selectedClinic.length > 0 ? `&clinic=${encodeURIComponent(selectedClinic.join("|"))}` : "";
 
     try {
       const res = await fetch(
-        `/api/db/mrli-preclaim-scrub?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}&mode=${m}${pttypeQuery}`,
+        `/api/db/mrli-preclaim-scrub?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}&mode=${m}${pttypeQuery}${clinicQuery}`,
         { signal: controller.signal }
       );
       const json = await res.json();
@@ -127,7 +132,7 @@ export default function MrliPreclaimScrubPage() {
     await runSearch(dateFrom, dateTo, mode);
   };
 
-  // เปิดหน้า: โหลดเฉพาะรายการสิทธิ (เบา) ยังไม่ตรวจจนกว่าจะกดค้นหา
+  // เปิดหน้า: โหลดเฉพาะรายการสิทธิ/คลินิก (เบา) ยังไม่ตรวจจนกว่าจะกดค้นหา
   useEffect(() => {
     void (async () => {
       try {
@@ -140,6 +145,19 @@ export default function MrliPreclaimScrubPage() {
         // ไม่เป็นไร — ตัวกรองสิทธิจะว่าง
       } finally {
         setPttypeLoading(false);
+      }
+    })();
+    void (async () => {
+      try {
+        const res = await fetch("/api/db/mrli-clinic-options");
+        const json = await res.json();
+
+        if (res.ok && json.success)
+          setClinicOptions(Array.isArray(json.options) ? json.options : []);
+      } catch {
+        // ไม่เป็นไร — ตัวกรองคลินิกจะว่าง
+      } finally {
+        setClinicLoading(false);
       }
     })();
   }, []);
@@ -196,6 +214,7 @@ export default function MrliPreclaimScrubPage() {
                     setPage(1);
                     setRows([]);
                     setHasSearched(false);
+                    setSelectedClinic([]);
                   }}
                 >
                   {m === "ipd" ? "ผู้ป่วยใน (IPD)" : "ผู้ป่วยนอก (OPD)"}
@@ -216,18 +235,33 @@ export default function MrliPreclaimScrubPage() {
                 onChange={(iso) => setDateTo(iso)}
               />
             </div>
-            <div>
-              <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามสิทธิการรักษา</p>
-              <PttypeMultiSelect
-                loading={pttypeLoading}
-                options={pttypeOptions}
-                selected={selectedPttype}
-                onChange={setSelectedPttype}
-              />
-              <p className="mt-1 text-[10px] text-flow-muted">
-                ไม่เลือก = ทุกสิทธิ · เลือกแล้วระบบจะกรองตอนตรวจ (ช่วยให้โหลดเร็วขึ้น)
-              </p>
+            <div className={`grid gap-4 ${mode === "opd" ? "md:grid-cols-2" : ""}`}>
+              <div>
+                <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามสิทธิการรักษา</p>
+                <MultiSelectFilter
+                  label="สิทธิ"
+                  loading={pttypeLoading}
+                  options={pttypeOptions}
+                  selected={selectedPttype}
+                  onChange={setSelectedPttype}
+                />
+              </div>
+              {mode === "opd" && (
+                <div>
+                  <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามคลินิก</p>
+                  <MultiSelectFilter
+                    label="คลินิก"
+                    loading={clinicLoading}
+                    options={clinicOptions}
+                    selected={selectedClinic}
+                    onChange={setSelectedClinic}
+                  />
+                </div>
+              )}
             </div>
+            <p className="text-[10px] text-flow-muted">
+              ไม่เลือก = ทั้งหมด · เลือกแล้วระบบจะกรองตอนตรวจ (ช่วยให้โหลดเร็วขึ้น)
+            </p>
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] md:text-xs text-flow-text">
                 <input

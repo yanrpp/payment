@@ -3,14 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 
 type Props = {
+  /** ป้ายชนิดตัวกรอง เช่น "สิทธิ" / "คลินิก" */
+  label: string;
   options: string[];
   selected: string[];
   onChange: (next: string[]) => void;
   loading?: boolean;
 };
 
-/** ตัวกรอง "สิทธิการรักษา" แบบ multi-select (dropdown + ค้นหา) ใช้ร่วมในหน้า MRLI */
-export function PttypeMultiSelect({ options, selected, onChange, loading }: Props) {
+/** ตัวกรองแบบ multi-select (dropdown + ค้นหา) ใช้ซ้ำได้ทั้งสิทธิ/คลินิก ในหน้า MRLI */
+export function MultiSelectFilter({ label, options, selected, onChange, loading }: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -40,12 +42,12 @@ export function PttypeMultiSelect({ options, selected, onChange, loading }: Prop
       >
         <span className="min-w-0 truncate">
           {loading
-            ? "กำลังโหลดสิทธิ..."
+            ? `กำลังโหลด${label}...`
             : options.length === 0
-              ? "ไม่มีรายการสิทธิ"
+              ? `ไม่มีรายการ${label}`
               : selected.length === 0
-                ? `ทุกสิทธิ — แตะเพื่อเลือกกรอง (${options.length} รายการ)`
-                : `เลือกแล้ว ${selected.length} สิทธิ — แตะเพื่อเปลี่ยน`}
+                ? `ทุก${label} — แตะเพื่อเลือกกรอง (${options.length} รายการ)`
+                : `เลือกแล้ว ${selected.length} ${label} — แตะเพื่อเปลี่ยน`}
         </span>
         <span aria-hidden className="shrink-0 text-slate-400">
           {open ? "▲" : "▼"}
@@ -73,7 +75,7 @@ export function PttypeMultiSelect({ options, selected, onChange, loading }: Prop
           <input
             autoComplete="off"
             className="ui-input-sm mt-2 text-[11px] py-1.5"
-            placeholder="พิมพ์เพื่อค้นหาชื่อสิทธิ..."
+            placeholder={`พิมพ์เพื่อค้นหา${label}...`}
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}

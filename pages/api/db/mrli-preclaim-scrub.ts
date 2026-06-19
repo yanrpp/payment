@@ -73,6 +73,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         : ` AND EXISTS (SELECT 1 FROM incpt i2 JOIN pttype p2 ON p2.pttype = i2.pttype WHERE i2.hn = ov.hn AND i2.fn = ov.fn AND i2.vn = ov.vn AND p2.name IN (${binds.join(", ")}))`;
   }
 
+  // กรองคลินิก (ฝั่ง server) — อิงตำแหน่งจ่ายยา (lct) จากใบสั่งยาของ visit
+  const clinicRaw = req.query.clinic;
+  const clinicList = (Array.isArray(clinicRaw) ? clinicRaw.join("|") : (clinicRaw ?? ""))
+    .toString()
+    .split("|")
+    .map((v) => v.trim())
+    .filter((v) => v !== "");
+
+  let clinicFilter = "";
+
+  if (clinicList.length > 0) {
+    const cbinds = clinicList.map((v, i) => {
+      params[`cl${i}`] = v;
+
+      return `:cl${i}`;
+    });
+    const visitJoin = mode === "ipd" ? "pr3.an = ipt.an" : "pr3.vn = ov.vn";
+
+    clinicFilter = ` AND EXISTS (SELECT 1 FROM prsc pr3 JOIN prscdt d3 ON d3.prscno = pr3.prscno JOIN lct l3 ON l3.lct = d3.sphmlct WHERE ${visitJoin} AND l3.name IN (${cbinds.join(", ")}))`;
+  }
+
   const sqlBase =
     mode === "ipd"
       ? `
@@ -83,7 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     JOIN pt ON ipt.hn = pt.hn
     LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
     LEFT JOIN incpt ic ON ic.an = ipt.an
-    WHERE ipt.rgtdate ${dateRange}${pttypeFilter}
+    WHERE ipt.rgtdate ${dateRange}${pttypeFilter}${clinicFilter}
     GROUP BY ipt.an, ipt.hn, ipt.rgtdate
     ORDER BY ipt.rgtdate, ipt.an`
       : `
@@ -94,7 +115,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     JOIN pt ON ov.hn = pt.hn
     LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
     LEFT JOIN incpt ic ON ic.hn = ov.hn AND ic.fn = ov.fn AND ic.vn = ov.vn
-    WHERE ov.vstdate ${dateRange} AND ov.an IS NULL AND ov.canceldate IS NULL${pttypeFilter}
+    WHERE ov.vstdate ${dateRange} AND ov.an IS NULL AND ov.canceldate IS NULL${pttypeFilter}${clinicFilter}
     GROUP BY ov.hn, ov.vstdate
     ORDER BY ov.vstdate, ov.hn`;
 
