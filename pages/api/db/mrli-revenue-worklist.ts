@@ -78,7 +78,8 @@ export default async function handler(
       ov.vstdate    AS RGTDATE,
       MAX(pt.dspname)  AS DSPNAME,
       MAX(ptno.cardno) AS CARDNO,
-      (SELECT MAX(pty.name) FROM prsc pr JOIN pttype pty ON pty.pttype = pr.pttype WHERE pr.vn = ov.vn) AS PTTYPE_NAME,
+      (SELECT MAX(pty.name) FROM incpt i LEFT JOIN pttype pty ON pty.pttype = i.pttype
+        WHERE i.hn = ov.hn AND i.fn = ov.fn AND i.vn = ov.vn) AS PTTYPE_NAME,
       NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
       COUNT(ic.income)               AS CHARGE_ITEM_COUNT,
       (SELECT COUNT(*) FROM prsc pr WHERE pr.vn = ov.vn) AS DRUG_ORDER_COUNT
