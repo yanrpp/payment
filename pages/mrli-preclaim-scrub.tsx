@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import { PttypeMultiSelect } from "@/components/PttypeMultiSelect";
 import { ThaiDatePicker } from "@/components/ThaiDatePicker";
@@ -155,6 +156,14 @@ export default function MrliPreclaimScrubPage() {
 
   return (
     <div className="flex w-full flex-1 flex-col">
+      {loading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-flow-border bg-white px-7 py-6 shadow-xl">
+            <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
+            <p className="text-xs font-medium text-flow-text">กำลังตรวจสอบข้อมูล...</p>
+          </div>
+        </div>
+      )}
       <header className="border-b border-accent-border bg-neutral-50">
         <div className="w-full px-4 py-4 md:px-6">
           <h1 className="text-xl md:text-2xl font-bold text-flow-text">

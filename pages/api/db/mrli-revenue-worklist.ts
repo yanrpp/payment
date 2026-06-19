@@ -5,9 +5,9 @@ import { executeQuery } from "@/lib/db/connection";
 
 /**
  * MRLI เฟส 1 — Revenue Integrity Worklist (รองรับ IPD และ OPD)
- * หาผู้ป่วยที่ยัง "ไม่ครบเงื่อนไขเบิก" เพื่อลด Lost Revenue (อ่าน HosXP อย่างเดียว)
- * - IPD: ยึดจาก ipt (an, rgtdate)  · Dx จาก iptdiag · วันจำหน่าย ipt.dchdate
- * - OPD: ยึดจาก ovst (an NULL) จัดกลุ่ม 1 คน/1 วัน (hn, vstdate) · Dx จาก ovstdiag · สิทธิจาก incpt.pttype
+ * Performance: ไม่ใช้ correlated subquery ต่อแถว — แยกเป็น query รวม (GROUP BY) แล้ว merge ใน JS
+ * - IPD: ยึดจาก ipt (an, rgtdate) · Dx iptdiag · วันจำหน่าย ipt.dchdate · สิทธิจาก prsc.pttype
+ * - OPD: ยึดจาก ovst (an NULL) จัดกลุ่ม 1 คน/1 วัน (hn, vstdate) · Dx ovstdiag · สิทธิจาก incpt.pttype
  * คอลัมน์ AN ในผลลัพธ์ = ตัวระบุ (an สำหรับ IPD / "hn:YYYYMMDD" สำหรับ OPD)
  */
 type WorklistRow = {
@@ -24,6 +24,16 @@ type WorklistRow = {
   DCH_DATE: string | null;
 };
 
+type BaseRow = {
+  AN: string;
+  HN: string;
+  RGTDATE: string;
+  DSPNAME: string | null;
+  CARDNO: string | null;
+  TOTAL_CHARGE: number;
+  CHARGE_ITEM_COUNT: number;
+};
+
 type SuccessResponse = {
   success: true;
   count: number;
@@ -31,6 +41,8 @@ type SuccessResponse = {
   meta: { mode: "opd" | "ipd"; dxAvailable: boolean; dischargeAvailable: boolean };
 };
 type ErrorResponse = { success: false; message: string; error?: string };
+
+const OPD_KEY = "ov.hn || ':' || TO_CHAR(ov.vstdate, 'YYYYMMDD')";
 
 export default async function handler(
   req: NextApiRequest,
@@ -73,80 +85,83 @@ export default async function handler(
         : ` AND EXISTS (SELECT 1 FROM incpt i2 JOIN pttype p2 ON p2.pttype = i2.pttype WHERE i2.hn = ov.hn AND i2.fn = ov.fn AND i2.vn = ov.vn AND p2.name IN (${binds.join(", ")}))`;
   }
 
+  // --- ส่วนหลัก: admission/visit + ยอดค่าใช้จ่ายรวม (ไม่มี correlated subquery) ---
   const sqlBase =
     mode === "ipd"
       ? `
-    SELECT
-      ipt.an        AS AN,
-      ipt.hn        AS HN,
-      ipt.rgtdate   AS RGTDATE,
-      MAX(pt.dspname)  AS DSPNAME,
-      MAX(ptno.cardno) AS CARDNO,
-      (SELECT MAX(pty.name) FROM prsc pr JOIN pttype pty ON pty.pttype = pr.pttype WHERE pr.an = ipt.an) AS PTTYPE_NAME,
-      NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
-      COUNT(ic.income)               AS CHARGE_ITEM_COUNT,
-      (SELECT COUNT(*) FROM prsc pr WHERE pr.an = ipt.an) AS DRUG_ORDER_COUNT
+    SELECT ipt.an AS AN, ipt.hn AS HN, ipt.rgtdate AS RGTDATE,
+      MAX(pt.dspname) AS DSPNAME, MAX(ptno.cardno) AS CARDNO,
+      NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE, COUNT(ic.income) AS CHARGE_ITEM_COUNT
     FROM ipt
     JOIN pt ON ipt.hn = pt.hn
     LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
     LEFT JOIN incpt ic ON ic.an = ipt.an
     WHERE ipt.rgtdate ${dateRange}${pttypeFilter}
     GROUP BY ipt.an, ipt.hn, ipt.rgtdate
-    ORDER BY ipt.rgtdate, ipt.an
-  `
+    ORDER BY ipt.rgtdate, ipt.an`
       : `
-    SELECT
-      ov.hn || ':' || TO_CHAR(ov.vstdate, 'YYYYMMDD') AS AN,
-      ov.hn         AS HN,
-      ov.vstdate    AS RGTDATE,
-      MAX(pt.dspname)  AS DSPNAME,
-      MAX(ptno.cardno) AS CARDNO,
-      (SELECT MAX(pty.name)
-         FROM incpt i
-         INNER JOIN ovst o2 ON o2.hn = i.hn AND o2.fn = i.fn AND o2.vn = i.vn
-         LEFT JOIN pttype pty ON pty.pttype = i.pttype
-        WHERE o2.hn = ov.hn AND o2.vstdate = ov.vstdate AND o2.an IS NULL AND o2.canceldate IS NULL) AS PTTYPE_NAME,
-      NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
-      COUNT(ic.income)               AS CHARGE_ITEM_COUNT,
-      (SELECT COUNT(*) FROM prsc pr INNER JOIN ovst o3 ON o3.vn = pr.vn
-        WHERE o3.hn = ov.hn AND o3.vstdate = ov.vstdate AND o3.an IS NULL) AS DRUG_ORDER_COUNT
+    SELECT ${OPD_KEY} AS AN, ov.hn AS HN, ov.vstdate AS RGTDATE,
+      MAX(pt.dspname) AS DSPNAME, MAX(ptno.cardno) AS CARDNO,
+      NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE, COUNT(ic.income) AS CHARGE_ITEM_COUNT
     FROM ovst ov
     JOIN pt ON ov.hn = pt.hn
     LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
     LEFT JOIN incpt ic ON ic.hn = ov.hn AND ic.fn = ov.fn AND ic.vn = ov.vn
-    WHERE ov.vstdate ${dateRange}
-      AND ov.an IS NULL
-      AND ov.canceldate IS NULL${pttypeFilter}
+    WHERE ov.vstdate ${dateRange} AND ov.an IS NULL AND ov.canceldate IS NULL${pttypeFilter}
     GROUP BY ov.hn, ov.vstdate
-    ORDER BY ov.vstdate, ov.hn
-  `;
+    ORDER BY ov.vstdate, ov.hn`;
+
+  // สิทธิการรักษา (รวมต่อ key) — IPD: prsc.pttype · OPD: incpt.pttype
+  const sqlPttype =
+    mode === "ipd"
+      ? `SELECT ipt.an AS K, MAX(pty.name) AS NM
+         FROM ipt JOIN prsc pr ON pr.an = ipt.an JOIN pttype pty ON pty.pttype = pr.pttype
+         WHERE ipt.rgtdate ${dateRange} GROUP BY ipt.an`
+      : `SELECT ${OPD_KEY} AS K, MAX(pty.name) AS NM
+         FROM ovst ov JOIN incpt i ON i.hn = ov.hn AND i.fn = ov.fn AND i.vn = ov.vn
+           JOIN pttype pty ON pty.pttype = i.pttype
+         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL GROUP BY ov.hn, ov.vstdate`;
+
+  // จำนวนใบสั่งยา (รวมต่อ key)
+  const sqlDrug =
+    mode === "ipd"
+      ? `SELECT pr.an AS K, COUNT(*) AS C FROM prsc pr JOIN ipt ON ipt.an = pr.an
+         WHERE ipt.rgtdate ${dateRange} GROUP BY pr.an`
+      : `SELECT ${OPD_KEY} AS K, COUNT(*) AS C FROM prsc pr JOIN ovst ov ON ov.vn = pr.vn
+         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL GROUP BY ov.hn, ov.vstdate`;
 
   const sqlDx =
     mode === "ipd"
-      ? `SELECT id.an AS AN, COUNT(*) AS CNT
-         FROM iptdiag id JOIN ipt ON ipt.an = id.an
+      ? `SELECT id.an AS K, COUNT(*) AS C FROM iptdiag id JOIN ipt ON ipt.an = id.an
          WHERE ipt.rgtdate ${dateRange} GROUP BY id.an`
-      : `SELECT ov.hn || ':' || TO_CHAR(ov.vstdate, 'YYYYMMDD') AS AN, COUNT(*) AS CNT
-         FROM ovstdiag od JOIN ovst ov ON ov.vn = od.vn
-         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL
-         GROUP BY ov.hn, ov.vstdate`;
+      : `SELECT ${OPD_KEY} AS K, COUNT(*) AS C FROM ovstdiag od JOIN ovst ov ON ov.vn = od.vn
+         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL GROUP BY ov.hn, ov.vstdate`;
 
   try {
-    const baseResult = await executeQuery<Omit<WorklistRow, "DX_COUNT" | "DCH_DATE">>(
-      sqlBase,
-      params
-    );
+    const [baseResult, pttypeResult, drugResult] = await Promise.all([
+      executeQuery<BaseRow>(sqlBase, params),
+      executeQuery<{ K: string; NM: string | null }>(sqlPttype, params),
+      executeQuery<{ K: string; C: number }>(sqlDrug, params),
+    ]);
     const baseRows = baseResult.rows ?? [];
+
+    const pttypeMap = new Map<string, string | null>();
+
+    for (const r of pttypeResult.rows ?? []) pttypeMap.set(String(r.K), r.NM ?? null);
+
+    const drugMap = new Map<string, number>();
+
+    for (const r of drugResult.rows ?? []) drugMap.set(String(r.K), Number(r.C ?? 0));
 
     // Dx — defensive (iptdiag / ovstdiag อาจไม่มีในบาง schema)
     const dxMap = new Map<string, number>();
     let dxAvailable = false;
 
     try {
-      const dxResult = await executeQuery<{ AN: string; CNT: number }>(sqlDx, params);
+      const dxResult = await executeQuery<{ K: string; C: number }>(sqlDx, params);
 
       dxAvailable = true;
-      for (const r of dxResult.rows ?? []) dxMap.set(String(r.AN), Number(r.CNT ?? 0));
+      for (const r of dxResult.rows ?? []) dxMap.set(String(r.K), Number(r.C ?? 0));
     } catch {
       // ตาราง diagnosis อาจไม่มี — ปล่อยเป็น unknown
     }
@@ -157,25 +172,27 @@ export default async function handler(
 
     if (mode === "ipd") {
       try {
-        const dchResult = await executeQuery<{ AN: string; DCHDATE: string | null }>(
-          `SELECT an AS AN, dchdate AS DCHDATE FROM ipt WHERE rgtdate ${dateRange}`,
+        const dchResult = await executeQuery<{ K: string; DCHDATE: string | null }>(
+          `SELECT an AS K, dchdate AS DCHDATE FROM ipt WHERE rgtdate ${dateRange}`,
           params
         );
 
         dischargeAvailable = true;
-        for (const r of dchResult.rows ?? []) dchMap.set(String(r.AN), r.DCHDATE ?? null);
+        for (const r of dchResult.rows ?? []) dchMap.set(String(r.K), r.DCHDATE ?? null);
       } catch {
         // คอลัมน์ dchdate อาจชื่ออื่น — ปล่อยเป็น unknown
       }
     }
 
     const data: WorklistRow[] = baseRows.map((r) => {
-      const an = String(r.AN);
+      const k = String(r.AN);
 
       return {
         ...r,
-        DX_COUNT: dxAvailable ? (dxMap.get(an) ?? 0) : null,
-        DCH_DATE: dischargeAvailable ? (dchMap.get(an) ?? null) : null,
+        PTTYPE_NAME: pttypeMap.get(k) ?? null,
+        DRUG_ORDER_COUNT: drugMap.get(k) ?? 0,
+        DX_COUNT: dxAvailable ? (dxMap.get(k) ?? 0) : null,
+        DCH_DATE: dischargeAvailable ? (dchMap.get(k) ?? null) : null,
       };
     });
 
