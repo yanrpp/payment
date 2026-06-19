@@ -69,12 +69,15 @@ export default function MrliPreclaimScrubPage() {
   });
   const [meta, setMeta] = useState<Meta>({ dxAvailable: false, rulesFromStore: false });
   const [onlyFindings, setOnlyFindings] = useState(true);
+  const [mode, setMode] = useState<"ipd" | "opd">("ipd");
   const [page, setPage] = useState(1);
   const pageSize = 50;
+  const idLabel = mode === "opd" ? "VN" : "AN";
+  const dateLabel = mode === "opd" ? "วันที่รับบริการ" : "วันที่รับเข้า";
 
   const abortRef = useRef<AbortController | null>(null);
 
-  const runSearch = async (d1: string, d2: string) => {
+  const runSearch = async (d1: string, d2: string, m: "ipd" | "opd" = mode) => {
     abortRef.current?.abort();
     const controller = new AbortController();
 
@@ -86,7 +89,7 @@ export default function MrliPreclaimScrubPage() {
 
     try {
       const res = await fetch(
-        `/api/db/mrli-preclaim-scrub?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}`,
+        `/api/db/mrli-preclaim-scrub?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}&mode=${m}`,
         { signal: controller.signal }
       );
       const json = await res.json();
@@ -110,13 +113,13 @@ export default function MrliPreclaimScrubPage() {
 
   const handleSearch = async (event: React.FormEvent) => {
     event.preventDefault();
-    await runSearch(dateFrom, dateTo);
+    await runSearch(dateFrom, dateTo, mode);
   };
 
   useEffect(() => {
     const today = localTodayIso();
 
-    void runSearch(today, today);
+    void runSearch(today, today, "ipd");
   }, []);
 
   const visibleRows = useMemo(
@@ -137,8 +140,8 @@ export default function MrliPreclaimScrubPage() {
             MRLI · Pre-Claim Scrubbing (ตรวจก่อนส่งเบิก)
           </h1>
           <p className="mt-1 text-xs md:text-sm text-flow-muted">
-            ตรวจความถูกต้องของผู้ป่วยใน (AN) ก่อนส่งเบิกตามกฎที่ตั้งไว้ — ลดอัตราการถูกปฏิเสธ (Claim
-            Denial)
+            ตรวจความถูกต้องของ{mode === "opd" ? "ผู้ป่วยนอก (OPD)" : "ผู้ป่วยใน (IPD)"}{" "}
+            ก่อนส่งเบิกตามกฎที่ตั้งไว้ — ลดอัตราการถูกปฏิเสธ (Claim Denial)
           </p>
         </div>
       </header>
@@ -149,16 +152,35 @@ export default function MrliPreclaimScrubPage() {
             className="rounded-xl border border-accent-border bg-white p-4 shadow-sm space-y-4"
             onSubmit={handleSearch}
           >
+            <div className="inline-flex rounded-lg border border-flow-border bg-white p-1 text-xs">
+              {(["ipd", "opd"] as const).map((m) => (
+                <button
+                  key={m}
+                  className={`rounded-md px-3 py-1.5 font-medium ${
+                    mode === m ? "bg-brand-500 text-white" : "text-flow-text hover:bg-flow-input"
+                  }`}
+                  type="button"
+                  onClick={() => {
+                    if (mode === m) return;
+                    setMode(m);
+                    setPage(1);
+                    void runSearch(dateFrom, dateTo, m);
+                  }}
+                >
+                  {m === "ipd" ? "ผู้ป่วยใน (IPD)" : "ผู้ป่วยนอก (OPD)"}
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <ThaiDatePicker
                 id="dateFrom"
-                label="วันที่รับเข้า (จาก)"
+                label={`${dateLabel} (จาก)`}
                 value={dateFrom}
                 onChange={(iso) => setDateFrom(iso)}
               />
               <ThaiDatePicker
                 id="dateTo"
-                label="วันที่รับเข้า (ถึง)"
+                label={`${dateLabel} (ถึง)`}
                 value={dateTo}
                 onChange={(iso) => setDateTo(iso)}
               />
@@ -186,7 +208,8 @@ export default function MrliPreclaimScrubPage() {
             </div>
             {rows.length > 0 && (!meta.dxAvailable || !meta.rulesFromStore) && (
               <p className="text-[10px] text-amber-700">
-                หมายเหตุ: {!meta.dxAvailable && "ไม่พบ iptdiag (กฎ 'ไม่มีรหัสวินิจฉัย' ถูกข้าม) "}
+                หมายเหตุ:{" "}
+                {!meta.dxAvailable && "ไม่พบตารางวินิจฉัย (กฎ 'ไม่มีรหัสวินิจฉัย' ถูกข้าม) "}
                 {!meta.rulesFromStore &&
                   "MySQL ไม่พร้อม — ใช้กฎค่าเริ่มต้น (แก้กฎไม่ได้จนกว่าจะตั้งค่า store)"}
               </p>
@@ -205,25 +228,25 @@ export default function MrliPreclaimScrubPage() {
             <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
               <p className="text-[11px] font-medium text-brand-600">ตรวจทั้งหมด</p>
               <p className="mt-1 text-base font-semibold tabular-nums text-flow-text">
-                {summary.total.toLocaleString("th-TH")} AN
+                {summary.total.toLocaleString("th-TH")} {idLabel}
               </p>
             </div>
             <div className="rounded-xl border border-green-300 bg-green-50 px-3 py-3 shadow-sm">
               <p className="text-[11px] font-medium text-green-700">ผ่าน (ไม่พบปัญหา)</p>
               <p className="mt-1 text-base font-semibold tabular-nums text-green-900">
-                {(summary.total - summary.withFindings).toLocaleString("th-TH")} AN
+                {(summary.total - summary.withFindings).toLocaleString("th-TH")} {idLabel}
               </p>
             </div>
             <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-3 shadow-sm">
               <p className="text-[11px] font-medium text-red-700">มีข้อผิดพลาด (error)</p>
               <p className="mt-1 text-base font-semibold tabular-nums text-red-900">
-                {summary.error.toLocaleString("th-TH")} AN
+                {summary.error.toLocaleString("th-TH")} {idLabel}
               </p>
             </div>
             <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 shadow-sm">
               <p className="text-[11px] font-medium text-amber-700">เตือน (warning)</p>
               <p className="mt-1 text-base font-semibold tabular-nums text-amber-900">
-                {summary.warning.toLocaleString("th-TH")} AN
+                {summary.warning.toLocaleString("th-TH")} {idLabel}
               </p>
             </div>
           </section>
@@ -232,7 +255,7 @@ export default function MrliPreclaimScrubPage() {
         <section>
           <h2 className="mb-2 text-sm font-semibold text-flow-text">
             {rows.length > 0
-              ? `ผลตรวจ (${visibleRows.length.toLocaleString("th-TH")} AN, หน้า ${currentPage}/${totalPages})`
+              ? `ผลตรวจ (${visibleRows.length.toLocaleString("th-TH")} ${idLabel}, หน้า ${currentPage}/${totalPages})`
               : "ผลตรวจ"}
           </h2>
 
@@ -255,8 +278,8 @@ export default function MrliPreclaimScrubPage() {
                   <tr className="bg-black">
                     {[
                       "NO.",
-                      "วันที่รับเข้า",
-                      "AN",
+                      dateLabel,
+                      idLabel,
                       "HN",
                       "ชื่อผู้ป่วย",
                       "สิทธิการรักษา",

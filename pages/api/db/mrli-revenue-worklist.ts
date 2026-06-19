@@ -4,10 +4,11 @@ import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
 
 /**
- * MRLI เฟส 1 — Revenue Integrity Worklist
- * หา IPD admission (ipt) ในช่วงวันที่ ที่ยัง "ไม่ครบเงื่อนไขเบิก" เพื่อลด Lost Revenue
- * อ่าน HosXP อย่างเดียว ส่วนหลัก (ค่าใช้จ่ายจาก incpt) เชื่อถือได้
- * ส่วน Dx ผู้ป่วยใน (iptdiag) และวันจำหน่าย (ipt.dchdate) ทำแบบ defensive — ถ้า schema ต่างจะคืน meta=false
+ * MRLI เฟส 1 — Revenue Integrity Worklist (รองรับ IPD และ OPD)
+ * หาผู้ป่วยที่ยัง "ไม่ครบเงื่อนไขเบิก" เพื่อลด Lost Revenue (อ่าน HosXP อย่างเดียว)
+ * - IPD: ยึดจาก ipt (an, rgtdate)  · Dx จาก iptdiag · วันจำหน่าย ipt.dchdate
+ * - OPD: ยึดจาก ovst (vn, vstdate, an NULL) · Dx จาก ovstdiag · ไม่มีวันจำหน่าย
+ * คอลัมน์ AN ในผลลัพธ์ = ตัวระบุ visit (an สำหรับ IPD / vn สำหรับ OPD)
  */
 type WorklistRow = {
   AN: string;
@@ -27,7 +28,7 @@ type SuccessResponse = {
   success: true;
   count: number;
   data: WorklistRow[];
-  meta: { dxAvailable: boolean; dischargeAvailable: boolean };
+  meta: { mode: "opd" | "ipd"; dxAvailable: boolean; dischargeAvailable: boolean };
 };
 type ErrorResponse = { success: false; message: string; error?: string };
 
@@ -45,22 +46,20 @@ export default async function handler(
       .json({ success: false, message: "กรุณาระบุช่วงวันที่ d1 และ d2 (รูปแบบ YYYY-MM-DD)" });
   }
 
+  const mode = String(req.query.mode ?? "ipd").toLowerCase() === "opd" ? "opd" : "ipd";
   const params = { d1, d2 };
+  const dateRange = "BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')";
 
-  // ส่วนหลัก (เชื่อถือได้): admission + ยอดค่าใช้จ่ายรวมจาก incpt + จำนวนใบสั่งยา + สิทธิจาก prsc
-  const sqlBase = `
+  const sqlBase =
+    mode === "ipd"
+      ? `
     SELECT
       ipt.an        AS AN,
       ipt.hn        AS HN,
       ipt.rgtdate   AS RGTDATE,
       MAX(pt.dspname)  AS DSPNAME,
       MAX(ptno.cardno) AS CARDNO,
-      (
-        SELECT MAX(pty.name)
-        FROM prsc pr
-        JOIN pttype pty ON pty.pttype = pr.pttype
-        WHERE pr.an = ipt.an
-      ) AS PTTYPE_NAME,
+      (SELECT MAX(pty.name) FROM prsc pr JOIN pttype pty ON pty.pttype = pr.pttype WHERE pr.an = ipt.an) AS PTTYPE_NAME,
       NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
       COUNT(ic.income)               AS CHARGE_ITEM_COUNT,
       (SELECT COUNT(*) FROM prsc pr WHERE pr.an = ipt.an) AS DRUG_ORDER_COUNT
@@ -68,10 +67,40 @@ export default async function handler(
     JOIN pt ON ipt.hn = pt.hn
     LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
     LEFT JOIN incpt ic ON ic.an = ipt.an
-    WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+    WHERE ipt.rgtdate ${dateRange}
     GROUP BY ipt.an, ipt.hn, ipt.rgtdate
     ORDER BY ipt.rgtdate, ipt.an
+  `
+      : `
+    SELECT
+      ov.vn         AS AN,
+      ov.hn         AS HN,
+      ov.vstdate    AS RGTDATE,
+      MAX(pt.dspname)  AS DSPNAME,
+      MAX(ptno.cardno) AS CARDNO,
+      (SELECT MAX(pty.name) FROM prsc pr JOIN pttype pty ON pty.pttype = pr.pttype WHERE pr.vn = ov.vn) AS PTTYPE_NAME,
+      NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
+      COUNT(ic.income)               AS CHARGE_ITEM_COUNT,
+      (SELECT COUNT(*) FROM prsc pr WHERE pr.vn = ov.vn) AS DRUG_ORDER_COUNT
+    FROM ovst ov
+    JOIN pt ON ov.hn = pt.hn
+    LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
+    LEFT JOIN incpt ic ON ic.hn = ov.hn AND ic.fn = ov.fn AND ic.vn = ov.vn
+    WHERE ov.vstdate ${dateRange}
+      AND ov.an IS NULL
+      AND ov.canceldate IS NULL
+    GROUP BY ov.vn, ov.hn, ov.vstdate
+    ORDER BY ov.vstdate, ov.vn
   `;
+
+  const sqlDx =
+    mode === "ipd"
+      ? `SELECT id.an AS AN, COUNT(*) AS CNT
+         FROM iptdiag id JOIN ipt ON ipt.an = id.an
+         WHERE ipt.rgtdate ${dateRange} GROUP BY id.an`
+      : `SELECT od.vn AS AN, COUNT(*) AS CNT
+         FROM ovstdiag od JOIN ovst ov ON ov.vn = od.vn
+         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL GROUP BY od.vn`;
 
   try {
     const baseResult = await executeQuery<Omit<WorklistRow, "DX_COUNT" | "DCH_DATE">>(
@@ -80,46 +109,35 @@ export default async function handler(
     );
     const baseRows = baseResult.rows ?? [];
 
-    // Dx ผู้ป่วยใน (iptdiag) — defensive
+    // Dx — defensive (iptdiag / ovstdiag อาจไม่มีในบาง schema)
     const dxMap = new Map<string, number>();
     let dxAvailable = false;
 
     try {
-      const dxResult = await executeQuery<{ AN: string; CNT: number }>(
-        `
-        SELECT id.an AS AN, COUNT(*) AS CNT
-        FROM iptdiag id
-        JOIN ipt ON ipt.an = id.an
-        WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-        GROUP BY id.an
-      `,
-        params
-      );
+      const dxResult = await executeQuery<{ AN: string; CNT: number }>(sqlDx, params);
 
       dxAvailable = true;
       for (const r of dxResult.rows ?? []) dxMap.set(String(r.AN), Number(r.CNT ?? 0));
     } catch {
-      // ตาราง iptdiag อาจไม่มีในสคีมานี้ — ปล่อยเป็น unknown
+      // ตาราง diagnosis อาจไม่มี — ปล่อยเป็น unknown
     }
 
-    // วันจำหน่าย (ipt.dchdate) — defensive
+    // วันจำหน่าย — เฉพาะ IPD (ipt.dchdate) แบบ defensive
     const dchMap = new Map<string, string | null>();
     let dischargeAvailable = false;
 
-    try {
-      const dchResult = await executeQuery<{ AN: string; DCHDATE: string | null }>(
-        `
-        SELECT an AS AN, dchdate AS DCHDATE
-        FROM ipt
-        WHERE rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-      `,
-        params
-      );
+    if (mode === "ipd") {
+      try {
+        const dchResult = await executeQuery<{ AN: string; DCHDATE: string | null }>(
+          `SELECT an AS AN, dchdate AS DCHDATE FROM ipt WHERE rgtdate ${dateRange}`,
+          params
+        );
 
-      dischargeAvailable = true;
-      for (const r of dchResult.rows ?? []) dchMap.set(String(r.AN), r.DCHDATE ?? null);
-    } catch {
-      // คอลัมน์ dchdate อาจชื่ออื่น — ปล่อยเป็น unknown
+        dischargeAvailable = true;
+        for (const r of dchResult.rows ?? []) dchMap.set(String(r.AN), r.DCHDATE ?? null);
+      } catch {
+        // คอลัมน์ dchdate อาจชื่ออื่น — ปล่อยเป็น unknown
+      }
     }
 
     const data: WorklistRow[] = baseRows.map((r) => {
@@ -136,7 +154,7 @@ export default async function handler(
       success: true,
       count: data.length,
       data,
-      meta: { dxAvailable, dischargeAvailable },
+      meta: { mode, dxAvailable, dischargeAvailable },
     });
   } catch (error) {
     return respondError(res, "ไม่สามารถดึงรายการ Revenue Integrity Worklist ได้", error);

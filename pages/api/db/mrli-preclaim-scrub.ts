@@ -46,41 +46,79 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .json({ success: false, message: "กรุณาระบุช่วงวันที่ d1 และ d2 (รูปแบบ YYYY-MM-DD)" });
   }
 
+  const mode = String(req.query.mode ?? "ipd").toLowerCase() === "opd" ? "opd" : "ipd";
   const params = { d1, d2 };
+  const dateRange = "BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')";
 
-  const sqlBase = `
+  const sqlBase =
+    mode === "ipd"
+      ? `
     SELECT
       ipt.an       AS AN,
       ipt.hn       AS HN,
       ipt.rgtdate  AS RGTDATE,
       MAX(pt.dspname)  AS DSPNAME,
       MAX(ptno.cardno) AS CARDNO,
-      (
-        SELECT MAX(pty.name) FROM prsc pr JOIN pttype pty ON pty.pttype = pr.pttype WHERE pr.an = ipt.an
-      ) AS PTTYPE_NAME,
+      (SELECT MAX(pty.name) FROM prsc pr JOIN pttype pty ON pty.pttype = pr.pttype WHERE pr.an = ipt.an) AS PTTYPE_NAME,
       NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
       (SELECT COUNT(*) FROM prsc pr WHERE pr.an = ipt.an) AS DRUG_ORDER_COUNT
     FROM ipt
     JOIN pt ON ipt.hn = pt.hn
     LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
     LEFT JOIN incpt ic ON ic.an = ipt.an
-    WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
+    WHERE ipt.rgtdate ${dateRange}
     GROUP BY ipt.an, ipt.hn, ipt.rgtdate
     ORDER BY ipt.rgtdate, ipt.an
+  `
+      : `
+    SELECT
+      ov.vn        AS AN,
+      ov.hn        AS HN,
+      ov.vstdate   AS RGTDATE,
+      MAX(pt.dspname)  AS DSPNAME,
+      MAX(ptno.cardno) AS CARDNO,
+      (SELECT MAX(pty.name) FROM prsc pr JOIN pttype pty ON pty.pttype = pr.pttype WHERE pr.vn = ov.vn) AS PTTYPE_NAME,
+      NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
+      (SELECT COUNT(*) FROM prsc pr WHERE pr.vn = ov.vn) AS DRUG_ORDER_COUNT
+    FROM ovst ov
+    JOIN pt ON ov.hn = pt.hn
+    LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
+    LEFT JOIN incpt ic ON ic.hn = ov.hn AND ic.fn = ov.fn AND ic.vn = ov.vn
+    WHERE ov.vstdate ${dateRange}
+      AND ov.an IS NULL
+      AND ov.canceldate IS NULL
+    GROUP BY ov.vn, ov.hn, ov.vstdate
+    ORDER BY ov.vstdate, ov.vn
   `;
 
-  // ยานอกบัญชียาหลัก ต่อ AN (เชื่อถือได้ — ใช้ตารางที่ verify แล้ว)
-  const sqlNonFormulary = `
-    SELECT ipt.an AS AN, COUNT(DISTINCT m.meditem) AS CNT
-    FROM ipt
-    JOIN prsc p ON p.an = ipt.an
-    JOIN prscdt d ON d.prscno = p.prscno
-    JOIN meditem m ON m.meditem = d.meditem
-    LEFT JOIN medaccnation a ON a.accnation = m.accnation
-    WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-      AND a.name LIKE 'ยานอก%'
-    GROUP BY ipt.an
-  `;
+  // ยานอกบัญชียาหลัก ต่อ visit (เชื่อถือได้)
+  const sqlNonFormulary =
+    mode === "ipd"
+      ? `SELECT ipt.an AS AN, COUNT(DISTINCT m.meditem) AS CNT
+         FROM ipt
+         JOIN prsc p ON p.an = ipt.an
+         JOIN prscdt d ON d.prscno = p.prscno
+         JOIN meditem m ON m.meditem = d.meditem
+         LEFT JOIN medaccnation a ON a.accnation = m.accnation
+         WHERE ipt.rgtdate ${dateRange} AND a.name LIKE 'ยานอก%'
+         GROUP BY ipt.an`
+      : `SELECT ov.vn AS AN, COUNT(DISTINCT m.meditem) AS CNT
+         FROM ovst ov
+         JOIN prsc p ON p.vn = ov.vn
+         JOIN prscdt d ON d.prscno = p.prscno
+         JOIN meditem m ON m.meditem = d.meditem
+         LEFT JOIN medaccnation a ON a.accnation = m.accnation
+         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL AND a.name LIKE 'ยานอก%'
+         GROUP BY ov.vn`;
+
+  const sqlDx =
+    mode === "ipd"
+      ? `SELECT id.an AS AN, COUNT(*) AS CNT
+         FROM iptdiag id JOIN ipt ON ipt.an = id.an
+         WHERE ipt.rgtdate ${dateRange} GROUP BY id.an`
+      : `SELECT od.vn AS AN, COUNT(*) AS CNT
+         FROM ovstdiag od JOIN ovst ov ON ov.vn = od.vn
+         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL GROUP BY od.vn`;
 
   try {
     const [baseResult, nfResult] = await Promise.all([
@@ -93,26 +131,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     for (const r of nfResult.rows ?? []) nfMap.set(String(r.AN), Number(r.CNT ?? 0));
 
-    // Dx ผู้ป่วยใน (iptdiag) — defensive
+    // Dx — defensive
     const dxMap = new Map<string, number>();
     let dxAvailable = false;
 
     try {
-      const dxResult = await executeQuery<{ AN: string; CNT: number }>(
-        `
-        SELECT id.an AS AN, COUNT(*) AS CNT
-        FROM iptdiag id
-        JOIN ipt ON ipt.an = id.an
-        WHERE ipt.rgtdate BETWEEN TO_DATE(:d1, 'YYYY-MM-DD') AND TO_DATE(:d2, 'YYYY-MM-DD')
-        GROUP BY id.an
-      `,
-        params
-      );
+      const dxResult = await executeQuery<{ AN: string; CNT: number }>(sqlDx, params);
 
       dxAvailable = true;
       for (const r of dxResult.rows ?? []) dxMap.set(String(r.AN), Number(r.CNT ?? 0));
     } catch {
-      // iptdiag อาจไม่มี — ปล่อยกฎ NO_DIAGNOSIS ไม่ทำงาน
+      // ตาราง diagnosis อาจไม่มี — กฎ NO_DIAGNOSIS จะถูกข้าม
     }
 
     // โหลดกฎที่เปิดใช้งานจาก mrli_rule; ถ้า MySQL ไม่พร้อมใช้กฎ default
@@ -155,7 +184,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       count: data.length,
       data,
       summary,
-      meta: { dxAvailable, rulesFromStore },
+      meta: { mode, dxAvailable, rulesFromStore },
     });
   } catch (error) {
     return respondError(res, "ไม่สามารถรัน Pre-Claim Scrubbing ได้", error);

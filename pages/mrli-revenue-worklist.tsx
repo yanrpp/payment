@@ -80,8 +80,11 @@ export default function MrliRevenueWorklistPage() {
   const [rows, setRows] = useState<WorklistRow[]>([]);
   const [meta, setMeta] = useState<Meta>({ dxAvailable: false, dischargeAvailable: false });
   const [onlyIncomplete, setOnlyIncomplete] = useState(true);
+  const [mode, setMode] = useState<"ipd" | "opd">("ipd");
   const [page, setPage] = useState(1);
   const pageSize = 50;
+  const idLabel = mode === "opd" ? "VN" : "AN";
+  const dateLabel = mode === "opd" ? "วันที่รับบริการ" : "วันที่รับเข้า";
 
   const [statuses, setStatuses] = useState<Record<string, ClaimStatusRow>>({});
   const [storeUnavailable, setStoreUnavailable] = useState(false);
@@ -161,7 +164,7 @@ export default function MrliRevenueWorklistPage() {
     }
   };
 
-  const runSearch = async (d1: string, d2: string) => {
+  const runSearch = async (d1: string, d2: string, m: "ipd" | "opd" = mode) => {
     abortRef.current?.abort();
     const controller = new AbortController();
 
@@ -173,7 +176,7 @@ export default function MrliRevenueWorklistPage() {
 
     try {
       const res = await fetch(
-        `/api/db/mrli-revenue-worklist?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}`,
+        `/api/db/mrli-revenue-worklist?d1=${encodeURIComponent(d1)}&d2=${encodeURIComponent(d2)}&mode=${m}`,
         { signal: controller.signal }
       );
       const json = await res.json();
@@ -196,13 +199,13 @@ export default function MrliRevenueWorklistPage() {
 
   const handleSearch = async (event: React.FormEvent) => {
     event.preventDefault();
-    await runSearch(dateFrom, dateTo);
+    await runSearch(dateFrom, dateTo, mode);
   };
 
   useEffect(() => {
     const today = localTodayIso();
 
-    void runSearch(today, today);
+    void runSearch(today, today, "ipd");
   }, []);
 
   const summary = useMemo(() => {
@@ -239,8 +242,8 @@ export default function MrliRevenueWorklistPage() {
             MRLI · Revenue Integrity Worklist (รายการรอทำเบิก/ตรวจสอบ)
           </h1>
           <p className="mt-1 text-xs md:text-sm text-flow-muted">
-            ผู้ป่วยใน (IPT) ที่ข้อมูลเบิกอาจไม่ครบ — ยังไม่ลงค่าใช้จ่าย หรือไม่มีรหัสวินิจฉัย
-            (ICD-10) เพื่อลด Lost Revenue
+            {mode === "opd" ? "ผู้ป่วยนอก (OPD)" : "ผู้ป่วยใน (IPT)"} ที่ข้อมูลเบิกอาจไม่ครบ —
+            ยังไม่ลงค่าใช้จ่าย หรือไม่มีรหัสวินิจฉัย (ICD-10) เพื่อลด Lost Revenue
           </p>
         </div>
       </header>
@@ -251,16 +254,35 @@ export default function MrliRevenueWorklistPage() {
             className="rounded-xl border border-accent-border bg-white p-4 shadow-sm space-y-4"
             onSubmit={handleSearch}
           >
+            <div className="inline-flex rounded-lg border border-flow-border bg-white p-1 text-xs">
+              {(["ipd", "opd"] as const).map((m) => (
+                <button
+                  key={m}
+                  className={`rounded-md px-3 py-1.5 font-medium ${
+                    mode === m ? "bg-brand-500 text-white" : "text-flow-text hover:bg-flow-input"
+                  }`}
+                  type="button"
+                  onClick={() => {
+                    if (mode === m) return;
+                    setMode(m);
+                    setPage(1);
+                    void runSearch(dateFrom, dateTo, m);
+                  }}
+                >
+                  {m === "ipd" ? "ผู้ป่วยใน (IPD)" : "ผู้ป่วยนอก (OPD)"}
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <ThaiDatePicker
                 id="dateFrom"
-                label="วันที่รับเข้า (จาก)"
+                label={`${dateLabel} (จาก)`}
                 value={dateFrom}
                 onChange={(iso) => setDateFrom(iso)}
               />
               <ThaiDatePicker
                 id="dateTo"
-                label="วันที่รับเข้า (ถึง)"
+                label={`${dateLabel} (ถึง)`}
                 value={dateTo}
                 onChange={(iso) => setDateTo(iso)}
               />
@@ -298,12 +320,15 @@ export default function MrliRevenueWorklistPage() {
                 {loading ? "กำลังค้นหา..." : "ค้นหาข้อมูล"}
               </button>
             </div>
-            {(!meta.dxAvailable || !meta.dischargeAvailable) && rows.length > 0 && (
-              <p className="text-[10px] text-amber-700">
-                หมายเหตุ: {!meta.dxAvailable && "ไม่พบตาราง iptdiag (คอลัมน์ Dx แสดงเป็น —) "}
-                {!meta.dischargeAvailable && "ไม่พบคอลัมน์ ipt.dchdate (วันจำหน่ายแสดงเป็น —)"}
-              </p>
-            )}
+            {rows.length > 0 &&
+              (!meta.dxAvailable || (mode === "ipd" && !meta.dischargeAvailable)) && (
+                <p className="text-[10px] text-amber-700">
+                  หมายเหตุ: {!meta.dxAvailable && "ไม่พบตารางวินิจฉัย (คอลัมน์ Dx แสดงเป็น —) "}
+                  {mode === "ipd" &&
+                    !meta.dischargeAvailable &&
+                    "ไม่พบคอลัมน์ ipt.dchdate (วันจำหน่ายแสดงเป็น —)"}
+                </p>
+              )}
           </form>
         </section>
 
@@ -323,25 +348,29 @@ export default function MrliRevenueWorklistPage() {
         {rows.length > 0 && (
           <section className="mb-4 grid gap-3 md:grid-cols-4">
             <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
-              <p className="text-[11px] font-medium text-brand-600">Admission ทั้งหมด</p>
+              <p className="text-[11px] font-medium text-brand-600">
+                {mode === "opd" ? "Visit (OPD) ทั้งหมด" : "Admission (IPD) ทั้งหมด"}
+              </p>
               <p className="mt-1 text-base font-semibold tabular-nums text-flow-text">
-                {summary.total.toLocaleString("th-TH")} AN
+                {summary.total.toLocaleString("th-TH")} {idLabel}
               </p>
             </div>
             <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 shadow-sm">
               <p className="text-[11px] font-medium text-amber-700">ต้องตรวจสอบ</p>
               <p className="mt-1 text-base font-semibold tabular-nums text-amber-900">
-                {summary.incomplete.toLocaleString("th-TH")} AN
+                {summary.incomplete.toLocaleString("th-TH")} {idLabel}
               </p>
             </div>
             <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
               <p className="text-[11px] font-medium text-brand-600">ยังไม่ลงค่าใช้จ่าย</p>
               <p className="mt-1 text-base font-semibold tabular-nums text-flow-text">
-                {summary.noCharge.toLocaleString("th-TH")} AN
+                {summary.noCharge.toLocaleString("th-TH")} {idLabel}
               </p>
             </div>
             <div className="rounded-xl border border-flow-border bg-white px-3 py-3 shadow-sm">
-              <p className="text-[11px] font-medium text-brand-600">ค่าใช้จ่ายรวม (ทุก AN)</p>
+              <p className="text-[11px] font-medium text-brand-600">
+                ค่าใช้จ่ายรวม (ทุก {idLabel})
+              </p>
               <p className="mt-1 text-sm font-semibold tabular-nums text-flow-text">
                 {formatBaht(summary.totalCharge)} บาท
               </p>
@@ -352,7 +381,7 @@ export default function MrliRevenueWorklistPage() {
         <section>
           <h2 className="mb-2 text-sm font-semibold text-flow-text">
             {rows.length > 0
-              ? `รายการ (${visibleRows.length.toLocaleString("th-TH")} AN, หน้า ${currentPage}/${totalPages})`
+              ? `รายการ (${visibleRows.length.toLocaleString("th-TH")} ${idLabel}, หน้า ${currentPage}/${totalPages})`
               : "รายการ"}
           </h2>
 
@@ -369,8 +398,8 @@ export default function MrliRevenueWorklistPage() {
                   <tr className="bg-black">
                     {[
                       "NO.",
-                      "วันที่รับเข้า",
-                      "AN",
+                      dateLabel,
+                      idLabel,
                       "HN",
                       "ชื่อผู้ป่วย",
                       "สิทธิการรักษา",
