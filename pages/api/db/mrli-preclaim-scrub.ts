@@ -72,15 +72,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   `
       : `
     SELECT
-      ov.vn        AS AN,
+      ov.hn || ':' || TO_CHAR(ov.vstdate, 'YYYYMMDD') AS AN,
       ov.hn        AS HN,
       ov.vstdate   AS RGTDATE,
       MAX(pt.dspname)  AS DSPNAME,
       MAX(ptno.cardno) AS CARDNO,
-      (SELECT MAX(pty.name) FROM incpt i LEFT JOIN pttype pty ON pty.pttype = i.pttype
-        WHERE i.hn = ov.hn AND i.fn = ov.fn AND i.vn = ov.vn) AS PTTYPE_NAME,
+      (SELECT MAX(pty.name)
+         FROM incpt i
+         INNER JOIN ovst o2 ON o2.hn = i.hn AND o2.fn = i.fn AND o2.vn = i.vn
+         LEFT JOIN pttype pty ON pty.pttype = i.pttype
+        WHERE o2.hn = ov.hn AND o2.vstdate = ov.vstdate AND o2.an IS NULL AND o2.canceldate IS NULL) AS PTTYPE_NAME,
       NVL(SUM(NVL(ic.incamt, 0)), 0) AS TOTAL_CHARGE,
-      (SELECT COUNT(*) FROM prsc pr WHERE pr.vn = ov.vn) AS DRUG_ORDER_COUNT
+      (SELECT COUNT(*) FROM prsc pr INNER JOIN ovst o3 ON o3.vn = pr.vn
+        WHERE o3.hn = ov.hn AND o3.vstdate = ov.vstdate AND o3.an IS NULL) AS DRUG_ORDER_COUNT
     FROM ovst ov
     JOIN pt ON ov.hn = pt.hn
     LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
@@ -88,8 +92,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     WHERE ov.vstdate ${dateRange}
       AND ov.an IS NULL
       AND ov.canceldate IS NULL
-    GROUP BY ov.vn, ov.hn, ov.vstdate
-    ORDER BY ov.vstdate, ov.vn
+    GROUP BY ov.hn, ov.vstdate
+    ORDER BY ov.vstdate, ov.hn
   `;
 
   // ยานอกบัญชียาหลัก ต่อ visit (เชื่อถือได้)
@@ -103,23 +107,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
          LEFT JOIN medaccnation a ON a.accnation = m.accnation
          WHERE ipt.rgtdate ${dateRange} AND a.name LIKE 'ยานอก%'
          GROUP BY ipt.an`
-      : `SELECT ov.vn AS AN, COUNT(DISTINCT m.meditem) AS CNT
+      : `SELECT ov.hn || ':' || TO_CHAR(ov.vstdate, 'YYYYMMDD') AS AN, COUNT(DISTINCT m.meditem) AS CNT
          FROM ovst ov
          JOIN prsc p ON p.vn = ov.vn
          JOIN prscdt d ON d.prscno = p.prscno
          JOIN meditem m ON m.meditem = d.meditem
          LEFT JOIN medaccnation a ON a.accnation = m.accnation
          WHERE ov.vstdate ${dateRange} AND ov.an IS NULL AND a.name LIKE 'ยานอก%'
-         GROUP BY ov.vn`;
+         GROUP BY ov.hn, ov.vstdate`;
 
   const sqlDx =
     mode === "ipd"
       ? `SELECT id.an AS AN, COUNT(*) AS CNT
          FROM iptdiag id JOIN ipt ON ipt.an = id.an
          WHERE ipt.rgtdate ${dateRange} GROUP BY id.an`
-      : `SELECT od.vn AS AN, COUNT(*) AS CNT
+      : `SELECT ov.hn || ':' || TO_CHAR(ov.vstdate, 'YYYYMMDD') AS AN, COUNT(*) AS CNT
          FROM ovstdiag od JOIN ovst ov ON ov.vn = od.vn
-         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL GROUP BY od.vn`;
+         WHERE ov.vstdate ${dateRange} AND ov.an IS NULL
+         GROUP BY ov.hn, ov.vstdate`;
 
   try {
     const [baseResult, nfResult] = await Promise.all([

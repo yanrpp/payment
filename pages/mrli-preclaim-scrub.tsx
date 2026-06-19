@@ -72,7 +72,7 @@ export default function MrliPreclaimScrubPage() {
   const [mode, setMode] = useState<"ipd" | "opd">("ipd");
   const [page, setPage] = useState(1);
   const pageSize = 50;
-  const idLabel = mode === "opd" ? "VN" : "AN";
+  const idLabel = mode === "opd" ? "อ้างอิง (HN/วัน)" : "AN";
   const dateLabel = mode === "opd" ? "วันที่รับบริการ" : "วันที่รับเข้า";
 
   const abortRef = useRef<AbortController | null>(null);
