@@ -235,6 +235,27 @@ export default function MrliPreclaimScrubPage() {
                 onChange={(iso) => setDateTo(iso)}
               />
             </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] md:text-xs text-flow-text">
+                <input
+                  checked={onlyFindings}
+                  className="ui-checkbox"
+                  type="checkbox"
+                  onChange={(e) => {
+                    setOnlyFindings(e.target.checked);
+                    setPage(1);
+                  }}
+                />
+                แสดงเฉพาะรายการที่พบปัญหา
+              </label>
+              <button
+                className="ui-btn-primary text-xs md:text-sm"
+                disabled={loading}
+                type="submit"
+              >
+                {loading ? "กำลังตรวจ..." : "ตรวจสอบ (Scrub)"}
+              </button>
+            </div>
             <div className={`grid gap-4 ${mode === "opd" ? "md:grid-cols-2" : ""}`}>
               <div>
                 <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามสิทธิการรักษา</p>
@@ -262,27 +283,6 @@ export default function MrliPreclaimScrubPage() {
             <p className="text-[10px] text-flow-muted">
               ไม่เลือก = ทั้งหมด · เลือกแล้วระบบจะกรองตอนตรวจ (ช่วยให้โหลดเร็วขึ้น)
             </p>
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] md:text-xs text-flow-text">
-                <input
-                  checked={onlyFindings}
-                  className="ui-checkbox"
-                  type="checkbox"
-                  onChange={(e) => {
-                    setOnlyFindings(e.target.checked);
-                    setPage(1);
-                  }}
-                />
-                แสดงเฉพาะรายการที่พบปัญหา
-              </label>
-              <button
-                className="ui-btn-primary text-xs md:text-sm"
-                disabled={loading}
-                type="submit"
-              >
-                {loading ? "กำลังตรวจ..." : "ตรวจสอบ (Scrub)"}
-              </button>
-            </div>
             {rows.length > 0 && (!meta.dxAvailable || !meta.rulesFromStore) && (
               <p className="text-[10px] text-amber-700">
                 หมายเหตุ:{" "}

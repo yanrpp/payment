@@ -337,34 +337,7 @@ export default function MrliRevenueWorklistPage() {
                 onChange={(iso) => setDateTo(iso)}
               />
             </div>
-            <div className={`grid gap-4 ${mode === "opd" ? "md:grid-cols-2" : ""}`}>
-              <div>
-                <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามสิทธิการรักษา</p>
-                <MultiSelectFilter
-                  label="สิทธิ"
-                  loading={pttypeLoading}
-                  options={pttypeOptions}
-                  selected={selectedPttype}
-                  onChange={setSelectedPttype}
-                />
-              </div>
-              {mode === "opd" && (
-                <div>
-                  <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามคลินิก</p>
-                  <MultiSelectFilter
-                    label="คลินิก"
-                    loading={clinicLoading}
-                    options={clinicOptions}
-                    selected={selectedClinic}
-                    onChange={setSelectedClinic}
-                  />
-                </div>
-              )}
-            </div>
-            <p className="text-[10px] text-flow-muted">
-              ไม่เลือก = ทั้งหมด · เลือกแล้วระบบจะกรองตอนค้นหา (ช่วยให้โหลดเร็วขึ้น)
-            </p>
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-4">
                 <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] md:text-xs text-flow-text">
                   <input
@@ -397,6 +370,33 @@ export default function MrliRevenueWorklistPage() {
                 {loading ? "กำลังค้นหา..." : "ค้นหาข้อมูล"}
               </button>
             </div>
+            <div className={`grid gap-4 ${mode === "opd" ? "md:grid-cols-2" : ""}`}>
+              <div>
+                <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามสิทธิการรักษา</p>
+                <MultiSelectFilter
+                  label="สิทธิ"
+                  loading={pttypeLoading}
+                  options={pttypeOptions}
+                  selected={selectedPttype}
+                  onChange={setSelectedPttype}
+                />
+              </div>
+              {mode === "opd" && (
+                <div>
+                  <p className="mb-1 text-[11px] font-medium text-flow-text">กรองตามคลินิก</p>
+                  <MultiSelectFilter
+                    label="คลินิก"
+                    loading={clinicLoading}
+                    options={clinicOptions}
+                    selected={selectedClinic}
+                    onChange={setSelectedClinic}
+                  />
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-flow-muted">
+              ไม่เลือก = ทั้งหมด · เลือกแล้วระบบจะกรองตอนค้นหา (ช่วยให้โหลดเร็วขึ้น)
+            </p>
             {rows.length > 0 &&
               (!meta.dxAvailable || (mode === "ipd" && !meta.dischargeAvailable)) && (
                 <p className="text-[10px] text-amber-700">
