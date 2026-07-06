@@ -9,10 +9,18 @@ type Props = {
   selected: string[];
   onChange: (next: string[]) => void;
   loading?: boolean;
+  formatOption?: (option: string) => string;
 };
 
 /** ตัวกรองแบบ multi-select (dropdown + ค้นหา) ใช้ซ้ำได้ทั้งสิทธิ/คลินิก ในหน้า MRLI */
-export function MultiSelectFilter({ label, options, selected, onChange, loading }: Props) {
+export function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+  loading,
+  formatOption,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -28,7 +36,10 @@ export function MultiSelectFilter({ label, options, selected, onChange, loading 
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const filtered = options.filter((o) => o.toLowerCase().includes(q.trim().toLowerCase()));
+  const filtered = options.filter((o) => {
+    const haystack = formatOption ? `${formatOption(o)} ${o}` : o;
+    return haystack.toLowerCase().includes(q.trim().toLowerCase());
+  });
   const toggle = (opt: string) =>
     onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
 
@@ -95,8 +106,8 @@ export function MultiSelectFilter({ label, options, selected, onChange, loading 
                     type="checkbox"
                     onChange={() => toggle(opt)}
                   />
-                  <span className="min-w-0 flex-1 leading-snug" title={opt}>
-                    {opt}
+                  <span className="min-w-0 flex-1 leading-snug" title={formatOption ? formatOption(opt) : opt}>
+                    {formatOption ? formatOption(opt) : opt}
                   </span>
                 </label>
               ))

@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
@@ -13,21 +12,24 @@ type AppShellProps = {
   children: ReactNode;
 };
 
+const NAV_HIDDEN_KEY = "nav_hidden";
+
 /**
  * โครงหลักของแอป (enterprise shell): sidebar ซ้าย + topbar + พื้นที่เนื้อหา
- * - ย่อ/ขยาย sidebar (จำค่าใน localStorage)
+ * - ซ่อน sidebar เต็มรูปแบบ (จำค่าใน localStorage)
  * - มือถือเป็น drawer (เปิดจาก hamburger, ปิดเมื่อเปลี่ยนหน้า)
  */
 export function AppShell({ children }: AppShellProps) {
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    const saved =
-      typeof window !== "undefined" ? window.localStorage.getItem("nav_collapsed") : null;
+    if (typeof window === "undefined") return;
 
-    if (saved === "1") setCollapsed(true);
+    const savedHidden = window.localStorage.getItem(NAV_HIDDEN_KEY);
+
+    if (savedHidden === "1") setSidebarHidden(true);
   }, []);
 
   useEffect(() => {
@@ -38,16 +40,26 @@ export function AppShell({ children }: AppShellProps) {
     return () => router.events.off("routeChangeComplete", close);
   }, [router.events]);
 
-  const toggleCollapse = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
+  const hideSidebar = () => {
+    setSidebarHidden(true);
+    setMobileOpen(false);
 
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(NAV_HIDDEN_KEY, "1");
+    }
+  };
+
+  const openSidebar = () => {
+    if (sidebarHidden) {
+      setSidebarHidden(false);
+      setMobileOpen(false);
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("nav_collapsed", next ? "1" : "0");
+        window.localStorage.setItem(NAV_HIDDEN_KEY, "0");
       }
+      return;
+    }
 
-      return next;
-    });
+    setMobileOpen(true);
   };
 
   return (
@@ -56,13 +68,13 @@ export function AppShell({ children }: AppShellProps) {
       style={{ fontFamily: "var(--font-thai), sans-serif" }}
     >
       <AppSidebar
-        collapsed={collapsed}
+        hidden={sidebarHidden}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
-        onToggleCollapse={toggleCollapse}
+        onHide={hideSidebar}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <AppHeaderBar onOpenMobile={() => setMobileOpen(true)} />
+        <AppHeaderBar sidebarHidden={sidebarHidden} onOpenSidebar={openSidebar} />
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         <AppFooter />
       </div>

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, FileText, Folder } from "lucide-react";
 
-import { normalizeThaiCardInput } from "@/lib/card/normalize";
-import { isoToThaiDisplay } from "@/lib/date/thaiDate";
+import { MultiSelectFilter } from "@/components/MultiSelectFilter";
+import { isoToThaiDisplay, isoToThaiInput } from "@/lib/date/thaiDate";
 import { normalizeHnInput } from "@/lib/hn/normalize";
 import { buildOpdscanUncPath } from "@/lib/opdscan/path";
+import { parsePatientSearchQuery, scanHnFromSearchQuery } from "@/lib/patient/parseSearchQuery";
 
 type PatientMedicationRow = {
   HN: string;
@@ -43,6 +44,56 @@ type PatientLabRow = {
   MIN_NRM: string | null;
   MAX_NRM: string | null;
   NRM_UNIT: string | null;
+};
+
+type PatientXrayRow = {
+  HN: string;
+  CARDNO: string | null;
+  DSPNAME: string | null;
+  XRAY_DATE: string;
+  AN: string | null;
+  VISIT_TYPE: string;
+  RDOEXM: string | null;
+  EXAM_NAME: string | null;
+};
+
+type PatientHistoryRow = {
+  HN: string;
+  CARDNO: string | null;
+  DSPNAME: string | null;
+  VSTDATE: string;
+  AN: string | null;
+  VISIT_TYPE: string;
+  CC: string | null;
+  HPI: string | null;
+  PE: string | null;
+  NOTE: string | null;
+  CLINIC_NAME: string | null;
+};
+
+type PatientDiagnosisRow = {
+  HN: string;
+  CARDNO: string | null;
+  DSPNAME: string | null;
+  DIAG_DATE: string;
+  AN: string | null;
+  VISIT_TYPE: string;
+  ICD10: string | null;
+  ICD10_NAME: string | null;
+  DIAGTYPE: string | null;
+  VISIT_REF: string | null;
+};
+
+type PatientDiseaseRow = {
+  HN: string;
+  CARDNO: string | null;
+  DSPNAME: string | null;
+  VSTDATE: string | null;
+  DIAGDATE: string | null;
+  ICD10: string | null;
+  ICD10_NAME: string | null;
+  DIAGTYPE: string | null;
+  DOCTOR_NAME: string | null;
 };
 
 type PatientCandidate = {
@@ -107,99 +158,259 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const ALL_DATES = "__all__";
-type ContentTab = "drug" | "lab";
+const OPDSCAN_VIEWER_TARGET = "rpp_opdscan_viewer";
+
+const SEARCH_PROMPT = 'ระบุเงื่อนไขค้นหาแล้วกด "ค้นหา"';
+
+function tabEmptyMessage(hasResults: boolean, filteredMessage: string): string {
+  return hasResults ? filteredMessage : SEARCH_PROMPT;
+}
+type TreatmentTab = "drug" | "lab" | "xray" | "history" | "diag" | "disease";
+
+const TREATMENT_TABS: { id: TreatmentTab; label: string; dateLabel: string }[] = [
+  { id: "drug", label: "ยา", dateLabel: "วันที่มียา" },
+  { id: "lab", label: "Lab", dateLabel: "วันที่มี Lab" },
+  { id: "xray", label: "X-ray", dateLabel: "วันที่มี X-ray" },
+  { id: "history", label: "ซักประวัติ", dateLabel: "วันที่มา" },
+  { id: "diag", label: "รหัสวินิจฉัย", dateLabel: "วันที่วินิจฉัย" },
+  { id: "disease", label: "โรค", dateLabel: "วันที่บันทึกโรค" },
+];
+
+function pickInitialTreatmentTab(counts: Record<TreatmentTab, number>): TreatmentTab {
+  for (const tab of TREATMENT_TABS) {
+    if (counts[tab.id] > 0) return tab.id;
+  }
+  return "drug";
+}
+
+function treatmentRowDateIso(tab: TreatmentTab, row: Record<string, unknown>): string {
+  switch (tab) {
+    case "drug":
+      return apiDateToIsoLocal(row.PRSCDATE);
+    case "lab":
+      return apiDateToIsoLocal(row.LAB_DATE);
+    case "xray":
+      return apiDateToIsoLocal(row.XRAY_DATE);
+    case "history":
+      return apiDateToIsoLocal(row.VSTDATE);
+    case "diag":
+      return apiDateToIsoLocal(row.DIAG_DATE);
+    case "disease":
+      return apiDateToIsoLocal(row.DIAGDATE ?? row.VSTDATE);
+    default:
+      return "";
+  }
+}
+
+function rowMatchesVisitFilter(visitType: string | null | undefined, filter: "all" | "OPD" | "IPD") {
+  if (filter === "all") return true;
+  if (!visitType) return true;
+  return visitType === filter;
+}
+
+function isoToBuddhistYear(iso: string): number {
+  return Number(iso.slice(0, 4)) + 543;
+}
+
+function matchesSelectedYears(iso: string, selectedYears: string[]): boolean {
+  if (selectedYears.length === 0) return true;
+  return selectedYears.includes(String(isoToBuddhistYear(iso)));
+}
+
+function matchesSelectedDates(iso: string, selectedDates: string[]): boolean {
+  if (selectedDates.length === 0) return true;
+  return selectedDates.includes(iso);
+}
+
+function matchesDateFilters(iso: string, selectedYears: string[], selectedDates: string[]): boolean {
+  if (!iso) return false;
+  if (!matchesSelectedYears(iso, selectedYears)) return false;
+  return matchesSelectedDates(iso, selectedDates);
+}
 
 export default function PatientMedicationSearchPage() {
-  const [hn, setHn] = useState("");
-  const [cardno, setCardno] = useState("");
-  const [name, setName] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [resolvedHn, setResolvedHn] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<PatientMedicationRow[]>([]);
   const [labRows, setLabRows] = useState<PatientLabRow[]>([]);
-  const [contentTab, setContentTab] = useState<ContentTab>("drug");
-  const [selectedDate, setSelectedDate] = useState<string>(ALL_DATES);
+  const [xrayRows, setXrayRows] = useState<PatientXrayRow[]>([]);
+  const [historyRows, setHistoryRows] = useState<PatientHistoryRow[]>([]);
+  const [diagRows, setDiagRows] = useState<PatientDiagnosisRow[]>([]);
+  const [diseaseRows, setDiseaseRows] = useState<PatientDiseaseRow[]>([]);
+  const [contentTab, setContentTab] = useState<TreatmentTab>("drug");
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [filterVisitType, setFilterVisitType] = useState<"all" | "OPD" | "IPD">("all");
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [patientCandidates, setPatientCandidates] = useState<PatientCandidate[]>([]);
   const [nameSearchQuery, setNameSearchQuery] = useState("");
-  const [scanHn, setScanHn] = useState("");
+  const [patientPickerLoading, setPatientPickerLoading] = useState(false);
+  const [patientPickerNotice, setPatientPickerNotice] = useState<string | null>(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
   const [scanFiles, setScanFiles] = useState<OpdscanFile[]>([]);
-  const [scanUncPath, setScanUncPath] = useState("");
   const [scanHnQuery, setScanHnQuery] = useState("");
   const [scanSubPath, setScanSubPath] = useState("");
   const [scanDirLoading, setScanDirLoading] = useState(false);
+  const scanOpenLockRef = useRef(false);
+  const scanFileLinkRef = useRef<HTMLAnchorElement>(null);
 
   const resetResults = () => {
     setRows([]);
     setLabRows([]);
-    setSelectedDate(ALL_DATES);
+    setXrayRows([]);
+    setHistoryRows([]);
+    setDiagRows([]);
+    setDiseaseRows([]);
+    setSelectedDates([]);
+    setSelectedYears([]);
     setFilterVisitType("all");
     setContentTab("drug");
+    setResolvedHn("");
   };
 
   const fetchPatientDetails = async (params: {
     hn?: string;
     cardno?: string;
     name?: string;
-  }) => {
+  }): Promise<{
+    medCount: number;
+    labCount: number;
+    xrayCount: number;
+    historyCount: number;
+    diagCount: number;
+    diseaseCount: number;
+    totalCount: number;
+    errors: string[];
+    patientHn: string | null;
+  }> => {
     const query = new URLSearchParams();
     if (params.hn) query.set("hn", params.hn);
     if (params.cardno) query.set("cardno", params.cardno);
     if (params.name) query.set("name", params.name);
 
     const qs = query.toString();
-    const [medRes, labRes] = await Promise.all([
+    const [medRes, labRes, xrayRes, historyRes, diagRes, diseaseRes] = await Promise.all([
       fetch(`/api/db/patient-medication-search?${qs}`),
       fetch(`/api/db/patient-lab-search?${qs}`),
+      fetch(`/api/db/patient-xray-search?${qs}`),
+      fetch(`/api/db/patient-history-search?${qs}`),
+      fetch(`/api/db/patient-diagnosis-search?${qs}`),
+      fetch(`/api/db/patient-disease-search?${qs}`),
     ]);
-    const [medJson, labJson] = await Promise.all([medRes.json(), labRes.json()]);
+    const [medJson, labJson, xrayJson, historyJson, diagJson, diseaseJson] = await Promise.all([
+      medRes.json(),
+      labRes.json(),
+      xrayRes.json(),
+      historyRes.json(),
+      diagRes.json(),
+      diseaseRes.json(),
+    ]);
 
     const errors: string[] = [];
-    if (!medRes.ok || !medJson.success) {
-      errors.push(medJson.message ?? "ค้นหารายการยาไม่สำเร็จ");
-    } else {
-      setRows(Array.isArray(medJson.data) ? medJson.data : []);
-    }
-    if (!labRes.ok || !labJson.success) {
-      errors.push(labJson.message ?? "ค้นหารายการ Lab ไม่สำเร็จ");
-    } else {
-      setLabRows(Array.isArray(labJson.data) ? labJson.data : []);
-    }
 
-    if (errors.length === 2) {
-      setError(errors.join(" · "));
-    } else if (errors.length === 1) {
-      setError(errors[0]);
-    }
-
-    if (medRes.ok && medJson.success && (medJson.data?.length ?? 0) === 0) {
-      if (labRes.ok && labJson.success && (labJson.data?.length ?? 0) > 0) {
-        setContentTab("lab");
+    const readData = <T,>(
+      res: Response,
+      json: { success?: boolean; message?: string; data?: T[] },
+      setter: (rows: T[]) => void,
+      fallbackMessage: string
+    ): T[] => {
+      if (!res.ok || !json.success) {
+        errors.push(json.message ?? fallbackMessage);
+        setter([]);
+        return [];
       }
-    }
+      const data = Array.isArray(json.data) ? json.data : [];
+      setter(data);
+      return data;
+    };
 
-    const medData = medRes.ok && medJson.success && Array.isArray(medJson.data) ? medJson.data : [];
-    const labData = labRes.ok && labJson.success && Array.isArray(labJson.data) ? labJson.data : [];
+    const medData = readData(
+      medRes,
+      medJson,
+      setRows,
+      "ค้นหารายการยาไม่สำเร็จ"
+    );
+    const labData = readData(labRes, labJson, setLabRows, "ค้นหารายการ Lab ไม่สำเร็จ");
+    const xrayData = readData(
+      xrayRes,
+      xrayJson,
+      setXrayRows,
+      "ค้นหารายการ X-ray ไม่สำเร็จ"
+    );
+    const historyData = readData(
+      historyRes,
+      historyJson,
+      setHistoryRows,
+      "ค้นหาการซักประวัติไม่สำเร็จ"
+    );
+    const diagData = readData(
+      diagRes,
+      diagJson,
+      setDiagRows,
+      "ค้นหารหัสวินิจฉัยไม่สำเร็จ"
+    );
+    const diseaseData = readData(
+      diseaseRes,
+      diseaseJson,
+      setDiseaseRows,
+      "ค้นหารายการโรคไม่สำเร็จ"
+    );
+
+    const counts: Record<TreatmentTab, number> = {
+      drug: medData.length,
+      lab: labData.length,
+      xray: xrayData.length,
+      history: historyData.length,
+      diag: diagData.length,
+      disease: diseaseData.length,
+    };
+
+    setContentTab(pickInitialTreatmentTab(counts));
+
     const patientHn =
-      (medData[0] as PatientMedicationRow | undefined)?.HN ??
-      (labData[0] as PatientLabRow | undefined)?.HN ??
-      params.hn;
+      medData[0]?.HN ??
+      labData[0]?.HN ??
+      xrayData[0]?.HN ??
+      historyData[0]?.HN ??
+      diagData[0]?.HN ??
+      diseaseData[0]?.HN ??
+      params.hn ??
+      null;
 
     if (patientHn) {
-      setScanHn(formatHnDisplay(patientHn));
+      setResolvedHn(formatHnDisplay(patientHn));
+      if (!params.hn) {
+        setSearchQuery(formatHnDisplay(patientHn));
+      }
+      setScanError(null);
     }
+
+    const totalCount = Object.values(counts).reduce((sum, n) => sum + n, 0);
+
+    return {
+      medCount: counts.drug,
+      labCount: counts.lab,
+      xrayCount: counts.xray,
+      historyCount: counts.history,
+      diagCount: counts.diag,
+      diseaseCount: counts.disease,
+      totalCount,
+      errors,
+      patientHn,
+    };
   };
 
   const closePatientModal = () => {
     setShowPatientModal(false);
     setPatientCandidates([]);
     setNameSearchQuery("");
+    setPatientPickerLoading(false);
+    setPatientPickerNotice(null);
   };
 
   const runSearch = async () => {
@@ -208,22 +419,20 @@ export default function PatientMedicationSearchPage() {
     resetResults();
     closePatientModal();
 
-    const normalizedHn = normalizeHnInput(hn);
-    const normalizedCard = normalizeThaiCardInput(cardno);
-    const trimmedName = name.trim();
+    const parsed = parsePatientSearchQuery(searchQuery);
 
-    if (!normalizedHn && !normalizedCard && !trimmedName) {
+    if (parsed.kind === "empty") {
       setLoading(false);
-      setError("กรุณาระบุอย่างน้อย 1 เงื่อนไข: HN, เลขบัตรประชาชน หรือชื่อ-นามสกุล");
+      setError("กรุณาระบุ HN, เลขบัตรประชาชน หรือชื่อ-นามสกุล");
       return;
     }
 
-    const needsPatientPicker = Boolean(trimmedName) && !normalizedHn && !normalizedCard;
+    const needsPatientPicker = parsed.kind === "name";
 
     try {
       if (needsPatientPicker) {
         const res = await fetch(
-          `/api/db/patient-search-by-name?name=${encodeURIComponent(trimmedName)}`
+          `/api/db/patient-search-by-name?name=${encodeURIComponent(parsed.name)}`
         );
         const json = await res.json();
 
@@ -240,15 +449,25 @@ export default function PatientMedicationSearchPage() {
         }
 
         setPatientCandidates(candidates);
-        setNameSearchQuery(trimmedName);
+        setNameSearchQuery(parsed.name);
+        setPatientPickerNotice(null);
         setShowPatientModal(true);
         return;
       }
 
       await fetchPatientDetails({
-        hn: normalizedHn || undefined,
-        cardno: normalizedCard || undefined,
-        name: trimmedName || undefined,
+        hn: parsed.kind === "hn" ? parsed.hn : undefined,
+        cardno: parsed.kind === "cardno" ? parsed.cardno : undefined,
+      }).then((result) => {
+        if (result.totalCount === 0) {
+          if (result.errors.length > 0) {
+            setError(result.errors.join(" · "));
+          } else {
+            setError("ไม่พบข้อมูลการรักษา");
+          }
+        } else if (result.errors.length > 0) {
+          setError(`โหลดบางส่วนไม่สำเร็จ: ${result.errors.join(" · ")}`);
+        }
       });
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด");
@@ -258,17 +477,35 @@ export default function PatientMedicationSearchPage() {
   };
 
   const handlePatientSelect = async (patient: PatientCandidate) => {
-    closePatientModal();
-    setLoading(true);
+    setPatientPickerLoading(true);
+    setPatientPickerNotice(null);
     setError(null);
     resetResults();
 
     try {
-      await fetchPatientDetails({ hn: patient.HN });
+      const result = await fetchPatientDetails({ hn: patient.HN });
+
+      if (result.totalCount === 0) {
+        const displayName = patient.DSPNAME ?? "(ไม่ระบุชื่อ)";
+        setPatientPickerNotice(
+          result.errors.length > 0
+            ? result.errors.join(" · ")
+            : `${displayName} · HN ${formatHnDisplay(patient.HN)} — ไม่พบข้อมูลการรักษา`
+        );
+        return;
+      }
+
+      if (result.errors.length > 0) {
+        setError(`โหลดบางส่วนไม่สำเร็จ: ${result.errors.join(" · ")}`);
+      }
+
+      closePatientModal();
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด");
+      setPatientPickerNotice(
+        fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด"
+      );
     } finally {
-      setLoading(false);
+      setPatientPickerLoading(false);
     }
   };
 
@@ -286,11 +523,18 @@ export default function PatientMedicationSearchPage() {
   const closeScanModal = () => {
     setShowScanModal(false);
     setScanFiles([]);
-    setScanUncPath("");
     setScanHnQuery("");
     setScanSubPath("");
     setScanDirLoading(false);
     setScanError(null);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setError(null);
+    resetResults();
+    closePatientModal();
+    closeScanModal();
   };
 
   const loadScanDirectory = async (hnValue: string, subPath: string) => {
@@ -305,18 +549,14 @@ export default function PatientMedicationSearchPage() {
     }
 
     setScanFiles(Array.isArray(json.files) ? json.files : []);
-    setScanUncPath(json.uncPath ?? "");
     setScanSubPath(json.subPath ?? subPath);
     setScanHnQuery(hnValue);
     setShowScanModal(true);
   };
 
   const openOpdscan = async () => {
-    const hnValue = scanHn.trim() || hn.trim();
-    if (!hnValue) {
-      setScanError("กรุณาระบุ HN สำหรับเปิดไฟล์สแกน (เช่น 19999/99)");
-      return;
-    }
+    const hnValue = scanHnFromSearchQuery(searchQuery, resolvedHn);
+    if (!hnValue) return;
 
     const previewPath = buildOpdscanUncPath(hnValue, OPDSCAN_UNC_ROOT);
     if (!previewPath) {
@@ -367,22 +607,23 @@ export default function PatientMedicationSearchPage() {
   const openScanFile = (fileName: string) => {
     const relativePath = scanSubPath ? `${scanSubPath}\\${fileName}` : fileName;
     const url = `/api/opdscan/file?hn=${encodeURIComponent(scanHnQuery)}&name=${encodeURIComponent(relativePath)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+
+    if (scanOpenLockRef.current) return;
+    scanOpenLockRef.current = true;
+    window.setTimeout(() => {
+      scanOpenLockRef.current = false;
+    }, 1200);
+
+    const link = scanFileLinkRef.current;
+    if (!link) return;
+    link.href = url;
+    link.click();
   };
 
   const scanBreadcrumbs = useMemo(() => {
     if (!scanSubPath) return [];
     return scanSubPath.split("\\").filter(Boolean);
   }, [scanSubPath]);
-
-  const copyScanPath = async () => {
-    if (!scanUncPath) return;
-    try {
-      await navigator.clipboard.writeText(scanUncPath);
-    } catch {
-      // clipboard may be blocked
-    }
-  };
 
   useEffect(() => {
     if (!showScanModal) return;
@@ -400,75 +641,153 @@ export default function PatientMedicationSearchPage() {
     await runSearch();
   };
 
-  const drugTabCount = useMemo(() => {
-    return rows.filter((row) => filterVisitType === "all" || row.VISIT_TYPE === filterVisitType)
-      .length;
-  }, [rows, filterVisitType]);
+  const tabCounts = useMemo(() => {
+    const countWithVisit = <T extends { VISIT_TYPE?: string }>(items: T[]) =>
+      items.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)).length;
 
-  const labTabCount = useMemo(() => {
-    return labRows.filter((row) => filterVisitType === "all" || row.VISIT_TYPE === filterVisitType)
-      .length;
-  }, [labRows, filterVisitType]);
+    return {
+      drug: countWithVisit(rows),
+      lab: countWithVisit(labRows),
+      xray: countWithVisit(xrayRows),
+      history: countWithVisit(historyRows),
+      diag: countWithVisit(diagRows),
+      disease: diseaseRows.length,
+    };
+  }, [rows, labRows, xrayRows, historyRows, diagRows, diseaseRows, filterVisitType]);
 
-  const drugDates = useMemo(() => {
+  const activeSourceRows = useMemo(() => {
+    switch (contentTab) {
+      case "drug":
+        return rows;
+      case "lab":
+        return labRows;
+      case "xray":
+        return xrayRows;
+      case "history":
+        return historyRows;
+      case "diag":
+        return diagRows;
+      case "disease":
+        return diseaseRows;
+      default:
+        return [];
+    }
+  }, [contentTab, rows, labRows, xrayRows, historyRows, diagRows, diseaseRows]);
+
+  const activeDates = useMemo(() => {
     const set = new Set<string>();
-    for (const row of rows) {
-      if (filterVisitType !== "all" && row.VISIT_TYPE !== filterVisitType) continue;
-      const iso = apiDateToIsoLocal(row.PRSCDATE);
+    for (const row of activeSourceRows) {
+      const visitType = "VISIT_TYPE" in row ? row.VISIT_TYPE : null;
+      if (!rowMatchesVisitFilter(visitType, filterVisitType)) continue;
+      const iso = treatmentRowDateIso(contentTab, row as unknown as Record<string, unknown>);
       if (iso) set.add(iso);
     }
     return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [rows, filterVisitType]);
+  }, [activeSourceRows, contentTab, filterVisitType]);
 
-  const labDates = useMemo(() => {
-    const set = new Set<string>();
-    for (const row of labRows) {
-      if (filterVisitType !== "all" && row.VISIT_TYPE !== filterVisitType) continue;
-      const iso = apiDateToIsoLocal(row.LAB_DATE);
-      if (iso) set.add(iso);
+  const activeYears = useMemo(() => {
+    const years = new Set<number>();
+    for (const iso of activeDates) {
+      years.add(isoToBuddhistYear(iso));
     }
-    return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [labRows, filterVisitType]);
+    return Array.from(years).sort((a, b) => b - a);
+  }, [activeDates]);
 
-  const activeDates = contentTab === "drug" ? drugDates : labDates;
+  const datesInSelectedYears = useMemo(() => {
+    return activeDates.filter((iso) => matchesSelectedYears(iso, selectedYears));
+  }, [activeDates, selectedYears]);
 
-  const handleContentTabChange = (tab: ContentTab) => {
+  useEffect(() => {
+    setSelectedDates((prev) => {
+      const allowed = new Set(datesInSelectedYears);
+      const next = prev.filter((d) => allowed.has(d));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [datesInSelectedYears]);
+
+  const activeTabMeta = TREATMENT_TABS.find((tab) => tab.id === contentTab) ?? TREATMENT_TABS[0];
+
+  const handleContentTabChange = (tab: TreatmentTab) => {
     setContentTab(tab);
-    setSelectedDate(ALL_DATES);
+    setSelectedDates([]);
+    setSelectedYears([]);
   };
 
   const handleVisitTypeChange = (type: "all" | "OPD" | "IPD") => {
     setFilterVisitType(type);
-    setSelectedDate(ALL_DATES);
+    setSelectedDates([]);
+    setSelectedYears([]);
 
-    const nextDrugCount = rows.filter((row) => type === "all" || row.VISIT_TYPE === type).length;
-    const nextLabCount = labRows.filter((row) => type === "all" || row.VISIT_TYPE === type).length;
+    const nextCounts: Record<TreatmentTab, number> = {
+      drug: rows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
+      lab: labRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
+      xray: xrayRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
+      history: historyRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
+      diag: diagRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
+      disease: diseaseRows.length,
+    };
 
-    if (contentTab === "drug" && nextDrugCount === 0 && nextLabCount > 0) {
-      setContentTab("lab");
-    } else if (contentTab === "lab" && nextLabCount === 0 && nextDrugCount > 0) {
-      setContentTab("drug");
+    if (nextCounts[contentTab] === 0) {
+      setContentTab(pickInitialTreatmentTab(nextCounts));
     }
   };
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
-      if (filterVisitType !== "all" && row.VISIT_TYPE !== filterVisitType) return false;
-      if (selectedDate === ALL_DATES) return true;
-      return apiDateToIsoLocal(row.PRSCDATE) === selectedDate;
+      if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
+      const iso = apiDateToIsoLocal(row.PRSCDATE);
+      return matchesDateFilters(iso, selectedYears, selectedDates);
     });
-  }, [rows, selectedDate, filterVisitType]);
+  }, [rows, selectedDates, selectedYears, filterVisitType]);
 
   const filteredLabRows = useMemo(() => {
     return labRows.filter((row) => {
-      if (filterVisitType !== "all" && row.VISIT_TYPE !== filterVisitType) return false;
-      if (selectedDate === ALL_DATES) return true;
-      return apiDateToIsoLocal(row.LAB_DATE) === selectedDate;
+      if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
+      const iso = apiDateToIsoLocal(row.LAB_DATE);
+      return matchesDateFilters(iso, selectedYears, selectedDates);
     });
-  }, [labRows, selectedDate, filterVisitType]);
+  }, [labRows, selectedDates, selectedYears, filterVisitType]);
+
+  const filteredXrayRows = useMemo(() => {
+    return xrayRows.filter((row) => {
+      if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
+      const iso = apiDateToIsoLocal(row.XRAY_DATE);
+      return matchesDateFilters(iso, selectedYears, selectedDates);
+    });
+  }, [xrayRows, selectedDates, selectedYears, filterVisitType]);
+
+  const filteredHistoryRows = useMemo(() => {
+    return historyRows.filter((row) => {
+      if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
+      const iso = apiDateToIsoLocal(row.VSTDATE);
+      return matchesDateFilters(iso, selectedYears, selectedDates);
+    });
+  }, [historyRows, selectedDates, selectedYears, filterVisitType]);
+
+  const filteredDiagRows = useMemo(() => {
+    return diagRows.filter((row) => {
+      if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
+      const iso = apiDateToIsoLocal(row.DIAG_DATE);
+      return matchesDateFilters(iso, selectedYears, selectedDates);
+    });
+  }, [diagRows, selectedDates, selectedYears, filterVisitType]);
+
+  const filteredDiseaseRows = useMemo(() => {
+    return diseaseRows.filter((row) => {
+      const iso = apiDateToIsoLocal(row.DIAGDATE ?? row.VSTDATE);
+      return matchesDateFilters(iso, selectedYears, selectedDates);
+    });
+  }, [diseaseRows, selectedDates, selectedYears]);
 
   const patientHeader = useMemo(() => {
-    const source = rows.length > 0 ? rows : labRows;
+    const source = [
+      ...rows,
+      ...labRows,
+      ...xrayRows,
+      ...historyRows,
+      ...diagRows,
+      ...diseaseRows,
+    ];
     if (source.length === 0) return null;
     const first = source[0];
     const uniqueHn = new Set(source.map((r) => r.HN));
@@ -479,16 +798,23 @@ export default function PatientMedicationSearchPage() {
       cardno: first.CARDNO,
       patientCount: uniqueHn.size,
     };
-  }, [rows, labRows]);
+  }, [rows, labRows, xrayRows, historyRows, diagRows, diseaseRows]);
 
-  const hasResults = rows.length > 0 || labRows.length > 0;
+  const hasResults =
+    rows.length > 0 ||
+    labRows.length > 0 ||
+    xrayRows.length > 0 ||
+    historyRows.length > 0 ||
+    diagRows.length > 0 ||
+    diseaseRows.length > 0;
+  const scanHnValue = scanHnFromSearchQuery(searchQuery, resolvedHn);
 
   return (
     <div className="flex min-h-full flex-col">
       <header className="border-b border-flow-border bg-white px-4 py-4 md:px-6">
-        <h1 className="text-xl font-bold text-flow-text md:text-2xl">รายการยา + lab ผู้ป่วย</h1>
+        <h1 className="text-xl font-bold text-flow-text md:text-2xl">ข้อมูลการรักษา</h1>
         <p className="mt-1 text-xs text-flow-muted md:text-sm">
-          ค้นหาด้วย HN หรือเลขบัตรประชาชนเพื่อดูข้อมูลทันที หรือค้นหาด้วยชื่อ-นามสกุลแล้วเลือกผู้ป่วยจากรายการ
+          ค้นหาด้วย HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล — ดูข้อมูลยา, Lab, X-ray, ซักประวัติ, รหัสวินิจฉัย และโรคในที่เดียว
         </p>
       </header>
 
@@ -498,93 +824,51 @@ export default function PatientMedicationSearchPage() {
             className="space-y-4 rounded-xl border border-accent-border bg-white p-4 shadow-sm"
             onSubmit={handleSearch}
           >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-xs font-medium text-flow-text" htmlFor="med-hn">
-                  HN
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex min-w-[12rem] flex-1 flex-col gap-1">
+                <label className="text-xs font-medium text-flow-text" htmlFor="med-search">
+                  ค้นหาผู้ป่วย
                 </label>
                 <input
                   className="ui-input w-full px-3 py-1.5 text-sm"
-                  id="med-hn"
-                  placeholder="เช่น 1666/69 หรือ 69001666"
+                  id="med-search"
+                  placeholder="HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล"
                   type="text"
-                  value={hn}
-                  onChange={(e) => setHn(e.target.value)}
-                />
-              </div>
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-xs font-medium text-flow-text" htmlFor="med-cardno">
-                  เลขบัตรประชาชน
-                </label>
-                <input
-                  className="ui-input w-full px-3 py-1.5 text-sm"
-                  id="med-cardno"
-                  inputMode="numeric"
-                  pattern="\d*"
-                  placeholder="13 หลัก"
-                  type="text"
-                  value={cardno}
+                  value={searchQuery}
                   onChange={(e) => {
-                    setCardno(e.target.value.replace(/\D/g, "").slice(0, 13));
+                    setSearchQuery(e.target.value);
+                    setScanError(null);
                   }}
                 />
               </div>
-              <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 xl:col-span-1">
-                <label className="text-xs font-medium text-flow-text" htmlFor="med-name">
-                  ชื่อ-นามสกุล
-                </label>
-                <input
-                  className="ui-input w-full px-3 py-1.5 text-sm"
-                  id="med-name"
-                  placeholder="พิมพ์ชื่อหรือนามสกุลบางส่วน"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 border-t border-flow-border pt-4">
               <button
-                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="shrink-0 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={loading}
                 type="submit"
               >
                 {loading ? "กำลังค้นหา..." : "ค้นหา"}
               </button>
-            </div>
-
-            <div className="space-y-3 border-t border-flow-border pt-4">
-              <div>
-                <p className="text-xs font-semibold text-flow-text">ไฟล์สแกน OPD</p>
-                <p className="mt-0.5 text-[11px] text-flow-muted">
-              
-                </p>
-              </div>
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="flex min-w-[12rem] flex-1 flex-col gap-1 sm:max-w-xs">
-                  <label className="text-xs font-medium text-flow-text" htmlFor="scan-hn">
-                    HN สำหรับเปิดไฟล์สแกน
-                  </label>
-                  <input
-                    className="ui-input w-full px-3 py-1.5 text-sm"
-                    id="scan-hn"
-                    placeholder="เช่น  "
-                    type="text"
-                    value={scanHn}
-                    onChange={(e) => setScanHn(e.target.value)}
-                  />
-                </div>
-                <button
-                  className="rounded-lg border border-flow-border bg-white px-4 py-2 text-sm font-medium text-flow-text hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={scanLoading}
-                  type="button"
-                  onClick={() => void openOpdscan()}
-                >
-                  {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์สแกน"}
-                </button>
-              </div>
-              {scanError ? <p className="text-xs text-red-600">{scanError}</p> : null}
+              <button
+                className="shrink-0 rounded-lg border border-flow-border bg-white px-4 py-2 text-sm font-medium text-flow-text hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={loading || scanLoading}
+                type="button"
+                onClick={handleClearSearch}
+              >
+                ล้างค่าค้นหา
+              </button>
+              <button
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-amber-500 bg-amber-400 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={scanLoading || !scanHnValue}
+                title="ไฟล์สแกน OPD"
+                type="button"
+                onClick={() => void openOpdscan()}
+              >
+                <FileText className="h-4 w-4 shrink-0" aria-hidden />
+                {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์สแกน"}
+              </button>
+              {scanError ? (
+                <p className="w-full basis-full text-xs text-red-600">{scanError}</p>
+              ) : null}
             </div>
           </form>
         </section>
@@ -601,107 +885,99 @@ export default function PatientMedicationSearchPage() {
           </div>
         ) : null}
 
-        {hasResults ? (
-          <>
-            <section className="mb-4 rounded-xl border border-flow-border bg-white p-4 shadow-sm">
+        <section className="mb-4 rounded-xl border border-flow-border bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-flow-text">
               {patientHeader && !patientHeader.multiple ? (
-                <div className="mb-3 text-sm text-flow-text">
+                <>
                   <span className="font-semibold">{patientHeader.dspname ?? "(ไม่ระบุชื่อ)"}</span>
-                  <span className="mx-2 text-flow-muted">·</span>
+                  <span className="text-flow-muted">·</span>
                   <span>HN {formatHnDisplay(patientHeader.hn)}</span>
                   {patientHeader.cardno ? (
                     <>
-                      <span className="mx-2 text-flow-muted">·</span>
+                      <span className="text-flow-muted">·</span>
                       <span>บัตร {patientHeader.cardno}</span>
                     </>
                   ) : null}
-                </div>
-              ) : patientHeader?.multiple ? (
-                <p className="mb-3 text-sm text-flow-muted">
-                  พบผู้ป่วย {patientHeader.patientCount} ราย — แสดงรายการยาและ Lab ที่ตรงเงื่อนไข
-                </p>
-              ) : null}
-
-              <div className="flex flex-wrap items-center gap-2">
-                {(
-                  [
-                    ["drug", `รายการยา (${drugTabCount})`],
-                    ["lab", `Lab (${labTabCount})`],
-                  ] as const
-                ).map(([tab, label]) => (
-                  <button
-                    key={tab}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                      contentTab === tab
-                        ? "bg-brand-600 text-white"
-                        : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
-                    }`}
-                    type="button"
-                    onClick={() => handleContentTabChange(tab)}
-                  >
-                    {label}
-                  </button>
-                ))}
-                <span className="mx-1 hidden h-6 w-px bg-flow-border sm:block" />
-                {(["all", "OPD", "IPD"] as const).map((type) => (
-                  <button
-                    key={type}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                      filterVisitType === type
-                        ? "bg-slate-800 text-white"
-                        : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
-                    }`}
-                    type="button"
-                    onClick={() => handleVisitTypeChange(type)}
-                  >
-                    {type === "all" ? "ทุกประเภท" : type}
-                  </button>
-                ))}
-              </div>
-
-              {activeDates.length > 0 ? (
-                <>
-                  <p className="mb-2 mt-4 text-xs font-semibold text-flow-text">
-                    {contentTab === "drug" ? "เลือกวันที่มียา" : "เลือกวันที่มี Lab"}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                        selectedDate === ALL_DATES
-                          ? "bg-brand-600 text-white"
-                          : "bg-slate-100 text-flow-text hover:bg-slate-200"
-                      }`}
-                      type="button"
-                      onClick={() => setSelectedDate(ALL_DATES)}
-                    >
-                      ทุกวัน ({activeDates.length})
-                    </button>
-                    {activeDates.map((iso) => (
-                      <button
-                        key={iso}
-                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                          selectedDate === iso
-                            ? "bg-brand-600 text-white"
-                            : "bg-slate-100 text-flow-text hover:bg-slate-200"
-                        }`}
-                        type="button"
-                        onClick={() => setSelectedDate(iso)}
-                      >
-                        {isoToThaiDisplay(iso)}
-                      </button>
-                    ))}
-                  </div>
                 </>
+              ) : patientHeader?.multiple ? (
+                <span className="text-flow-muted">
+                  พบผู้ป่วย {patientHeader.patientCount} ราย — แสดงข้อมูลการรักษาที่ตรงเงื่อนไข
+                </span>
               ) : (
-                <p className="mt-4 text-xs text-flow-muted">
-                  {contentTab === "drug"
-                    ? "ไม่พบรายการยาในประเภทที่เลือก"
-                    : "ไม่พบรายการ Lab ในประเภทที่เลือก"}
-                </p>
+                <span className="text-flow-muted">ค้นหาผู้ป่วยเพื่อแสดงข้อมูล</span>
               )}
-            </section>
+              <span className="mx-1 hidden h-5 w-px bg-flow-border sm:block" />
+              {(["all", "OPD", "IPD"] as const).map((type) => (
+                <button
+                  key={type}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                    filterVisitType === type
+                      ? "bg-slate-800 text-white"
+                      : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
+                  }`}
+                  type="button"
+                  onClick={() => handleVisitTypeChange(type)}
+                >
+                  {type === "all" ? "ทุกประเภท" : type}
+                </button>
+              ))}
+            </div>
 
-            {contentTab === "drug" ? (
+            <div className="flex w-full flex-wrap items-end gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+              <div className="min-w-[10rem] flex-1 sm:w-44 sm:flex-none">
+                <p className="mb-1 text-[11px] text-flow-muted">ปี (พ.ศ.)</p>
+                <MultiSelectFilter
+                  formatOption={(year) => {
+                    const count = activeDates.filter(
+                      (iso) => isoToBuddhistYear(iso) === Number(year)
+                    ).length;
+                    return `${year} (${count} วัน)`;
+                  }}
+                  label="ปี (พ.ศ.)"
+                  options={activeYears.map(String)}
+                  selected={selectedYears}
+                  onChange={setSelectedYears}
+                />
+              </div>
+              <div className="min-w-[10rem] flex-1 sm:w-44 sm:flex-none">
+                <p className="mb-1 text-[11px] text-flow-muted">วันที่</p>
+                <MultiSelectFilter
+                  formatOption={isoToThaiInput}
+                  label="วันที่"
+                  options={datesInSelectedYears}
+                  selected={selectedDates}
+                  onChange={setSelectedDates}
+                />
+              </div>
+            </div>
+          </div>
+
+          {hasResults && activeDates.length === 0 ? (
+            <p className="mb-3 text-xs text-flow-muted">
+              ไม่พบข้อมูลในหมวด {activeTabMeta.label} ตามตัวกรองที่เลือก
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2">
+            {TREATMENT_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                  contentTab === tab.id
+                    ? "bg-brand-600 text-white"
+                    : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
+                }`}
+                type="button"
+                onClick={() => handleContentTabChange(tab.id)}
+              >
+                {tab.label} ({tabCounts[tab.id]})
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {contentTab === "drug" && (
             <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-xs">
@@ -727,7 +1003,7 @@ export default function PatientMedicationSearchPage() {
                           className="px-3 py-6 text-center text-flow-muted"
                           colSpan={patientHeader?.multiple ? 12 : 10}
                         >
-                          ไม่มีรายการยาในวันที่เลือก
+                          {tabEmptyMessage(hasResults, "ไม่มีรายการยาในวันที่เลือก")}
                         </td>
                       </tr>
                     ) : (
@@ -785,7 +1061,9 @@ export default function PatientMedicationSearchPage() {
                 </table>
               </div>
             </section>
-            ) : (
+            )}
+
+            {contentTab === "lab" && (
             <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-xs">
@@ -807,7 +1085,7 @@ export default function PatientMedicationSearchPage() {
                           className="px-3 py-6 text-center text-flow-muted"
                           colSpan={patientHeader?.multiple ? 7 : 5}
                         >
-                          ไม่มีรายการ Lab ในวันที่เลือก
+                          {tabEmptyMessage(hasResults, "ไม่มีรายการ Lab ในวันที่เลือก")}
                         </td>
                       </tr>
                     ) : (
@@ -856,10 +1134,195 @@ export default function PatientMedicationSearchPage() {
               </div>
             </section>
             )}
-          </>
-        ) : !loading && !hasResults ? (
-          <p className="text-sm text-flow-muted">ระบุเงื่อนไขค้นหาแล้วกด &quot;ค้นหา&quot;</p>
-        ) : null}
+
+            {contentTab === "xray" && (
+            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
+                    <tr>
+                      <th className="px-3 py-2">วันที่</th>
+                      {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
+                      <th className="px-3 py-2">ประเภท</th>
+                      <th className="px-3 py-2">รหัส</th>
+                      <th className="px-3 py-2">รายการ X-ray</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-flow-border">
+                    {filteredXrayRows.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-flow-muted" colSpan={patientHeader?.multiple ? 5 : 4}>
+                          {tabEmptyMessage(hasResults, "ไม่มีรายการ X-ray ในวันที่เลือก")}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredXrayRows.map((row, index) => {
+                        const dateIso = apiDateToIsoLocal(row.XRAY_DATE);
+                        return (
+                          <tr key={`${row.HN}-${dateIso}-${row.RDOEXM}-${index}`} className="hover:bg-slate-50/80">
+                            <td className="whitespace-nowrap px-3 py-2">{isoToThaiDisplay(dateIso)}</td>
+                            {patientHeader?.multiple ? (
+                              <td className="whitespace-nowrap px-3 py-2">{formatHnDisplay(row.HN)}</td>
+                            ) : null}
+                            <td className="whitespace-nowrap px-3 py-2">
+                              {row.VISIT_TYPE}{row.AN ? ` · ${row.AN}` : ""}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 font-mono">{row.RDOEXM ?? "—"}</td>
+                            <td className="min-w-[14rem] px-3 py-2">{row.EXAM_NAME ?? row.RDOEXM ?? "—"}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            )}
+
+            {contentTab === "history" && (
+            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
+                    <tr>
+                      <th className="px-3 py-2">วันที่</th>
+                      {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
+                      <th className="px-3 py-2">ประเภท</th>
+                      <th className="px-3 py-2">คลินิก</th>
+                      <th className="px-3 py-2">อาการสำคัญ (CC)</th>
+                      <th className="px-3 py-2">ประวัติปัจจุบัน (HPI)</th>
+                      <th className="px-3 py-2">ตรวจร่างกาย (PE)</th>
+                      <th className="px-3 py-2">หมายเหตุ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-flow-border">
+                    {filteredHistoryRows.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-flow-muted" colSpan={patientHeader?.multiple ? 8 : 7}>
+                          {tabEmptyMessage(hasResults, "ไม่มีข้อมูลการซักประวัติในวันที่เลือก")}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredHistoryRows.map((row, index) => {
+                        const dateIso = apiDateToIsoLocal(row.VSTDATE);
+                        return (
+                          <tr key={`${row.HN}-${dateIso}-${index}`} className="align-top hover:bg-slate-50/80">
+                            <td className="whitespace-nowrap px-3 py-2">{isoToThaiDisplay(dateIso)}</td>
+                            {patientHeader?.multiple ? (
+                              <td className="whitespace-nowrap px-3 py-2">{formatHnDisplay(row.HN)}</td>
+                            ) : null}
+                            <td className="whitespace-nowrap px-3 py-2">
+                              {row.VISIT_TYPE}{row.AN ? ` · ${row.AN}` : ""}
+                            </td>
+                            <td className="min-w-[8rem] px-3 py-2">{row.CLINIC_NAME ?? "—"}</td>
+                            <td className="min-w-[10rem] px-3 py-2">{row.CC?.trim() || "—"}</td>
+                            <td className="min-w-[12rem] px-3 py-2">{row.HPI?.trim() || "—"}</td>
+                            <td className="min-w-[12rem] px-3 py-2">{row.PE?.trim() || "—"}</td>
+                            <td className="min-w-[10rem] px-3 py-2">{row.NOTE?.trim() || "—"}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            )}
+
+            {contentTab === "diag" && (
+            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
+                    <tr>
+                      <th className="px-3 py-2">วันที่</th>
+                      {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
+                      <th className="px-3 py-2">ประเภท</th>
+                      <th className="px-3 py-2">ICD-10</th>
+                      <th className="px-3 py-2">ชื่อโรค</th>
+                      <th className="px-3 py-2">Diag type</th>
+                      <th className="px-3 py-2">VN/AN</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-flow-border">
+                    {filteredDiagRows.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-flow-muted" colSpan={patientHeader?.multiple ? 7 : 6}>
+                          {tabEmptyMessage(hasResults, "ไม่มีรหัสวินิจฉัยในวันที่เลือก")}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredDiagRows.map((row, index) => {
+                        const dateIso = apiDateToIsoLocal(row.DIAG_DATE);
+                        return (
+                          <tr key={`${row.HN}-${dateIso}-${row.ICD10}-${row.VISIT_REF}-${index}`} className="hover:bg-slate-50/80">
+                            <td className="whitespace-nowrap px-3 py-2">{isoToThaiDisplay(dateIso)}</td>
+                            {patientHeader?.multiple ? (
+                              <td className="whitespace-nowrap px-3 py-2">{formatHnDisplay(row.HN)}</td>
+                            ) : null}
+                            <td className="whitespace-nowrap px-3 py-2">
+                              {row.VISIT_TYPE}{row.AN ? ` · ${row.AN}` : ""}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 font-mono">{row.ICD10 ?? "—"}</td>
+                            <td className="min-w-[14rem] px-3 py-2">{row.ICD10_NAME ?? "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2">{row.DIAGTYPE ?? "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2 font-mono">{row.VISIT_REF ?? "—"}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            )}
+
+            {contentTab === "disease" && (
+            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
+                    <tr>
+                      <th className="px-3 py-2">วันที่ visit</th>
+                      <th className="px-3 py-2">วันที่ diag</th>
+                      {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
+                      <th className="px-3 py-2">ICD-10</th>
+                      <th className="px-3 py-2">ชื่อโรค</th>
+                      <th className="px-3 py-2">Diag type</th>
+                      <th className="px-3 py-2">แพทย์</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-flow-border">
+                    {filteredDiseaseRows.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-flow-muted" colSpan={patientHeader?.multiple ? 7 : 6}>
+                          {tabEmptyMessage(hasResults, "ไม่มีรายการโรคในช่วงที่เลือก")}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredDiseaseRows.map((row, index) => {
+                        const vstIso = apiDateToIsoLocal(row.VSTDATE);
+                        const diagIso = apiDateToIsoLocal(row.DIAGDATE);
+                        return (
+                          <tr key={`${row.HN}-${row.ICD10}-${diagIso}-${index}`} className="hover:bg-slate-50/80">
+                            <td className="whitespace-nowrap px-3 py-2">{vstIso ? isoToThaiDisplay(vstIso) : "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2">{diagIso ? isoToThaiDisplay(diagIso) : "—"}</td>
+                            {patientHeader?.multiple ? (
+                              <td className="whitespace-nowrap px-3 py-2">{formatHnDisplay(row.HN)}</td>
+                            ) : null}
+                            <td className="whitespace-nowrap px-3 py-2 font-mono">{row.ICD10 ?? "—"}</td>
+                            <td className="min-w-[14rem] px-3 py-2">{row.ICD10_NAME ?? "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2">{row.DIAGTYPE ?? "—"}</td>
+                            <td className="px-3 py-2">{row.DOCTOR_NAME ?? "—"}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            )}
       </main>
 
       {showPatientModal ? (
@@ -892,7 +1355,17 @@ export default function PatientMedicationSearchPage() {
                 ปิด
               </button>
             </div>
-            <div className="max-h-[calc(85vh-4rem)] overflow-auto">
+            {patientPickerNotice ? (
+              <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                {patientPickerNotice}
+              </div>
+            ) : null}
+            <div className="relative max-h-[calc(85vh-4rem)] overflow-auto">
+              {patientPickerLoading ? (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70">
+                  <p className="text-sm text-flow-muted">กำลังโหลด...</p>
+                </div>
+              ) : null}
               <table className="min-w-full text-left text-xs">
                 <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
                   <tr>
@@ -906,7 +1379,7 @@ export default function PatientMedicationSearchPage() {
                   {patientCandidates.map((patient) => (
                     <tr
                       key={patient.HN}
-                      className="cursor-pointer hover:bg-brand-50/60"
+                      className={`cursor-pointer hover:bg-brand-50/60 ${patientPickerLoading ? "pointer-events-none opacity-60" : ""}`}
                       onClick={() => void handlePatientSelect(patient)}
                     >
                       <td className="px-4 py-3 font-medium text-flow-text">
@@ -918,9 +1391,13 @@ export default function PatientMedicationSearchPage() {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">
                         <button
-                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={patientPickerLoading}
                           type="button"
-                          onClick={() => void handlePatientSelect(patient)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handlePatientSelect(patient);
+                          }}
                         >
                           เลือก
                         </button>
@@ -951,7 +1428,6 @@ export default function PatientMedicationSearchPage() {
                 <h2 className="text-sm font-semibold text-flow-text" id="opdscan-modal-title">
                   ไฟล์สแกน OPD — HN {formatHnDisplay(normalizeHnInput(scanHnQuery) || scanHnQuery)}
                 </h2>
-                <p className="mt-1 break-all font-mono text-[11px] text-flow-muted">{scanUncPath}</p>
               </div>
               <div className="flex shrink-0 gap-2">
                 {scanSubPath ? (
@@ -965,13 +1441,6 @@ export default function PatientMedicationSearchPage() {
                     กลับ
                   </button>
                 ) : null}
-                <button
-                  className="rounded-lg border border-flow-border bg-white px-3 py-1 text-xs font-medium text-flow-text hover:bg-brand-50"
-                  type="button"
-                  onClick={() => void copyScanPath()}
-                >
-                  คัดลอกพาธ
-                </button>
                 <button
                   className="rounded-lg border border-flow-border bg-white px-3 py-1 text-xs font-medium text-flow-text hover:bg-brand-50"
                   type="button"
@@ -1031,16 +1500,22 @@ export default function PatientMedicationSearchPage() {
                         className={
                           file.isDirectory
                             ? "cursor-pointer hover:bg-brand-50/50"
-                            : "hover:bg-slate-50/80"
+                            : "cursor-pointer hover:bg-slate-50/80"
                         }
-                        title={file.isDirectory ? "ดับเบิลคลิกเพื่อเปิดโฟลเดอร์" : undefined}
-                        onDoubleClick={
+                        title={
                           file.isDirectory
-                            ? () => {
-                                openScanFolder(file.name);
-                              }
-                            : undefined
+                            ? "ดับเบิลคลิกเพื่อเปิดโฟลเดอร์"
+                            : "ดับเบิลคลิกเพื่อเปิดไฟล์"
                         }
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          if (file.isDirectory) {
+                            openScanFolder(file.name);
+                          } else {
+                            openScanFile(file.name);
+                          }
+                        }}
                       >
                         <td className="px-4 py-2 font-medium text-flow-text">
                           <span className="inline-flex items-center gap-2">
@@ -1075,6 +1550,7 @@ export default function PatientMedicationSearchPage() {
                               className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
                               type="button"
                               onClick={(event) => {
+                                event.preventDefault();
                                 event.stopPropagation();
                                 openScanFile(file.name);
                               }}
@@ -1092,6 +1568,14 @@ export default function PatientMedicationSearchPage() {
           </div>
         </div>
       ) : null}
+
+      <a
+        ref={scanFileLinkRef}
+        className="hidden"
+        href="#"
+        tabIndex={-1}
+        target={OPDSCAN_VIEWER_TARGET}
+      />
     </div>
   );
 }
