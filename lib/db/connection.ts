@@ -1,7 +1,7 @@
 import type { ConnectionOptions, QueryResult } from "@/types/database";
 
 import { platform } from "os";
-import { resolve } from "path";
+import { delimiter as pathDelimiter, resolve } from "path";
 
 import oracledb from "oracledb";
 
@@ -19,14 +19,44 @@ if (typeof window === "undefined") {
 let pool: oracledb.Pool | null = null;
 let isThickModeInitialized = false;
 
+function normalizeEnvPath(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+
+  const trimmed = value.trim();
+
+  return trimmed.replace(/^['"]|['"]$/g, "");
+}
+
+/**
+ * Pin Oracle Net/OCI to the chosen Instant Client directory.
+ * Prevents ORA-28547 when another Oracle home (e.g. 10g) is earlier on PATH.
+ */
+function configureOracleClientEnv(clientLibPath: string): void {
+  const networkAdmin = resolve(clientLibPath, "network", "admin");
+
+  process.env.ORACLE_HOME = clientLibPath;
+  process.env.TNS_ADMIN = networkAdmin;
+
+  const pathKey = process.platform === "win32" ? "Path" : "PATH";
+  const currentPath = process.env[pathKey] ?? "";
+  const pathEntries = currentPath.split(pathDelimiter).filter(Boolean);
+  const withoutClientPath = pathEntries.filter(
+    (entry) => entry.toLowerCase() !== clientLibPath.toLowerCase()
+  );
+
+  process.env[pathKey] = [clientLibPath, ...withoutClientPath].join(pathDelimiter);
+}
+
 /**
  * Get Oracle Instant Client library path based on platform
  * Priority: 1. Environment variable, 2. Project folder based on platform
  */
 function getOracleClientLibPath(): string {
   // 1. Check environment variable first
-  if (process.env.ORACLE_CLIENT_LIB_PATH) {
-    return process.env.ORACLE_CLIENT_LIB_PATH;
+  const fromEnv = normalizeEnvPath(process.env.ORACLE_CLIENT_LIB_PATH);
+
+  if (fromEnv) {
+    return fromEnv;
   }
 
   // 2. Determine platform-specific path
@@ -76,11 +106,18 @@ async function initializeThickMode(): Promise<void> {
   // Get library path
   const clientLibPath = getOracleClientLibPath();
 
+  configureOracleClientEnv(clientLibPath);
+
   try {
     await oracledb.initOracleClient({ libDir: clientLibPath });
     isThickModeInitialized = true;
   } catch (thickError: unknown) {
     const errorMessage = thickError instanceof Error ? thickError.message : String(thickError);
+
+    if (errorMessage.includes("already been initialized")) {
+      isThickModeInitialized = true;
+      return;
+    }
 
     // Check for common errors
     let errorDetails = `Failed to initialize Oracle Thick mode with library path: ${clientLibPath}\n\n`;

@@ -23,6 +23,11 @@ export const MAIN_NAV_GROUPS: MainNavGroup[] = [
     title: "รายงานต้นทุน",
     items: [
       { href: "/patient-cost", label: "ต้นทุนรายผู้ป่วย", icon: "user" },
+      {
+        href: "/patient-medication-search",
+        label: "ค้นหารายการยาตามผู้ป่วย",
+        icon: "search",
+      },
       { href: "/drug-cost-summary", label: "สรุปต้นทุนและกำไรจากยา", icon: "pill" },
       { href: "/ipd-patient-cost", label: "ต้นทุนรายผู้ป่วย (IPD)", icon: "bed" },
     ],

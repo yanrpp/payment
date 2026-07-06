@@ -4,6 +4,7 @@ import {
   Home,
   LayoutGrid,
   Pill,
+  Search,
   ShieldCheck,
   SlidersHorizontal,
   User,
@@ -18,6 +19,7 @@ type NavIconProps = {
 const ICONS: Record<string, LucideIcon> = {
   home: Home,
   user: User,
+  search: Search,
   pill: Pill,
   bed: BedDouble,
   clipboard: ClipboardList,
