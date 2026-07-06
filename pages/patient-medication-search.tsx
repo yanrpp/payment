@@ -24,6 +24,7 @@ type PatientMedicationRow = {
   TOTAL_SALE: number;
   TOTAL_PROFIT: number;
   PTTYPE_NAME: string | null;
+  DRUG_USAGE: string | null;
 };
 
 function apiDateToIsoLocal(value: unknown): string {
@@ -50,13 +51,6 @@ function formatHnDisplay(value: unknown): string {
   const runningRaw = digits.slice(2);
   const running = runningRaw.replace(/^0+/, "") || "0";
   return `${running}/${yearSuffix}`;
-}
-
-function formatBaht(value: unknown): string {
-  return Number(value ?? 0).toLocaleString("th-TH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 }
 
 function formatQty(value: unknown): string {
@@ -138,18 +132,6 @@ export default function PatientMedicationSearchPage() {
       return apiDateToIsoLocal(row.PRSCDATE) === selectedDate;
     });
   }, [rows, selectedDate, filterVisitType]);
-
-  const summary = useMemo(() => {
-    let totalQty = 0;
-    let totalCost = 0;
-    let totalSale = 0;
-    for (const row of filteredRows) {
-      totalQty += Number(row.TOTAL_QTY ?? 0);
-      totalCost += Number(row.TOTAL_COST ?? 0);
-      totalSale += Number(row.TOTAL_SALE ?? 0);
-    }
-    return { totalQty, totalCost, totalSale, lineCount: filteredRows.length };
-  }, [filteredRows]);
 
   const patientHeader = useMemo(() => {
     if (rows.length === 0) return null;
@@ -311,31 +293,6 @@ export default function PatientMedicationSearchPage() {
               </div>
             </section>
 
-            <section className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-              <div className="rounded-lg border border-flow-border bg-white p-3">
-                <p className="text-[10px] text-flow-muted">รายการยา</p>
-                <p className="text-lg font-semibold text-flow-text">{summary.lineCount}</p>
-              </div>
-              <div className="rounded-lg border border-flow-border bg-white p-3">
-                <p className="text-[10px] text-flow-muted">จำนวนรวม</p>
-                <p className="text-lg font-semibold text-flow-text">
-                  {formatQty(summary.totalQty)}
-                </p>
-              </div>
-              <div className="rounded-lg border border-flow-border bg-white p-3">
-                <p className="text-[10px] text-flow-muted">ต้นทุนรวม</p>
-                <p className="text-lg font-semibold text-flow-text">
-                  {formatBaht(summary.totalCost)}
-                </p>
-              </div>
-              <div className="rounded-lg border border-flow-border bg-white p-3">
-                <p className="text-[10px] text-flow-muted">ราคาขายรวม</p>
-                <p className="text-lg font-semibold text-flow-text">
-                  {formatBaht(summary.totalSale)}
-                </p>
-              </div>
-            </section>
-
             <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-xs">
@@ -345,26 +302,28 @@ export default function PatientMedicationSearchPage() {
                       {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
                       {patientHeader?.multiple ? <th className="px-3 py-2">ชื่อ</th> : null}
                       <th className="px-3 py-2">ประเภท</th>
-                      <th className="px-3 py-2">รหัสยา</th>
                       <th className="px-3 py-2">ชื่อยา</th>
+                      <th className="px-3 py-2">วิธีกินยา</th>
+                      <th className="px-3 py-2">สิทธิการรักษา</th>
                       <th className="px-3 py-2">หมวด</th>
                       <th className="px-3 py-2">คลินิก</th>
                       <th className="px-3 py-2 text-right">จำนวน</th>
-                      <th className="px-3 py-2 text-right">ต้นทุน</th>
-                      <th className="px-3 py-2 text-right">ราคาขาย</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-flow-border">
                     {filteredRows.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-6 text-center text-flow-muted" colSpan={11}>
+                        <td
+                          className="px-3 py-6 text-center text-flow-muted"
+                          colSpan={patientHeader?.multiple ? 11 : 9}
+                        >
                           ไม่มีรายการยาในวันที่เลือก
                         </td>
                       </tr>
                     ) : (
                       filteredRows.map((row, index) => {
                         const dateIso = apiDateToIsoLocal(row.PRSCDATE);
-                        const rowKey = `${row.HN}-${dateIso}-${row.MEDITEM}-${row.CLINIC_LCT}-${row.AN ?? ""}-${index}`;
+                        const rowKey = `${row.HN}-${dateIso}-${row.MEDITEM}-${row.CLINIC_LCT}-${row.AN ?? ""}-${row.DRUG_USAGE ?? ""}-${index}`;
 
                         return (
                           <tr key={rowKey} className="hover:bg-slate-50/80">
@@ -391,22 +350,19 @@ export default function PatientMedicationSearchPage() {
                                 {row.AN ? ` · ${row.AN}` : ""}
                               </span>
                             </td>
-                            <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px]">
-                              {row.MEDITEM}
-                            </td>
                             <td className="min-w-[12rem] px-3 py-2">{row.DRUG_NAME ?? "—"}</td>
+                            <td className="min-w-[10rem] px-3 py-2 text-flow-muted">
+                              {row.DRUG_USAGE?.trim() ? row.DRUG_USAGE : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-flow-muted">
+                              {row.PTTYPE_NAME?.trim() ? row.PTTYPE_NAME : "—"}
+                            </td>
                             <td className="px-3 py-2 text-flow-muted">{row.MEDTYPE ?? "—"}</td>
                             <td className="px-3 py-2 text-flow-muted">
                               {row.CLINIC_LCT_NAME ?? row.CLINIC_LCT ?? "—"}
                             </td>
                             <td className="whitespace-nowrap px-3 py-2 text-right">
                               {formatQty(row.TOTAL_QTY)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-right">
-                              {formatBaht(row.TOTAL_COST)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-right">
-                              {formatBaht(row.TOTAL_SALE)}
                             </td>
                           </tr>
                         );

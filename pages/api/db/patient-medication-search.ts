@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
+import { sqlDrugUsageJoins, sqlDrugUsageReadable } from "@/lib/db/drugUsageSql";
 import { sqlUnitCost, sqlUnitSale } from "@/lib/db/meditemRateSql";
 
 export type PatientMedicationRow = {
@@ -22,6 +23,7 @@ export type PatientMedicationRow = {
   TOTAL_SALE: number;
   TOTAL_PROFIT: number;
   PTTYPE_NAME: string | null;
+  DRUG_USAGE: string | null;
 };
 
 type SuccessResponse = {
@@ -146,6 +148,7 @@ export default async function handler(
         m.medname                           AS DRUG_NAME,
         d.qty                               AS QTY,
         pty.name                            AS PTTYPE_NAME,
+        ${sqlDrugUsageReadable("d")}        AS DRUG_USAGE,
         ${unitCost}                         AS UNIT_COST,
         ${unitSale}                         AS UNIT_SALE
       FROM prsc p
@@ -157,6 +160,7 @@ export default async function handler(
         LEFT JOIN medaccnation a ON a.accnation = m.accnation
         LEFT JOIN lct ON lct.lct = d.sphmlct
         LEFT JOIN pttype pty ON pty.pttype = p.pttype
+        ${sqlDrugUsageJoins("d")}
       WHERE 1 = 1
         ${whereDate}
         ${whereHn}
@@ -180,7 +184,8 @@ export default async function handler(
       SUM(QTY * UNIT_COST) AS TOTAL_COST,
       SUM(QTY * UNIT_SALE) AS TOTAL_SALE,
       SUM(QTY * (UNIT_SALE - UNIT_COST)) AS TOTAL_PROFIT,
-      MAX(PTTYPE_NAME) AS PTTYPE_NAME
+      PTTYPE_NAME,
+      DRUG_USAGE
     FROM base
     GROUP BY
       HN,
@@ -194,7 +199,9 @@ export default async function handler(
       MEDITEM,
       MEDTYPE,
       ACCNATION,
-      DRUG_NAME
+      DRUG_NAME,
+      PTTYPE_NAME,
+      DRUG_USAGE
     ORDER BY
       PRSCDATE DESC,
       HN,
