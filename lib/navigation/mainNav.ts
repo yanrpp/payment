@@ -25,7 +25,7 @@ export const MAIN_NAV_GROUPS: MainNavGroup[] = [
       { href: "/patient-cost", label: "ต้นทุนรายผู้ป่วย", icon: "user" },
       {
         href: "/patient-medication-search",
-        label: "ค้นหารายการยาตามผู้ป่วย",
+        label: "รายการยา + lab ผู้ป่วย",
         icon: "search",
       },
       { href: "/drug-cost-summary", label: "สรุปต้นทุนและกำไรจากยา", icon: "pill" },

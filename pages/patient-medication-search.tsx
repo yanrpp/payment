@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { normalizeThaiCardInput } from "@/lib/card/normalize";
 import { isoToThaiDisplay } from "@/lib/date/thaiDate";
@@ -25,6 +25,28 @@ type PatientMedicationRow = {
   TOTAL_PROFIT: number;
   PTTYPE_NAME: string | null;
   DRUG_USAGE: string | null;
+  DRUG_DOSE: string | null;
+};
+
+type PatientLabRow = {
+  HN: string;
+  CARDNO: string | null;
+  DSPNAME: string | null;
+  LAB_DATE: string;
+  AN: string | null;
+  VISIT_TYPE: string;
+  LABEXM: number | null;
+  LAB_NAME: string | null;
+  RESULT: string | null;
+  MIN_NRM: string | null;
+  MAX_NRM: string | null;
+  NRM_UNIT: string | null;
+};
+
+type PatientCandidate = {
+  HN: string;
+  DSPNAME: string | null;
+  CARDNO: string | null;
 };
 
 function apiDateToIsoLocal(value: unknown): string {
@@ -58,7 +80,17 @@ function formatQty(value: unknown): string {
   return Number.isInteger(n) ? String(n) : n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
 }
 
+function formatLabReference(row: PatientLabRow): string {
+  const min = row.MIN_NRM?.trim();
+  const max = row.MAX_NRM?.trim();
+  const unit = row.NRM_UNIT?.trim();
+  if (!min && !max) return "—";
+  const range = min && max ? `${min} - ${max}` : (min ?? max ?? "");
+  return unit ? `${range} ${unit}` : range;
+}
+
 const ALL_DATES = "__all__";
+type ContentTab = "drug" | "lab";
 
 export default function PatientMedicationSearchPage() {
   const [hn, setHn] = useState("");
@@ -68,25 +100,79 @@ export default function PatientMedicationSearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<PatientMedicationRow[]>([]);
+  const [labRows, setLabRows] = useState<PatientLabRow[]>([]);
+  const [contentTab, setContentTab] = useState<ContentTab>("drug");
   const [selectedDate, setSelectedDate] = useState<string>(ALL_DATES);
   const [filterVisitType, setFilterVisitType] = useState<"all" | "OPD" | "IPD">("all");
+  const [showPatientModal, setShowPatientModal] = useState(false);
+  const [patientCandidates, setPatientCandidates] = useState<PatientCandidate[]>([]);
+  const [nameSearchQuery, setNameSearchQuery] = useState("");
+
+  const resetResults = () => {
+    setRows([]);
+    setLabRows([]);
+    setSelectedDate(ALL_DATES);
+    setFilterVisitType("all");
+    setContentTab("drug");
+  };
+
+  const fetchPatientDetails = async (params: {
+    hn?: string;
+    cardno?: string;
+    name?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.hn) query.set("hn", params.hn);
+    if (params.cardno) query.set("cardno", params.cardno);
+    if (params.name) query.set("name", params.name);
+
+    const qs = query.toString();
+    const [medRes, labRes] = await Promise.all([
+      fetch(`/api/db/patient-medication-search?${qs}`),
+      fetch(`/api/db/patient-lab-search?${qs}`),
+    ]);
+    const [medJson, labJson] = await Promise.all([medRes.json(), labRes.json()]);
+
+    const errors: string[] = [];
+    if (!medRes.ok || !medJson.success) {
+      errors.push(medJson.message ?? "ค้นหารายการยาไม่สำเร็จ");
+    } else {
+      setRows(Array.isArray(medJson.data) ? medJson.data : []);
+    }
+    if (!labRes.ok || !labJson.success) {
+      errors.push(labJson.message ?? "ค้นหารายการ Lab ไม่สำเร็จ");
+    } else {
+      setLabRows(Array.isArray(labJson.data) ? labJson.data : []);
+    }
+
+    if (errors.length === 2) {
+      setError(errors.join(" · "));
+    } else if (errors.length === 1) {
+      setError(errors[0]);
+    }
+
+    if (medRes.ok && medJson.success && (medJson.data?.length ?? 0) === 0) {
+      if (labRes.ok && labJson.success && (labJson.data?.length ?? 0) > 0) {
+        setContentTab("lab");
+      }
+    }
+  };
+
+  const closePatientModal = () => {
+    setShowPatientModal(false);
+    setPatientCandidates([]);
+    setNameSearchQuery("");
+  };
 
   const runSearch = async () => {
     setLoading(true);
     setError(null);
-    setRows([]);
-    setSelectedDate(ALL_DATES);
-    setFilterVisitType("all");
-
-    const query = new URLSearchParams();
+    resetResults();
+    closePatientModal();
 
     const normalizedHn = normalizeHnInput(hn);
     const normalizedCard = normalizeThaiCardInput(cardno);
     const trimmedName = name.trim();
-
-    if (normalizedHn) query.set("hn", normalizedHn);
-    if (normalizedCard) query.set("cardno", normalizedCard);
-    if (trimmedName) query.set("name", trimmedName);
 
     if (!normalizedHn && !normalizedCard && !trimmedName) {
       setLoading(false);
@@ -94,16 +180,38 @@ export default function PatientMedicationSearchPage() {
       return;
     }
 
-    try {
-      const res = await fetch(`/api/db/patient-medication-search?${query.toString()}`);
-      const json = await res.json();
+    const needsPatientPicker = Boolean(trimmedName) && !normalizedHn && !normalizedCard;
 
-      if (!res.ok || !json.success) {
-        setError(json.message ?? "ค้นหาข้อมูลไม่สำเร็จ");
+    try {
+      if (needsPatientPicker) {
+        const res = await fetch(
+          `/api/db/patient-search-by-name?name=${encodeURIComponent(trimmedName)}`
+        );
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          setError(json.message ?? "ค้นหารายชื่อผู้ป่วยไม่สำเร็จ");
+          return;
+        }
+
+        const candidates: PatientCandidate[] = Array.isArray(json.data) ? json.data : [];
+
+        if (candidates.length === 0) {
+          setError("ไม่พบผู้ป่วยที่ตรงกับชื่อที่ค้นหา");
+          return;
+        }
+
+        setPatientCandidates(candidates);
+        setNameSearchQuery(trimmedName);
+        setShowPatientModal(true);
         return;
       }
 
-      setRows(Array.isArray(json.data) ? json.data : []);
+      await fetchPatientDetails({
+        hn: normalizedHn || undefined,
+        cardno: normalizedCard || undefined,
+        name: trimmedName || undefined,
+      });
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด");
     } finally {
@@ -111,19 +219,87 @@ export default function PatientMedicationSearchPage() {
     }
   };
 
+  const handlePatientSelect = async (patient: PatientCandidate) => {
+    closePatientModal();
+    setLoading(true);
+    setError(null);
+    resetResults();
+
+    try {
+      await fetchPatientDetails({ hn: patient.HN });
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showPatientModal) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closePatientModal();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showPatientModal]);
+
   const handleSearch = async (event: React.FormEvent) => {
     event.preventDefault();
     await runSearch();
   };
 
-  const medicationDates = useMemo(() => {
+  const drugTabCount = useMemo(() => {
+    return rows.filter((row) => filterVisitType === "all" || row.VISIT_TYPE === filterVisitType)
+      .length;
+  }, [rows, filterVisitType]);
+
+  const labTabCount = useMemo(() => {
+    return labRows.filter((row) => filterVisitType === "all" || row.VISIT_TYPE === filterVisitType)
+      .length;
+  }, [labRows, filterVisitType]);
+
+  const drugDates = useMemo(() => {
     const set = new Set<string>();
     for (const row of rows) {
+      if (filterVisitType !== "all" && row.VISIT_TYPE !== filterVisitType) continue;
       const iso = apiDateToIsoLocal(row.PRSCDATE);
       if (iso) set.add(iso);
     }
     return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [rows]);
+  }, [rows, filterVisitType]);
+
+  const labDates = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of labRows) {
+      if (filterVisitType !== "all" && row.VISIT_TYPE !== filterVisitType) continue;
+      const iso = apiDateToIsoLocal(row.LAB_DATE);
+      if (iso) set.add(iso);
+    }
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [labRows, filterVisitType]);
+
+  const activeDates = contentTab === "drug" ? drugDates : labDates;
+
+  const handleContentTabChange = (tab: ContentTab) => {
+    setContentTab(tab);
+    setSelectedDate(ALL_DATES);
+  };
+
+  const handleVisitTypeChange = (type: "all" | "OPD" | "IPD") => {
+    setFilterVisitType(type);
+    setSelectedDate(ALL_DATES);
+
+    const nextDrugCount = rows.filter((row) => type === "all" || row.VISIT_TYPE === type).length;
+    const nextLabCount = labRows.filter((row) => type === "all" || row.VISIT_TYPE === type).length;
+
+    if (contentTab === "drug" && nextDrugCount === 0 && nextLabCount > 0) {
+      setContentTab("lab");
+    } else if (contentTab === "lab" && nextLabCount === 0 && nextDrugCount > 0) {
+      setContentTab("drug");
+    }
+  };
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
@@ -133,10 +309,19 @@ export default function PatientMedicationSearchPage() {
     });
   }, [rows, selectedDate, filterVisitType]);
 
+  const filteredLabRows = useMemo(() => {
+    return labRows.filter((row) => {
+      if (filterVisitType !== "all" && row.VISIT_TYPE !== filterVisitType) return false;
+      if (selectedDate === ALL_DATES) return true;
+      return apiDateToIsoLocal(row.LAB_DATE) === selectedDate;
+    });
+  }, [labRows, selectedDate, filterVisitType]);
+
   const patientHeader = useMemo(() => {
-    if (rows.length === 0) return null;
-    const first = rows[0];
-    const uniqueHn = new Set(rows.map((r) => r.HN));
+    const source = rows.length > 0 ? rows : labRows;
+    if (source.length === 0) return null;
+    const first = source[0];
+    const uniqueHn = new Set(source.map((r) => r.HN));
     return {
       multiple: uniqueHn.size > 1,
       hn: first.HN,
@@ -144,14 +329,16 @@ export default function PatientMedicationSearchPage() {
       cardno: first.CARDNO,
       patientCount: uniqueHn.size,
     };
-  }, [rows]);
+  }, [rows, labRows]);
+
+  const hasResults = rows.length > 0 || labRows.length > 0;
 
   return (
     <div className="flex min-h-full flex-col">
       <header className="border-b border-flow-border bg-white px-4 py-4 md:px-6">
-        <h1 className="text-xl font-bold text-flow-text md:text-2xl">ค้นหารายการยาตามผู้ป่วย</h1>
+        <h1 className="text-xl font-bold text-flow-text md:text-2xl">รายการยา + lab ผู้ป่วย</h1>
         <p className="mt-1 text-xs text-flow-muted md:text-sm">
-          ค้นหาด้วย HN, เลขบัตรประชาชน หรือชื่อ-นามสกุล แล้วเลือกดูรายการยาตามวันที่มียาได้
+          ค้นหาด้วย HN หรือเลขบัตรประชาชนเพื่อดูข้อมูลทันที หรือค้นหาด้วยชื่อ-นามสกุลแล้วเลือกผู้ป่วยจากรายการ
         </p>
       </header>
 
@@ -213,19 +400,25 @@ export default function PatientMedicationSearchPage() {
                 disabled={loading}
                 type="submit"
               >
-                {loading ? "กำลังค้นหา..." : "ค้นหารายการยา"}
+                {loading ? "กำลังค้นหา..." : "ค้นหา"}
               </button>
             </div>
           </form>
         </section>
 
         {error ? (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div
+            className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+              hasResults
+                ? "border-amber-200 bg-amber-50 text-amber-800"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
             {error}
           </div>
         ) : null}
 
-        {rows.length > 0 ? (
+        {hasResults ? (
           <>
             <section className="mb-4 rounded-xl border border-flow-border bg-white p-4 shadow-sm">
               {patientHeader && !patientHeader.multiple ? (
@@ -242,40 +435,31 @@ export default function PatientMedicationSearchPage() {
                 </div>
               ) : patientHeader?.multiple ? (
                 <p className="mb-3 text-sm text-flow-muted">
-                  พบผู้ป่วย {patientHeader.patientCount} ราย — แสดงรายการยาทั้งหมดที่ตรงเงื่อนไข
+                  พบผู้ป่วย {patientHeader.patientCount} ราย — แสดงรายการยาและ Lab ที่ตรงเงื่อนไข
                 </p>
               ) : null}
 
-              <p className="mb-2 text-xs font-semibold text-flow-text">เลือกวันที่มียา</p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                    selectedDate === ALL_DATES
-                      ? "bg-brand-600 text-white"
-                      : "bg-slate-100 text-flow-text hover:bg-slate-200"
-                  }`}
-                  type="button"
-                  onClick={() => setSelectedDate(ALL_DATES)}
-                >
-                  ทุกวัน ({medicationDates.length})
-                </button>
-                {medicationDates.map((iso) => (
+              <div className="flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    ["drug", `รายการยา (${drugTabCount})`],
+                    ["lab", `Lab (${labTabCount})`],
+                  ] as const
+                ).map(([tab, label]) => (
                   <button
-                    key={iso}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      selectedDate === iso
+                    key={tab}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                      contentTab === tab
                         ? "bg-brand-600 text-white"
-                        : "bg-slate-100 text-flow-text hover:bg-slate-200"
+                        : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
                     }`}
                     type="button"
-                    onClick={() => setSelectedDate(iso)}
+                    onClick={() => handleContentTabChange(tab)}
                   >
-                    {isoToThaiDisplay(iso)}
+                    {label}
                   </button>
                 ))}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="mx-1 hidden h-6 w-px bg-flow-border sm:block" />
                 {(["all", "OPD", "IPD"] as const).map((type) => (
                   <button
                     key={type}
@@ -285,14 +469,56 @@ export default function PatientMedicationSearchPage() {
                         : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
                     }`}
                     type="button"
-                    onClick={() => setFilterVisitType(type)}
+                    onClick={() => handleVisitTypeChange(type)}
                   >
                     {type === "all" ? "ทุกประเภท" : type}
                   </button>
                 ))}
               </div>
+
+              {activeDates.length > 0 ? (
+                <>
+                  <p className="mb-2 mt-4 text-xs font-semibold text-flow-text">
+                    {contentTab === "drug" ? "เลือกวันที่มียา" : "เลือกวันที่มี Lab"}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        selectedDate === ALL_DATES
+                          ? "bg-brand-600 text-white"
+                          : "bg-slate-100 text-flow-text hover:bg-slate-200"
+                      }`}
+                      type="button"
+                      onClick={() => setSelectedDate(ALL_DATES)}
+                    >
+                      ทุกวัน ({activeDates.length})
+                    </button>
+                    {activeDates.map((iso) => (
+                      <button
+                        key={iso}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                          selectedDate === iso
+                            ? "bg-brand-600 text-white"
+                            : "bg-slate-100 text-flow-text hover:bg-slate-200"
+                        }`}
+                        type="button"
+                        onClick={() => setSelectedDate(iso)}
+                      >
+                        {isoToThaiDisplay(iso)}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-4 text-xs text-flow-muted">
+                  {contentTab === "drug"
+                    ? "ไม่พบรายการยาในประเภทที่เลือก"
+                    : "ไม่พบรายการ Lab ในประเภทที่เลือก"}
+                </p>
+              )}
             </section>
 
+            {contentTab === "drug" ? (
             <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-xs">
@@ -303,6 +529,7 @@ export default function PatientMedicationSearchPage() {
                       {patientHeader?.multiple ? <th className="px-3 py-2">ชื่อ</th> : null}
                       <th className="px-3 py-2">ประเภท</th>
                       <th className="px-3 py-2">ชื่อยา</th>
+                      <th className="px-3 py-2">โดสยา</th>
                       <th className="px-3 py-2">วิธีกินยา</th>
                       <th className="px-3 py-2">สิทธิการรักษา</th>
                       <th className="px-3 py-2">หมวด</th>
@@ -315,7 +542,7 @@ export default function PatientMedicationSearchPage() {
                       <tr>
                         <td
                           className="px-3 py-6 text-center text-flow-muted"
-                          colSpan={patientHeader?.multiple ? 11 : 9}
+                          colSpan={patientHeader?.multiple ? 12 : 10}
                         >
                           ไม่มีรายการยาในวันที่เลือก
                         </td>
@@ -351,6 +578,9 @@ export default function PatientMedicationSearchPage() {
                               </span>
                             </td>
                             <td className="min-w-[12rem] px-3 py-2">{row.DRUG_NAME ?? "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-flow-text">
+                              {row.DRUG_DOSE?.trim() ? row.DRUG_DOSE : "—"}
+                            </td>
                             <td className="min-w-[10rem] px-3 py-2 text-flow-muted">
                               {row.DRUG_USAGE?.trim() ? row.DRUG_USAGE : "—"}
                             </td>
@@ -372,13 +602,154 @@ export default function PatientMedicationSearchPage() {
                 </table>
               </div>
             </section>
+            ) : (
+            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
+                    <tr>
+                      <th className="px-3 py-2">วันที่ตรวจ</th>
+                      {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
+                      {patientHeader?.multiple ? <th className="px-3 py-2">ชื่อ</th> : null}
+                      <th className="px-3 py-2">ประเภท</th>
+                      <th className="px-3 py-2">ชื่อการตรวจ</th>
+                      <th className="px-3 py-2">ผล</th>
+                      <th className="px-3 py-2">ค่าอ้างอิง</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-flow-border">
+                    {filteredLabRows.length === 0 ? (
+                      <tr>
+                        <td
+                          className="px-3 py-6 text-center text-flow-muted"
+                          colSpan={patientHeader?.multiple ? 7 : 5}
+                        >
+                          ไม่มีรายการ Lab ในวันที่เลือก
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredLabRows.map((row, index) => {
+                        const dateIso = apiDateToIsoLocal(row.LAB_DATE);
+                        const rowKey = `${row.HN}-${dateIso}-${row.LABEXM}-${row.AN ?? ""}-${index}`;
+
+                        return (
+                          <tr key={rowKey} className="hover:bg-slate-50/80">
+                            <td className="whitespace-nowrap px-3 py-2 text-flow-text">
+                              {isoToThaiDisplay(dateIso)}
+                            </td>
+                            {patientHeader?.multiple ? (
+                              <td className="whitespace-nowrap px-3 py-2">
+                                {formatHnDisplay(row.HN)}
+                              </td>
+                            ) : null}
+                            {patientHeader?.multiple ? (
+                              <td className="px-3 py-2">{row.DSPNAME ?? "—"}</td>
+                            ) : null}
+                            <td className="whitespace-nowrap px-3 py-2">
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                  row.VISIT_TYPE === "IPD"
+                                    ? "bg-violet-100 text-violet-800"
+                                    : "bg-sky-100 text-sky-800"
+                                }`}
+                              >
+                                {row.VISIT_TYPE}
+                                {row.AN ? ` · ${row.AN}` : ""}
+                              </span>
+                            </td>
+                            <td className="min-w-[14rem] px-3 py-2">{row.LAB_NAME ?? "—"}</td>
+                            <td className="min-w-[8rem] px-3 py-2 font-medium text-flow-text">
+                              {row.RESULT?.trim() ? row.RESULT : "—"}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-flow-muted">
+                              {formatLabReference(row)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            )}
           </>
-        ) : !loading && !error ? (
-          <p className="text-sm text-flow-muted">
-            ระบุเงื่อนไขค้นหาแล้วกด &quot;ค้นหารายการยา&quot;
-          </p>
+        ) : !loading && !hasResults ? (
+          <p className="text-sm text-flow-muted">ระบุเงื่อนไขค้นหาแล้วกด &quot;ค้นหา&quot;</p>
         ) : null}
       </main>
+
+      {showPatientModal ? (
+        <div
+          aria-labelledby="patient-picker-title"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          onClick={closePatientModal}
+        >
+          <div
+            className="relative max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-xl border border-flow-border bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-flow-border bg-flow-input px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold text-flow-text" id="patient-picker-title">
+                  เลือกผู้ป่วย
+                </h2>
+                <p className="mt-0.5 text-xs text-flow-muted">
+                  พบ {patientCandidates.length} รายการที่ตรงกับ &quot;{nameSearchQuery}&quot;
+                  {patientCandidates.length >= 50 ? " (แสดงสูงสุด 50 รายการ)" : ""}
+                </p>
+              </div>
+              <button
+                className="rounded-lg border border-flow-border bg-white px-3 py-1 text-xs font-medium text-flow-text hover:bg-brand-50"
+                type="button"
+                onClick={closePatientModal}
+              >
+                ปิด
+              </button>
+            </div>
+            <div className="max-h-[calc(85vh-4rem)] overflow-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
+                  <tr>
+                    <th className="px-4 py-2">ชื่อ-นามสกุล</th>
+                    <th className="px-4 py-2">HN</th>
+                    <th className="px-4 py-2">เลขบัตรประชาชน</th>
+                    <th className="px-4 py-2 text-right" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-flow-border">
+                  {patientCandidates.map((patient) => (
+                    <tr
+                      key={patient.HN}
+                      className="cursor-pointer hover:bg-brand-50/60"
+                      onClick={() => void handlePatientSelect(patient)}
+                    >
+                      <td className="px-4 py-3 font-medium text-flow-text">
+                        {patient.DSPNAME ?? "(ไม่ระบุชื่อ)"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">{formatHnDisplay(patient.HN)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-flow-muted">
+                        {patient.CARDNO ?? "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <button
+                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+                          type="button"
+                          onClick={() => void handlePatientSelect(patient)}
+                        >
+                          เลือก
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

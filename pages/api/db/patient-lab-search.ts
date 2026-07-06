@@ -2,35 +2,26 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
-import { sqlDrugDoseReadable, sqlDrugUsageJoins, sqlDrugUsageReadable } from "@/lib/db/drugUsageSql";
-import { sqlUnitCost, sqlUnitSale } from "@/lib/db/meditemRateSql";
 
-export type PatientMedicationRow = {
+export type PatientLabRow = {
   HN: string;
   CARDNO: string | null;
   DSPNAME: string | null;
-  PRSCDATE: string;
+  LAB_DATE: string;
   AN: string | null;
   VISIT_TYPE: string;
-  CLINIC_LCT: string | null;
-  CLINIC_LCT_NAME: string | null;
-  MEDITEM: string;
-  MEDTYPE: string | null;
-  ACCNATION: string | null;
-  DRUG_NAME: string | null;
-  TOTAL_QTY: number;
-  TOTAL_COST: number;
-  TOTAL_SALE: number;
-  TOTAL_PROFIT: number;
-  PTTYPE_NAME: string | null;
-  DRUG_USAGE: string | null;
-  DRUG_DOSE: string | null;
+  LABEXM: number | null;
+  LAB_NAME: string | null;
+  RESULT: string | null;
+  MIN_NRM: string | null;
+  MAX_NRM: string | null;
+  NRM_UNIT: string | null;
 };
 
 type SuccessResponse = {
   success: true;
   count: number;
-  data: PatientMedicationRow[];
+  data: PatientLabRow[];
 };
 
 type ErrorResponse = {
@@ -102,8 +93,8 @@ export default async function handler(
       });
     }
     whereDate = `
-        AND p.prscdate >= TO_DATE(:d1, 'YYYY-MM-DD')
-        AND p.prscdate < TO_DATE(:d2, 'YYYY-MM-DD') + 1`;
+        AND l.lvstdate >= TO_DATE(:d1, 'YYYY-MM-DD')
+        AND l.lvstdate < TO_DATE(:d2, 'YYYY-MM-DD') + 1`;
   }
 
   const hnValue = typeof hn === "string" && hn.trim() !== "" ? hn.trim() : null;
@@ -118,7 +109,7 @@ export default async function handler(
     });
   }
 
-  const whereHn = hnValue != null ? " AND p.hn = :hn" : "";
+  const whereHn = hnValue != null ? " AND l.hn = :hn" : "";
   const whereCardno = cardnoValue != null ? " AND ptno.cardno = :cardno" : "";
   const whereName =
     nameValue != null
@@ -129,87 +120,34 @@ export default async function handler(
         )`
       : "";
 
-  const unitCost = sqlUnitCost("m", "d", "p");
-  const unitSale = sqlUnitSale("m", "d", "p");
-
   const sql = `
-    WITH base AS (
-      SELECT
-        p.hn                                AS HN,
-        ptno.cardno                         AS CARDNO,
-        pt.dspname                          AS DSPNAME,
-        TRUNC(p.prscdate)                   AS PRSCDATE,
-        p.an                                AS AN,
-        CASE WHEN p.an IS NOT NULL THEN 'IPD' ELSE 'OPD' END AS VISIT_TYPE,
-        d.sphmlct                           AS CLINIC_LCT,
-        lct.name                            AS CLINIC_LCT_NAME,
-        m.meditem                           AS MEDITEM,
-        t.name                              AS MEDTYPE,
-        a.name                              AS ACCNATION,
-        m.medname                           AS DRUG_NAME,
-        d.qty                               AS QTY,
-        pty.name                            AS PTTYPE_NAME,
-        ${sqlDrugUsageReadable("d")}        AS DRUG_USAGE,
-        ${sqlDrugDoseReadable("d")}       AS DRUG_DOSE,
-        ${unitCost}                         AS UNIT_COST,
-        ${unitSale}                         AS UNIT_SALE
-      FROM prsc p
-        INNER JOIN prscdt d ON d.prscno = p.prscno
-        INNER JOIN pt ON pt.hn = p.hn
-        LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
-        INNER JOIN meditem m ON m.meditem = d.meditem
-        LEFT JOIN medtype t ON t.medtype = m.medtype
-        LEFT JOIN medaccnation a ON a.accnation = m.accnation
-        LEFT JOIN lct ON lct.lct = d.sphmlct
-        LEFT JOIN pttype pty ON pty.pttype = p.pttype
-        ${sqlDrugUsageJoins("d")}
-      WHERE 1 = 1
-        ${whereDate}
-        ${whereHn}
-        ${whereCardno}
-        ${whereName}
-    )
     SELECT
-      HN,
-      CARDNO,
-      DSPNAME,
-      PRSCDATE,
-      AN,
-      VISIT_TYPE,
-      CLINIC_LCT,
-      CLINIC_LCT_NAME,
-      MEDITEM,
-      MEDTYPE,
-      ACCNATION,
-      DRUG_NAME,
-      SUM(QTY) AS TOTAL_QTY,
-      SUM(QTY * UNIT_COST) AS TOTAL_COST,
-      SUM(QTY * UNIT_SALE) AS TOTAL_SALE,
-      SUM(QTY * (UNIT_SALE - UNIT_COST)) AS TOTAL_PROFIT,
-      PTTYPE_NAME,
-      DRUG_USAGE,
-      DRUG_DOSE
-    FROM base
-    GROUP BY
-      HN,
-      CARDNO,
-      DSPNAME,
-      PRSCDATE,
-      AN,
-      VISIT_TYPE,
-      CLINIC_LCT,
-      CLINIC_LCT_NAME,
-      MEDITEM,
-      MEDTYPE,
-      ACCNATION,
-      DRUG_NAME,
-      PTTYPE_NAME,
-      DRUG_USAGE,
-      DRUG_DOSE
+      l.hn                                AS HN,
+      ptno.cardno                         AS CARDNO,
+      pt.dspname                          AS DSPNAME,
+      TRUNC(l.lvstdate)                   AS LAB_DATE,
+      l.an                                AS AN,
+      CASE WHEN l.an IS NOT NULL THEN 'IPD' ELSE 'OPD' END AS VISIT_TYPE,
+      l.labexm                            AS LABEXM,
+      le.name                             AS LAB_NAME,
+      l.result                            AS RESULT,
+      l.minnrm                            AS MIN_NRM,
+      l.maxnrm                            AS MAX_NRM,
+      l.nrmunit                           AS NRM_UNIT
+    FROM lvstexm l
+      INNER JOIN pt ON pt.hn = l.hn
+      LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
+      LEFT JOIN labexm le ON le.labexm = l.labexm
+    WHERE 1 = 1
+      ${whereDate}
+      ${whereHn}
+      ${whereCardno}
+      ${whereName}
     ORDER BY
-      PRSCDATE DESC,
-      HN,
-      DRUG_NAME
+      l.lvstdate DESC,
+      l.hn,
+      le.name,
+      l.labexm
   `;
 
   const params: Record<string, unknown> = {};
@@ -222,7 +160,7 @@ export default async function handler(
   if (nameValue != null) params.name = nameValue;
 
   try {
-    const result = await executeQuery<PatientMedicationRow>(sql, params);
+    const result = await executeQuery<PatientLabRow>(sql, params);
     const rows = result.rows ?? [];
 
     return res.status(200).json({
@@ -231,6 +169,6 @@ export default async function handler(
       data: rows,
     });
   } catch (error) {
-    return respondError(res, "ไม่สามารถค้นหารายการยาได้", error);
+    return respondError(res, "ไม่สามารถค้นหารายการ Lab ได้", error);
   }
 }
