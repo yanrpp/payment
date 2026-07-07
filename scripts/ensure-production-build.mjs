@@ -1,8 +1,12 @@
 import { spawnSync } from "child_process";
+import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
+
+const require = createRequire(import.meta.url);
 const root = process.cwd();
 const distDir = path.join(root, ".next");
+const nextBin = require.resolve("next/dist/bin/next");
 
 const requiredPaths = [
   "BUILD_ID",
@@ -21,11 +25,11 @@ if (productionBuildIsReady()) {
   process.exit(0);
 }
 
-console.log("[build] production build missing or incomplete — running npm run build...");
-const result = spawnSync("npm", ["run", "build"], {
+console.log("[build] production build missing or incomplete — running next build...");
+const result = spawnSync(process.execPath, [nextBin, "build"], {
   cwd: root,
   stdio: "inherit",
-  shell: true,
+  windowsHide: true,
   env: {
     ...process.env,
     NODE_ENV: "production",

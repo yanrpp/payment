@@ -35,6 +35,8 @@ type PatientMedicationRow = {
   MEDSYMPTOM_NAME: string | null;
   MEDUSEUNIT_NAME: string | null;
   MEDLBLHLP1: string | null;
+  MEDLBLHLP_NAME: string | null;
+  MEDLBLHLP2_NAME: string | null;
   MEDNOTE: string | null;
   PRSCDTEXT_MEDUSAGE: string | null;
 };
@@ -165,12 +167,7 @@ function formatHnDisplay(value: unknown): string {
 const DRUG_USAGE_DETAIL_FIELDS: {
   key: keyof Pick<
     PatientMedicationRow,
-    | "MEDUSETYPE_NAME"
-    | "MEDUSEQTY_NAME"
-    | "MEDUSETIME_NAME"
-    | "MEDSYMPTOM_NAME"
-    | "MEDLBLHLP1"
-    | "MEDNOTE"
+    "MEDUSETYPE_NAME" | "MEDUSEQTY_NAME" | "MEDUSETIME_NAME" | "MEDSYMPTOM_NAME" | "MEDNOTE"
   >;
   label: string;
 }[] = [
@@ -178,9 +175,30 @@ const DRUG_USAGE_DETAIL_FIELDS: {
   { key: "MEDUSEQTY_NAME", label: "ปริมาณต่อครั้ง" },
   { key: "MEDUSETIME_NAME", label: "ความถี่" },
   { key: "MEDSYMPTOM_NAME", label: "เงื่อนไข/เวลา" },
-  { key: "MEDLBLHLP1", label: "ข้อความฉลาก" },
   { key: "MEDNOTE", label: "หมายเหตุ" },
 ];
+
+function appendLabelHelpText(base: string, row: PatientMedicationRow): string {
+  let text = base;
+  for (const part of [row.MEDLBLHLP_NAME, row.MEDLBLHLP2_NAME]) {
+    const help = part?.trim();
+    if (!help || text.includes(help)) continue;
+    text = text ? `${text} ${help}` : help;
+  }
+  return text;
+}
+
+function formatMedusageText(row: PatientMedicationRow): string {
+  const fromPrscdtext = row.PRSCDTEXT_MEDUSAGE?.trim();
+  if (fromPrscdtext) return appendLabelHelpText(fromPrscdtext, row);
+  const fromMaster = row.DRUG_USAGE?.trim();
+  if (fromMaster) return fromMaster;
+  const fromHelp = [row.MEDLBLHLP_NAME, row.MEDLBLHLP2_NAME]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(" ");
+  return fromHelp || "—";
+}
 
 function formatDrugUsageBreakdown(row: PatientMedicationRow): ReactNode {
   const lines = DRUG_USAGE_DETAIL_FIELDS.map(({ key, label }) => {
@@ -1447,7 +1465,7 @@ export default function PatientMedicationSearchPage() {
                                     {formatDrugUsageBreakdown(row)}
                                   </td>
                                   <td className="min-w-[10rem] px-3 py-2 align-top text-flow-muted">
-                                    {row.PRSCDTEXT_MEDUSAGE?.trim() ? row.PRSCDTEXT_MEDUSAGE : "—"}
+                                    {formatMedusageText(row)}
                                   </td>
                                   <td className="px-3 py-2 text-flow-muted">
                                     {row.PTTYPE_NAME?.trim() ? row.PTTYPE_NAME : "—"}

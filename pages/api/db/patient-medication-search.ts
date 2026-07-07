@@ -31,6 +31,8 @@ export type PatientMedicationRow = {
   MEDSYMPTOM_NAME: string | null;
   MEDUSEUNIT_NAME: string | null;
   MEDLBLHLP1: string | null;
+  MEDLBLHLP_NAME: string | null;
+  MEDLBLHLP2_NAME: string | null;
   MEDNOTE: string | null;
   PRSCDTEXT_MEDUSAGE: string | null;
 };
@@ -206,6 +208,8 @@ export default async function handler(
       MEDSYMPTOM_NAME,
       MEDUSEUNIT_NAME,
       MEDLBLHLP1,
+      MEDLBLHLP_NAME,
+      MEDLBLHLP2_NAME,
       MEDNOTE,
       PRSCDTEXT_MEDUSAGE
     FROM base
@@ -231,6 +235,8 @@ export default async function handler(
       MEDSYMPTOM_NAME,
       MEDUSEUNIT_NAME,
       MEDLBLHLP1,
+      MEDLBLHLP_NAME,
+      MEDLBLHLP2_NAME,
       MEDNOTE,
       PRSCDTEXT_MEDUSAGE
     ORDER BY

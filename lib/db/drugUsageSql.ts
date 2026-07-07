@@ -13,36 +13,40 @@ export function sqlDrugUsageJoins(dAlias = "d"): string {
     LEFT JOIN medusetime mutm ON mutm.medusetime = ${dAlias}.medusetime
     LEFT JOIN medusetype muty ON muty.medusetype = ${dAlias}.medusetype
     LEFT JOIN medsymptom msym ON msym.medsymptom = ${dAlias}.medsymptom
-    LEFT JOIN meduseunit muunit ON muunit.meduseunit = ${dAlias}.meduseunit`;
+    LEFT JOIN meduseunit muunit ON muunit.meduseunit = ${dAlias}.meduseunit
+    LEFT JOIN medlblhlp mlblhlp ON mlblhlp.medlblhlp = ${dAlias}.medlblhlp1
+    LEFT JOIN medlblhlp mlblhlp2 ON mlblhlp2.medlblhlp = ${dAlias}.medlblhlp2`;
 }
 
-/** ข้อความวิธีใช้จาก prscdtext — join แบบ 1 แถวต่อ prscno+meditem */
+/** ข้อความวิธีใช้จาก prscdtext (PRSCDTEXT) — join ตาม prscno + sphmlct + itemno */
 export function sqlPrscdtextJoin(dAlias = "d"): string {
-  const medusageExpr = `TRIM(COALESCE(DBMS_LOB.SUBSTR(medusage, 4000, 1), CAST(medusage AS VARCHAR2(4000))))`;
-
   return `
     LEFT JOIN (
-      SELECT prscno, meditem, MAX(${medusageExpr}) AS medusage
+      SELECT prscno, sphmlct, itemno, MAX(TRIM(medusage)) AS medusage
       FROM prscdtext
-      GROUP BY prscno, meditem
-    ) ptxt_line ON ptxt_line.prscno = ${dAlias}.prscno
-               AND TO_CHAR(ptxt_line.meditem) = TO_CHAR(${dAlias}.meditem)
-    LEFT JOIN (
-      SELECT prscno, MAX(${medusageExpr}) AS medusage
-      FROM prscdtext
-      GROUP BY prscno
-    ) ptxt_hdr ON ptxt_hdr.prscno = ${dAlias}.prscno`;
+      WHERE medusage IS NOT NULL
+      GROUP BY prscno, sphmlct, itemno
+    ) ptxt ON ptxt.prscno = ${dAlias}.prscno
+          AND ptxt.sphmlct = ${dAlias}.sphmlct
+          AND ptxt.itemno = ${dAlias}.itemno`;
 }
 
 export function sqlPrscdtextMedusageColumn(): string {
-  return `TRIM(COALESCE(ptxt_line.medusage, ptxt_hdr.medusage)) AS PRSCDTEXT_MEDUSAGE`;
+  return `TRIM(ptxt.medusage) AS PRSCDTEXT_MEDUSAGE`;
+}
+
+function sqlDrugUsageUnitName(): string {
+  return `NULLIF(TRIM(COALESCE(NULLIF(TRIM(muunit.thainame), ''), TRIM(muunit.name))), '')`;
 }
 
 function sqlDrugUsageMasterText(dAlias: string): string {
+  const unit = sqlDrugUsageUnitName();
+
   return `RTRIM(
     TRIM(muty.name) || ' ' ||
-    TRIM(muqty.name) || ' ' ||
-    TRIM(mutm.name) ||
+    TRIM(muqty.name) ||
+    CASE WHEN ${unit} IS NOT NULL THEN ' ' || ${unit} ELSE '' END ||
+    CASE WHEN mutm.name IS NOT NULL THEN ' ' || TRIM(mutm.name) ELSE '' END ||
     CASE WHEN msym.name IS NOT NULL THEN ' ' || TRIM(msym.name) ELSE '' END,
     ' '
   )`;
@@ -55,13 +59,24 @@ export function sqlDrugUsageFieldColumns(dAlias = "d"): string {
       TRIM(muqty.name)                    AS MEDUSEQTY_NAME,
       TRIM(mutm.name)                     AS MEDUSETIME_NAME,
       TRIM(msym.name)                     AS MEDSYMPTOM_NAME,
-      TRIM(muunit.name)                   AS MEDUSEUNIT_NAME,
+      TRIM(COALESCE(NULLIF(TRIM(muunit.thainame), ''), TRIM(muunit.name))) AS MEDUSEUNIT_NAME,
       TRIM(${dAlias}.medlblhlp1)          AS MEDLBLHLP1,
+      TRIM(mlblhlp.name)                  AS MEDLBLHLP_NAME,
+      TRIM(mlblhlp2.name)                 AS MEDLBLHLP2_NAME,
       TRIM(${dAlias}.mednote)             AS MEDNOTE`;
 }
 
-/** นิพจน์ข้อความวิธีกินยา — ลำดับ: ฉลากไทย → master ไทย → หมายเหตุ → master → ฉลากที่ไม่ใช่รหัส */
-export function sqlDrugUsageReadable(dAlias = "d"): string {
+/** ต่อข้อความช่วยฉลาก (medlblhlp) ต่อท้าย — HosXP แสดงต่อจาก master usage */
+function sqlAppendThaiLabelHelp(baseExpr: string, helpExpr: string): string {
+  return `CASE
+    WHEN ${helpExpr} IS NOT NULL AND REGEXP_LIKE(${helpExpr}, '[ก-๙]')
+      AND (${baseExpr} IS NULL OR INSTR(${baseExpr}, ${helpExpr}) = 0)
+    THEN CASE WHEN ${baseExpr} IS NOT NULL AND ${baseExpr} <> '' THEN ' ' ELSE '' END || ${helpExpr}
+    ELSE ''
+  END`;
+}
+
+function sqlDrugUsageReadableCore(dAlias: string): string {
   const master = sqlDrugUsageMasterText(dAlias);
   const lbl = `TRIM(${dAlias}.medlblhlp1)`;
   const note = `TRIM(${dAlias}.mednote)`;
@@ -95,10 +110,24 @@ export function sqlDrugUsageReadable(dAlias = "d"): string {
   )`;
 }
 
+/** นิพจน์ข้อความวิธีกินยา — master + คำแนะนำฉลากจาก medlblhlp1/2 */
+export function sqlDrugUsageReadable(dAlias = "d"): string {
+  const core = sqlDrugUsageReadableCore(dAlias);
+  const hlp1 = `TRIM(mlblhlp.name)`;
+  const hlp2 = `TRIM(mlblhlp2.name)`;
+
+  return `TRIM(RTRIM(
+    ${core} ||
+    ${sqlAppendThaiLabelHelp(core, hlp1)} ||
+    ${sqlAppendThaiLabelHelp(core, hlp2)},
+    ' '
+  ))`;
+}
+
 /** นิพจน์โดสยาต่อครั้ง — จาก meduseqty + meduseunit หรือฟิลด์คำนวณใน prscdt */
 export function sqlDrugDoseReadable(dAlias = "d"): string {
   const qtyName = `TRIM(muqty.name)`;
-  const unitName = `TRIM(muunit.name)`;
+  const unitName = sqlDrugUsageUnitName();
 
   return `TRIM(
     COALESCE(

@@ -50,6 +50,7 @@ console.log("[dev] cache directory: .next-dev (production uses .next)");
 const child = spawn(process.execPath, [nextBin, "dev", "-p", port], {
   cwd: root,
   stdio: "inherit",
+  windowsHide: true,
   env: {
     ...process.env,
     NODE_ENV: "development",

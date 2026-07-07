@@ -18,6 +18,8 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: "1G",
+      // บน Windows: ซ่อน console window ของ process ลูก (Next.js / next-server)
+      windowsHide: true,
       error_file: "./logs/pm2-error.log",
       out_file: "./logs/pm2-out.log",
       log_file: "./logs/pm2-combined.log",
