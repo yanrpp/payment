@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, FileText, Folder } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
 
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
+import {
+  OpdscanExplorerModal,
+  type OpdscanFileEntry,
+} from "@/components/opdscan/OpdscanExplorerModal";
 import { isoToThaiDisplay, isoToThaiInput } from "@/lib/date/thaiDate";
 import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import { normalizeHnInput } from "@/lib/hn/normalize";
@@ -119,13 +123,6 @@ type PatientCandidate = {
   HN: string;
   DSPNAME: string | null;
   CARDNO: string | null;
-};
-
-type OpdscanFile = {
-  name: string;
-  size: number;
-  modified: string | null;
-  isDirectory: boolean;
 };
 
 const OPDSCAN_UNC_ROOT = "\\\\192.168.108.145\\opdscan$";
@@ -271,17 +268,11 @@ function formatLabReference(row: PatientLabRow): string {
   return unit ? `${range} ${unit}` : range;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes <= 0) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 const OPDSCAN_VIEWER_TARGET = "rpp_opdscan_viewer";
 
 const SEARCH_PROMPT = 'ระบุเงื่อนไขค้นหาแล้วกด "ค้นหา"';
+const NO_TREATMENT_DATA_MESSAGE =
+  "ไม่พบข้อมูลการรักษา (คาดว่ายังไม่ได้บันทึกในระบบ e-Phis)";
 
 function tabEmptyMessage(hasResults: boolean, filteredMessage: string): string {
   return hasResults ? filteredMessage : SEARCH_PROMPT;
@@ -829,10 +820,14 @@ export default function PatientMedicationSearchPage() {
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
-  const [scanFiles, setScanFiles] = useState<OpdscanFile[]>([]);
+  const [scanFiles, setScanFiles] = useState<OpdscanFileEntry[]>([]);
   const [scanHnQuery, setScanHnQuery] = useState("");
   const [scanSubPath, setScanSubPath] = useState("");
+  const [scanFolderCache, setScanFolderCache] = useState<Record<string, string[]>>({});
   const [scanDirLoading, setScanDirLoading] = useState(false);
+  const [opdscanNotice, setOpdscanNotice] = useState<string | null>(null);
+  const [labResultTodayNotice, setLabResultTodayNotice] = useState(false);
+  const [labScanSubPath, setLabScanSubPath] = useState<string | null>(null);
   const scanOpenLockRef = useRef(false);
   const scanFileLinkRef = useRef<HTMLAnchorElement>(null);
 
@@ -854,6 +849,9 @@ export default function PatientMedicationSearchPage() {
     setFilterVisitType("all");
     setContentTab("drug");
     setResolvedHn("");
+    setOpdscanNotice(null);
+    setLabResultTodayNotice(false);
+    setLabScanSubPath(null);
   };
 
   const fetchPatientDetails = async (params: {
@@ -1014,15 +1012,23 @@ export default function PatientMedicationSearchPage() {
       await fetchPatientDetails({
         hn: parsed.kind === "hn" ? parsed.hn : undefined,
         cardno: parsed.kind === "cardno" ? parsed.cardno : undefined,
-      }).then((result) => {
+      }).then(async (result) => {
         if (result.totalCount === 0) {
           if (result.errors.length > 0) {
             setError(result.errors.join(" · "));
           } else {
-            setError("ไม่พบข้อมูลการรักษา");
+            setError(NO_TREATMENT_DATA_MESSAGE);
           }
-        } else if (result.errors.length > 0) {
-          setError(`โหลดบางส่วนไม่สำเร็จ: ${result.errors.join(" · ")}`);
+
+          await probeOpdscanNotice(resolveHnForOpdscanCheck(parsed, result.patientHn));
+        } else {
+          setOpdscanNotice(null);
+          setLabResultTodayNotice(false);
+          setLabScanSubPath(null);
+          await probeLabResultToday(resolveHnForOpdscanCheck(parsed, result.patientHn));
+          if (result.errors.length > 0) {
+            setError(`โหลดบางส่วนไม่สำเร็จ: ${result.errors.join(" · ")}`);
+          }
         }
       });
     } catch (fetchError) {
@@ -1043,15 +1049,25 @@ export default function PatientMedicationSearchPage() {
 
       if (result.totalCount === 0) {
         const displayName = patient.DSPNAME ?? "(ไม่ระบุชื่อ)";
-
-        setPatientPickerNotice(
+        const hnDisplay = formatHnDisplay(patient.HN);
+        let notice =
           result.errors.length > 0
             ? result.errors.join(" · ")
-            : `${displayName} · HN ${formatHnDisplay(patient.HN)} — ไม่พบข้อมูลการรักษา`
-        );
+            : `${displayName} · HN ${hnDisplay} — ${NO_TREATMENT_DATA_MESSAGE}`;
+
+        const hasScan = await probeOpdscanNotice(hnDisplay);
+
+        if (hasScan) {
+          notice += " · พบไฟล์สแกน OPD (ผลแลป/เอกสาร)";
+        }
+
+        setPatientPickerNotice(notice);
 
         return;
       }
+
+      setOpdscanNotice(null);
+      await probeLabResultToday(formatHnDisplay(patient.HN));
 
       if (result.errors.length > 0) {
         setError(`โหลดบางส่วนไม่สำเร็จ: ${result.errors.join(" · ")}`);
@@ -1082,6 +1098,7 @@ export default function PatientMedicationSearchPage() {
     setScanFiles([]);
     setScanHnQuery("");
     setScanSubPath("");
+    setScanFolderCache({});
     setScanDirLoading(false);
     setScanError(null);
   };
@@ -1089,9 +1106,97 @@ export default function PatientMedicationSearchPage() {
   const handleClearSearch = () => {
     setSearchQuery("");
     setError(null);
+    setOpdscanNotice(null);
+    setLabResultTodayNotice(false);
+    setLabScanSubPath(null);
     resetResults();
     closePatientModal();
     closeScanModal();
+  };
+
+  const resolveHnForOpdscanCheck = (
+    parsed: ReturnType<typeof parsePatientSearchQuery>,
+    patientHn: string | null
+  ): string | null => {
+    if (parsed.kind === "hn") return searchQuery.trim();
+    if (patientHn) return formatHnDisplay(patientHn);
+
+    return null;
+  };
+
+  const probeLabResultToday = async (hnValue: string | null): Promise<void> => {
+    if (!hnValue?.trim()) {
+      setLabResultTodayNotice(false);
+      setLabScanSubPath(null);
+
+      return;
+    }
+
+    if (!buildOpdscanUncPath(hnValue, OPDSCAN_UNC_ROOT)) {
+      setLabResultTodayNotice(false);
+      setLabScanSubPath(null);
+
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/opdscan/lab-today?hn=${encodeURIComponent(hnValue)}`);
+      const json = (await res.json()) as {
+        success?: boolean;
+        hasTodayLabFiles?: boolean;
+        labFolderName?: string | null;
+      };
+
+      if (res.ok && json.success && json.hasTodayLabFiles) {
+        setLabResultTodayNotice(true);
+        setLabScanSubPath(json.labFolderName ?? "lab");
+
+        return;
+      }
+    } catch {
+      // ignore probe errors
+    }
+
+    setLabResultTodayNotice(false);
+    setLabScanSubPath(null);
+  };
+
+  const probeOpdscanNotice = async (hnValue: string | null): Promise<boolean> => {
+    if (!hnValue?.trim()) {
+      setOpdscanNotice(null);
+
+      return false;
+    }
+
+    if (!buildOpdscanUncPath(hnValue, OPDSCAN_UNC_ROOT)) {
+      setOpdscanNotice(null);
+
+      return false;
+    }
+
+    try {
+      const res = await fetch(`/api/opdscan/check?hn=${encodeURIComponent(hnValue)}`);
+      const json = (await res.json()) as {
+        success?: boolean;
+        hasFiles?: boolean;
+      };
+
+      if (res.ok && json.success && json.hasFiles) {
+        setOpdscanNotice(
+          `${NO_TREATMENT_DATA_MESSAGE} แต่พบไฟล์สแกน OPD (ผลแลป/เอกสาร) ของ HN ${formatHnDisplay(normalizeHnInput(hnValue) || hnValue)} — กด «เปิดไฟล์สแกน» เพื่อดู`
+        );
+
+        return true;
+      }
+
+      setOpdscanNotice(null);
+
+      return false;
+    } catch {
+      setOpdscanNotice(null);
+
+      return false;
+    }
   };
 
   const loadScanDirectory = async (hnValue: string, subPath: string) => {
@@ -1106,13 +1211,19 @@ export default function PatientMedicationSearchPage() {
       throw new Error(json.message ?? "เปิดโฟลเดอร์สแกน OPD ไม่สำเร็จ");
     }
 
-    setScanFiles(Array.isArray(json.files) ? json.files : []);
+    const files: OpdscanFileEntry[] = Array.isArray(json.files) ? json.files : [];
+
+    setScanFiles(files);
     setScanSubPath(json.subPath ?? subPath);
     setScanHnQuery(hnValue);
+    setScanFolderCache((prev) => ({
+      ...prev,
+      [subPath || ""]: files.filter((file) => file.isDirectory).map((file) => file.name),
+    }));
     setShowScanModal(true);
   };
 
-  const openOpdscan = async () => {
+  const openOpdscan = async (initialSubPath = "") => {
     const hnValue = scanHnFromSearchQuery(searchQuery, resolvedHn);
 
     if (!hnValue) return;
@@ -1130,7 +1241,7 @@ export default function PatientMedicationSearchPage() {
     closeScanModal();
 
     try {
-      await loadScanDirectory(hnValue, "");
+      await loadScanDirectory(hnValue, initialSubPath);
     } catch (fetchError) {
       setScanError(fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด");
     } finally {
@@ -1153,22 +1264,7 @@ export default function PatientMedicationSearchPage() {
     }
   };
 
-  const openScanFolder = (folderName: string) => {
-    const nextSubPath = scanSubPath ? `${scanSubPath}\\${folderName}` : folderName;
-
-    void navigateScanFolder(nextSubPath);
-  };
-
-  const goBackScanFolder = () => {
-    if (!scanSubPath) return;
-    const parts = scanSubPath.split("\\").filter(Boolean);
-
-    parts.pop();
-    void navigateScanFolder(parts.join("\\"));
-  };
-
-  const openScanFile = (fileName: string) => {
-    const relativePath = scanSubPath ? `${scanSubPath}\\${fileName}` : fileName;
+  const openScanFile = (relativePath: string) => {
     const url = `/api/opdscan/file?hn=${encodeURIComponent(scanHnQuery)}&name=${encodeURIComponent(relativePath)}`;
 
     if (scanOpenLockRef.current) return;
@@ -1183,12 +1279,6 @@ export default function PatientMedicationSearchPage() {
     link.href = url;
     link.click();
   };
-
-  const scanBreadcrumbs = useMemo(() => {
-    if (!scanSubPath) return [];
-
-    return scanSubPath.split("\\").filter(Boolean);
-  }, [scanSubPath]);
 
   useEffect(() => {
     if (!showScanModal) return;
@@ -1574,16 +1664,18 @@ export default function PatientMedicationSearchPage() {
               >
                 ล้างค่าค้นหา
               </button>
-              <button
-                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-amber-500 bg-amber-400 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={scanLoading || !scanHnValue}
-                title="ไฟล์สแกน OPD"
-                type="button"
-                onClick={() => void openOpdscan()}
-              >
-                <FileText aria-hidden className="h-4 w-4 shrink-0" />
-                {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์สแกน"}
-              </button>
+              {!opdscanNotice ? (
+                <button
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-amber-500 bg-amber-400 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={scanLoading || !scanHnValue}
+                  title="ไฟล์สแกน OPD"
+                  type="button"
+                  onClick={() => void openOpdscan()}
+                >
+                  <FileText aria-hidden className="h-4 w-4 shrink-0" />
+                  {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์สแกน"}
+                </button>
+              ) : null}
               {scanError ? (
                 <p className="w-full basis-full text-xs text-red-600">{scanError}</p>
               ) : null}
@@ -1600,6 +1692,22 @@ export default function PatientMedicationSearchPage() {
             }`}
           >
             {error}
+          </div>
+        ) : null}
+
+        {opdscanNotice ? (
+          <div className="mb-4 flex flex-col gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-950 sm:flex-row sm:items-center sm:justify-between">
+            <p>{opdscanNotice}</p>
+            <button
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-sky-500 bg-sky-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={scanLoading || !scanHnValue}
+              title="ไฟล์สแกน OPD"
+              type="button"
+              onClick={() => void openOpdscan()}
+            >
+              <FileText aria-hidden className="h-4 w-4 shrink-0" />
+              {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์สแกน"}
+            </button>
           </div>
         ) : null}
 
@@ -1678,21 +1786,47 @@ export default function PatientMedicationSearchPage() {
             </p>
           ) : null}
 
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 snap-x snap-mandatory scrollbar-thin">
-            {TREATMENT_TABS.map((tab) => (
+          {labResultTodayNotice && hasResults ? (
+            <div className="mb-3 flex flex-col gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
+              <p className="font-medium">ผลแลปออกแล้ว — พบไฟล์ใหม่ในโฟลเดอร์ lab วันนี้</p>
               <button
-                key={tab.id}
-                className={`shrink-0 snap-start rounded-lg px-3 py-2 text-xs font-medium touch-manipulation ${
-                  contentTab === tab.id
-                    ? "bg-brand-600 text-white"
-                    : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
-                }`}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-emerald-500 bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-950 hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={scanLoading || !scanHnValue}
                 type="button"
-                onClick={() => handleContentTabChange(tab.id)}
+                onClick={() => void openOpdscan(labScanSubPath ?? "lab")}
               >
-                {tab.label} ({tabCounts[tab.id]})
+                <FileText aria-hidden className="h-3.5 w-3.5 shrink-0" />
+                {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์ lab"}
               </button>
-            ))}
+            </div>
+          ) : null}
+
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 snap-x snap-mandatory scrollbar-thin">
+            {TREATMENT_TABS.map((tab) => {
+              const showLabBadge = tab.id === "lab" && labResultTodayNotice;
+
+              return (
+                <button
+                  key={tab.id}
+                  className={`shrink-0 snap-start rounded-lg px-3 py-2 text-xs font-medium touch-manipulation ${
+                    contentTab === tab.id
+                      ? "bg-brand-600 text-white"
+                      : showLabBadge
+                        ? "border border-emerald-400 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                        : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
+                  }`}
+                  type="button"
+                  onClick={() => handleContentTabChange(tab.id)}
+                >
+                  {tab.label} ({tabCounts[tab.id]})
+                  {showLabBadge ? (
+                    <span className="ml-1.5 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      ผลแลปออกแล้ว
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -2237,163 +2371,17 @@ export default function PatientMedicationSearchPage() {
       ) : null}
 
       {showScanModal ? (
-        <div
-          aria-labelledby="opdscan-modal-title"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          onClick={closeScanModal}
-        >
-          <div
-            className="relative flex h-[92vh] w-[min(96vw,1280px)] flex-col overflow-hidden rounded-xl border border-flow-border bg-white shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-flow-border bg-flow-input px-4 py-3">
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-flow-text" id="opdscan-modal-title">
-                  ไฟล์สแกน OPD — HN {formatHnDisplay(normalizeHnInput(scanHnQuery) || scanHnQuery)}
-                </h2>
-              </div>
-              <div className="flex shrink-0 gap-2">
-                {scanSubPath ? (
-                  <button
-                    className="inline-flex items-center gap-1 rounded-lg border border-flow-border bg-white px-3 py-1 text-xs font-medium text-flow-text hover:bg-brand-50 disabled:opacity-60"
-                    disabled={scanDirLoading}
-                    type="button"
-                    onClick={goBackScanFolder}
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                    กลับ
-                  </button>
-                ) : null}
-                <button
-                  className="rounded-lg border border-flow-border bg-white px-3 py-1 text-xs font-medium text-flow-text hover:bg-brand-50"
-                  type="button"
-                  onClick={closeScanModal}
-                >
-                  ปิด
-                </button>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-1 border-b border-flow-border bg-white px-4 py-2 text-xs">
-              <button
-                className={`rounded px-2 py-1 ${scanSubPath ? "text-brand-700 hover:bg-brand-50" : "font-medium text-flow-text"}`}
-                disabled={scanDirLoading}
-                type="button"
-                onClick={() => void navigateScanFolder("")}
-              >
-                โฟลเดอร์หลัก
-              </button>
-              {scanBreadcrumbs.map((segment, index) => {
-                const subPath = scanBreadcrumbs.slice(0, index + 1).join("\\");
-                const isLast = index === scanBreadcrumbs.length - 1;
-
-                return (
-                  <span key={subPath} className="flex items-center gap-1">
-                    <span className="text-flow-muted">/</span>
-                    <button
-                      className={`rounded px-2 py-1 ${isLast ? "font-medium text-flow-text" : "text-brand-700 hover:bg-brand-50"}`}
-                      disabled={scanDirLoading || isLast}
-                      type="button"
-                      onClick={() => void navigateScanFolder(subPath)}
-                    >
-                      {segment}
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto">
-              {scanDirLoading ? (
-                <p className="px-4 py-8 text-center text-sm text-flow-muted">กำลังโหลด...</p>
-              ) : scanFiles.length === 0 ? (
-                <p className="px-4 py-8 text-center text-sm text-flow-muted">
-                  ไม่พบไฟล์ในโฟลเดอร์นี้
-                </p>
-              ) : (
-                <table className="min-w-full text-left text-xs">
-                  <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
-                    <tr>
-                      <th className="px-4 py-2">ชื่อ</th>
-                      <th className="px-4 py-2">ขนาด</th>
-                      <th className="px-4 py-2">แก้ไขล่าสุด</th>
-                      <th className="px-4 py-2 text-right" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-flow-border">
-                    {scanFiles.map((file) => (
-                      <tr
-                        key={file.name}
-                        className={
-                          file.isDirectory
-                            ? "cursor-pointer hover:bg-brand-50/50"
-                            : "cursor-pointer hover:bg-slate-50/80"
-                        }
-                        title={
-                          file.isDirectory
-                            ? "ดับเบิลคลิกเพื่อเปิดโฟลเดอร์"
-                            : "ดับเบิลคลิกเพื่อเปิดไฟล์"
-                        }
-                        onDoubleClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          if (file.isDirectory) {
-                            openScanFolder(file.name);
-                          } else {
-                            openScanFile(file.name);
-                          }
-                        }}
-                      >
-                        <td className="px-4 py-2 font-medium text-flow-text">
-                          <span className="inline-flex items-center gap-2">
-                            {file.isDirectory ? (
-                              <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-                            ) : (
-                              <FileText className="h-4 w-4 shrink-0 text-slate-400" />
-                            )}
-                            <span>{file.name}</span>
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2 text-flow-muted">
-                          {file.isDirectory ? "—" : formatFileSize(file.size)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2 text-flow-muted">
-                          {file.modified ? isoToThaiDisplay(file.modified.slice(0, 10)) : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2 text-right">
-                          {file.isDirectory ? (
-                            <button
-                              className="rounded-lg border border-flow-border bg-white px-3 py-1.5 text-xs font-medium text-flow-text hover:bg-slate-50"
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openScanFolder(file.name);
-                              }}
-                            >
-                              เปิด
-                            </button>
-                          ) : (
-                            <button
-                              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
-                              type="button"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                openScanFile(file.name);
-                              }}
-                            >
-                              เปิด
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        </div>
+        <OpdscanExplorerModal
+          files={scanFiles}
+          folderCache={scanFolderCache}
+          hnDisplay={formatHnDisplay(normalizeHnInput(scanHnQuery) || scanHnQuery)}
+          hnQuery={scanHnQuery}
+          loading={scanDirLoading}
+          subPath={scanSubPath}
+          onClose={closeScanModal}
+          onNavigate={(subPath) => void navigateScanFolder(subPath)}
+          onOpenFile={openScanFile}
+        />
       ) : null}
 
       <a

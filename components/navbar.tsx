@@ -48,7 +48,7 @@ export const Navbar = () => {
               alt="Logo"
               className="object-contain"
               height={80}
-              src="/images/Logo.bmp"
+              src="/images/ratchaphiphat_logo.png"
               width={80}
             />
             <div>

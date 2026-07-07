@@ -168,6 +168,137 @@ export async function listOpdscanFiles(
   };
 }
 
+const LAB_FOLDER_NAME_PATTERN = /^lab$/i;
+
+function isLocalCalendarToday(date: Date, reference = new Date()): boolean {
+  return (
+    date.getFullYear() === reference.getFullYear() &&
+    date.getMonth() === reference.getMonth() &&
+    date.getDate() === reference.getDate()
+  );
+}
+
+async function countFilesModifiedTodayInDir(dirPath: string): Promise<number> {
+  let entries;
+
+  try {
+    entries = await fs.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  let count = 0;
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+
+    const fullPath = path.win32.join(dirPath, entry.name);
+
+    if (entry.isDirectory()) {
+      count += await countFilesModifiedTodayInDir(fullPath);
+      continue;
+    }
+
+    try {
+      const stat = await fs.stat(fullPath);
+
+      if (isLocalCalendarToday(stat.mtime)) {
+        count += 1;
+      }
+    } catch {
+      // skip unreadable files
+    }
+  }
+
+  return count;
+}
+
+/** ตรวจว่าโฟลเดอร์ lab ของ HN มีไฟล์ที่แก้ไข/อัปโหลดวันนี้ (ตามเวลาเครื่องเซิร์ฟร์) */
+export async function checkOpdscanLabUpdatedToday(hnInput: string): Promise<{
+  hasTodayLabFiles: boolean;
+  labFolderName: string | null;
+  todayFileCount: number;
+}> {
+  const parts = parseHnForOpdscan(hnInput);
+
+  if (!parts) {
+    return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
+  }
+
+  try {
+    await ensureShare();
+  } catch {
+    return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
+  }
+
+  const { uncPath } = resolvePatientDir(hnInput);
+
+  let entries;
+
+  try {
+    entries = await fs.readdir(uncPath, { withFileTypes: true });
+  } catch {
+    return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
+  }
+
+  const labDir = entries.find(
+    (entry) => entry.isDirectory() && LAB_FOLDER_NAME_PATTERN.test(entry.name)
+  );
+
+  if (!labDir) {
+    return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
+  }
+
+  const labPath = path.win32.join(uncPath, labDir.name);
+  const todayFileCount = await countFilesModifiedTodayInDir(labPath);
+
+  return {
+    hasTodayLabFiles: todayFileCount > 0,
+    labFolderName: labDir.name,
+    todayFileCount,
+  };
+}
+
+/** ตรวจว่าโฟลเดอร์สแกนของ HN มีไฟล์/โฟลเดอร์อย่างน้อย 1 รายการ (ไม่ throw ถ้าไม่มีโฟลเดอร์) */
+export async function checkOpdscanHasContent(hnInput: string): Promise<{
+  hasContent: boolean;
+  uncPath: string | null;
+  entryCount: number;
+}> {
+  const parts = parseHnForOpdscan(hnInput);
+
+  if (!parts) {
+    return { hasContent: false, uncPath: null, entryCount: 0 };
+  }
+
+  try {
+    await ensureShare();
+  } catch {
+    return { hasContent: false, uncPath: null, entryCount: 0 };
+  }
+
+  const { uncPath } = resolvePatientDir(hnInput);
+
+  try {
+    const entries = await fs.readdir(uncPath, { withFileTypes: true });
+    const visible = entries.filter((entry) => !entry.name.startsWith("."));
+
+    return {
+      hasContent: visible.length > 0,
+      uncPath,
+      entryCount: visible.length,
+    };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { hasContent: false, uncPath, entryCount: 0 };
+    }
+
+    throw error;
+  }
+}
+
 export async function resolveOpdscanFilePath(
   hnInput: string,
   relativeFile: string

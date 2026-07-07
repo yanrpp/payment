@@ -3,10 +3,18 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { Button } from "@heroui/button";
-import { Card, CardBody, CardHeader } from "@heroui/card";
+import { Card, CardBody } from "@heroui/card";
 import { Input } from "@heroui/input";
 
+import { HOSPITAL_NAME_TH } from "@/config/branding";
 import { DEFAULT_APP_PATH } from "@/lib/navigation/mainNav";
+
+const loginInputClassNames = {
+  inputWrapper:
+    "border border-flow-border bg-white shadow-none hover:bg-white data-[hover=true]:bg-white group-data-[focus=true]:bg-white",
+  input: "text-flow-text",
+  label: "text-flow-muted",
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -69,33 +77,37 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 via-white to-brand-50 px-4 py-10 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900">
-      <Card className="w-full max-w-md border border-flow-border shadow-lg">
-        <CardHeader className="flex flex-col items-start gap-1 px-6 pt-6 pb-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-accent-700">
-            RPP Hospital
-          </p>
-          <h1 className="text-xl font-bold text-flow-text">ระบบวิเคราะห์ต้นทุนและข้อมูลการรักษา</h1>
-          <p className="text-sm text-flow-muted">
-            เข้าสู่ระบบด้วยบัญชี Active Directory ของโรงพยาบาล
-          </p>
-        </CardHeader>
-        <CardBody className="px-6 pb-6 pt-4">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 dark:bg-slate-950">
+      <Card className="w-full max-w-md border border-flow-border shadow-sm">
+        <CardBody className="gap-0 px-6 py-6">
+          <div className="mb-6 text-center">
+            <p className="text-sm font-semibold tracking-wide text-emerald-700">{HOSPITAL_NAME_TH}</p>
+            <h1 className="mt-2 text-xl font-bold leading-snug text-emerald-950">
+              ระบบตรวจสอบ<span className="text-brand-600">ข้อมูลผู้ป่วย</span>
+            </h1>
+            <p className="mt-3 text-sm text-amber-800/80">
+              เข้าสู่ระบบด้วยบัญชี Internet ของโรงพยาบาล
+            </p>
+          </div>
           <form className="space-y-4" onSubmit={handleSubmit}>
             <Input
               isRequired
               autoComplete="username"
+              classNames={loginInputClassNames}
               label="ชื่อผู้ใช้"
-              placeholder="เช่น username หรือ username@rpphosp.local"
+              placeholder="เช่น username "
               value={username}
+              variant="bordered"
               onValueChange={setUsername}
             />
             <Input
               isRequired
               autoComplete="current-password"
+              classNames={loginInputClassNames}
               label="รหัสผ่าน"
               type="password"
               value={password}
+              variant="bordered"
               onValueChange={setPassword}
             />
             {error ? (

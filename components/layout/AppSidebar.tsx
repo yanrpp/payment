@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { PanelLeftClose } from "lucide-react";
 
+import { HospitalLogo } from "@/components/branding/HospitalLogo";
 import { NavIcon } from "@/components/layout/NavIcon";
+import { HOSPITAL_NAME_EN, HOSPITAL_NAME_TH } from "@/config/branding";
 import { siteConfig } from "@/config/site";
 import { MAIN_NAV_GROUPS } from "@/lib/navigation/mainNav";
 
@@ -47,12 +49,10 @@ export function AppSidebar({ hidden, onHide, mobileOpen, onCloseMobile }: AppSid
       >
         {/* แบรนด์ */}
         <div className="flex h-16 items-center gap-3 border-b border-white/10 px-4">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-accent-600 text-sm font-bold text-white shadow-lg shadow-brand-500/20">
-            RP
-          </div>
+          <HospitalLogo className="h-9 w-9 shrink-0 object-contain" size={36} />
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">RPP · MRLI</p>
-            <p className="truncate text-[10px] text-slate-400">Revenue Lifecycle Intelligence</p>
+            <p className="truncate text-sm font-semibold text-white">{HOSPITAL_NAME_TH}</p>
+            <p className="truncate text-[10px] text-slate-400">{HOSPITAL_NAME_EN}</p>
           </div>
         </div>
 

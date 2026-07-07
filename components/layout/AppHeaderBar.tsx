@@ -5,7 +5,9 @@ import { useRouter } from "next/router";
 import { useTheme } from "next-themes";
 import { LogOut, Menu, Moon, Sun } from "lucide-react";
 
+import { HospitalLogo } from "@/components/branding/HospitalLogo";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { HOSPITAL_NAME_EN } from "@/config/branding";
 import { isoToThaiDisplay, localTodayIso } from "@/lib/date/thaiDate";
 import { MAIN_NAV_ITEMS } from "@/lib/navigation/mainNav";
 
@@ -41,8 +43,9 @@ export function AppHeaderBar({ onOpenSidebar, sidebarHidden = false }: AppHeader
         <Menu className="h-5 w-5" />
       </button>
 
-      <div className="hidden min-w-0 items-center gap-2 text-xs text-flow-muted lg:flex">
-        <span className="font-medium text-accent-700 dark:text-accent-300">RPP MRLI</span>
+      <div className="hidden min-w-0 items-center gap-2 lg:flex">
+        <HospitalLogo className="h-7 w-7 shrink-0 object-contain" size={28} />
+        <span className="hidden text-xs text-flow-muted xl:inline">{HOSPITAL_NAME_EN}</span>
         <span className="text-slate-300 dark:text-slate-600">/</span>
         <span className="truncate text-sm font-semibold text-flow-text">{title}</span>
       </div>
