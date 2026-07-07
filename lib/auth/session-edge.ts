@@ -1,14 +1,5 @@
 import type { AuthSession } from "@/lib/auth/constants";
-
-function getSessionSecret(): string {
-  const secret = process.env.SESSION_SECRET?.trim();
-
-  if (!secret || secret === "ใส่สตริงสุ่มยาวๆ") {
-    return "dev-insecure-session-secret-change-me";
-  }
-
-  return secret;
-}
+import { getSessionSecret } from "@/lib/auth/secret";
 
 function base64UrlDecode(input: string): string {
   const padded = input.replace(/-/g, "+").replace(/_/g, "/");

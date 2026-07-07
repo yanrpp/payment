@@ -2,8 +2,11 @@ import { spawn, spawnSync } from "child_process";
 import { createRequire } from "module";
 import path from "path";
 
+import { loadEnvLocal } from "./load-env-local.mjs";
+
 const require = createRequire(import.meta.url);
 const root = process.cwd();
+loadEnvLocal(root);
 const nextBin = require.resolve("next/dist/bin/next");
 const ensureBuildScript = path.join(root, "scripts", "ensure-production-build.mjs");
 const underPm2 = Boolean(process.env.PM2_HOME || process.env.pm_id);

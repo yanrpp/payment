@@ -3,20 +3,7 @@ import type { NextApiResponse } from "next";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import { AUTH_COOKIE_NAME, AUTH_SESSION_MAX_AGE_SEC, type AuthSession } from "@/lib/auth/constants";
-
-function getSessionSecret(): string {
-  const secret = process.env.SESSION_SECRET?.trim();
-
-  if (!secret || secret === "ใส่สตริงสุ่มยาวๆ") {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("SESSION_SECRET is not configured");
-    }
-
-    return "dev-insecure-session-secret-change-me";
-  }
-
-  return secret;
-}
+import { getSessionSecret } from "@/lib/auth/secret";
 
 function base64UrlEncode(input: string): string {
   return Buffer.from(input, "utf8").toString("base64url");
