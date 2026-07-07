@@ -277,7 +277,7 @@ export async function executeQuery<T = unknown>(
       }
     }
     // eslint-disable-next-line no-console
-    console.error("Query execution failed:", error);
+    if (options?.logErrors !== false) console.error("Query execution failed:", error);
     throw error;
   } finally {
     await releaseConnection(connection);

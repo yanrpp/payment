@@ -55,17 +55,73 @@ const OPDSCREEN_HPI = `TRIM(
   COALESCE(os.his_related_sign, '')
 )`;
 
-const OPDSCREEN_BMI = `CASE
-  WHEN os.height IS NOT NULL AND os.height > 0 AND os.bw IS NOT NULL AND os.bw > 0
-  THEN ROUND(os.bw / POWER(os.height / 100, 2), 1)
+const OVST_BMI = `CASE
+  WHEN ov.height IS NOT NULL AND ov.height > 0 AND ov.weight IS NOT NULL AND ov.weight > 0
+  THEN ROUND(ov.weight / POWER(ov.height / 100, 2), 1)
   ELSE NULL
 END`;
+
+const OVST_BMI_WITH_OPD = `CASE
+  WHEN COALESCE(ov.height, os.height) IS NOT NULL AND COALESCE(ov.height, os.height) > 0
+   AND COALESCE(ov.weight, os.bw) IS NOT NULL AND COALESCE(ov.weight, os.bw) > 0
+  THEN ROUND(
+    COALESCE(ov.weight, os.bw) / POWER(COALESCE(ov.height, os.height) / 100, 2),
+    1
+  )
+  ELSE NULL
+END`;
+
+const VITALS_OVST = `
+      ov.weight                           AS BW,
+      ov.height                           AS HEIGHT,
+      ${OVST_BMI}                         AS BMI,
+      ov.pr                               AS PULSE,
+      ov.rr                               AS RR`;
+
+const VITALS_WITH_OPDSCREEN = `
+      COALESCE(ov.weight, os.bw)          AS BW,
+      COALESCE(ov.height, os.height)      AS HEIGHT,
+      ${OVST_BMI_WITH_OPD}                AS BMI,
+      COALESCE(ov.pr, os.pulse)           AS PULSE,
+      COALESCE(ov.rr, os.rr)              AS RR`;
+
+const VITALS_WITH_OPDSCREENING = `
+      COALESCE(ov.weight, os.bw)          AS BW,
+      ov.height                           AS HEIGHT,
+      ${OVST_BMI}                         AS BMI,
+      COALESCE(ov.pr, os.p)               AS PULSE,
+      COALESCE(ov.rr, os.rr)              AS RR`;
+
+/** อาการสำคัญ — RPP เก็บใน ovst.ccp, บาง site มีเพิ่มใน opdscreen.cc */
+const OVST_CC_LOB = LOB("ov.ccp");
+const OVST_CC_VARCHAR = "TRIM(ov.ccp)";
+const CC_WITH_OPDSCREEN = `TRIM(COALESCE(NULLIF(${OVST_CC_VARCHAR}, ''), NULLIF(${LOB("os.cc")}, '')))`;
+const CC_WITH_OPDSCREENING = `TRIM(COALESCE(NULLIF(${OVST_CC_VARCHAR}, ''), NULLIF(os.cc, '')))`;
+
+/** ความดันโลหิตจาก ovstpress (RPP) — join ครั้งเดียว เร็วกว่า scalar subquery ต่อแถว */
+const JOIN_OVSTPRESS = `LEFT JOIN ovstpress vp ON vp.vn = ov.vn`;
+
+const BP_FROM_OVSTPRESS = `
+      vp.hbpn                                AS BPS,
+      vp.lbpn                                AS BPD`;
+
+const BP_NULL = `
+      CAST(NULL AS NUMBER)                   AS BPS,
+      CAST(NULL AS NUMBER)                   AS BPD`;
+
+const BP_WITH_OPDSCREEN = `
+      COALESCE(os.bps, vp.hbpn)              AS BPS,
+      COALESCE(os.bpd, vp.lbpn)              AS BPD`;
+
+const BP_WITH_OPDSCREENING = `
+      COALESCE(os.bps, vp.hbpn)              AS BPS,
+      COALESCE(os.bpd, vp.lbpn)              AS BPD`;
 
 const BASE_SELECT = `
       ov.hn                               AS HN,
       ptno.cardno                         AS CARDNO,
       pt.dspname                          AS DSPNAME,
-      TRUNC(ov.vstdate)                   AS VSTDATE,
+      TO_CHAR(TRUNC(ov.vstdate), 'YYYY-MM-DD') AS VSTDATE,
       CAST(ov.vsttime AS VARCHAR2(8))     AS VSTTIME,
       ov.vn                               AS VN,
       ov.an                               AS AN,
@@ -80,7 +136,7 @@ const BASE_SELECT_MINIMAL = `
       ov.hn                               AS HN,
       ptno.cardno                         AS CARDNO,
       pt.dspname                          AS DSPNAME,
-      TRUNC(ov.vstdate)                   AS VSTDATE,
+      TO_CHAR(TRUNC(ov.vstdate), 'YYYY-MM-DD') AS VSTDATE,
       CAST(NULL AS VARCHAR2(8))           AS VSTTIME,
       ov.vn                               AS VN,
       ov.an                               AS AN,
@@ -108,17 +164,12 @@ function buildQueryVariants(): string[] {
   const opdscreenDetail = `
       TO_CHAR(ov.main_dep)                AS CLINIC_NAME,
       TO_CHAR(ov.doctor)                  AS DOCTOR_NAME,
-      os.bw                               AS BW,
-      os.height                           AS HEIGHT,
-      ${OPDSCREEN_BMI}                    AS BMI,
-      os.pulse                            AS PULSE,
-      os.rr                               AS RR,
+${VITALS_WITH_OPDSCREEN},
       os.temperature                      AS TEMPERATURE,
-      os.bps                              AS BPS,
-      os.bpd                              AS BPD,
+${BP_WITH_OPDSCREEN},
       os.fbs                              AS FBS,
       NULL                                AS O2SAT,
-      ${LOB("os.cc")}                     AS CC,
+      ${CC_WITH_OPDSCREEN}                AS CC,
       ${OPDSCREEN_HPI}                    AS HPI,
       ${LOB("os.pe")}                     AS PE,
       ${LOB("os.note")}                   AS NOTE,
@@ -143,22 +194,43 @@ function buildQueryVariants(): string[] {
       NULL                                AS NOTE,
       CAST(NULL AS VARCHAR2(4000))        AS DIAG_TEXT`;
 
+  const ovstCcpDetail = (ccExpr: string, bpSelect: string) => `
+      CAST(NULL AS VARCHAR2(250))         AS CLINIC_NAME,
+      CAST(NULL AS VARCHAR2(150))         AS DOCTOR_NAME,
+${VITALS_OVST},
+      NULL                                AS TEMPERATURE,
+${bpSelect},
+      NULL                                AS FBS,
+      NULL                                AS O2SAT,
+      ${ccExpr}                           AS CC,
+      NULL                                AS HPI,
+      NULL                                AS PE,
+      NULL                                AS NOTE,
+      CAST(NULL AS VARCHAR2(4000))        AS DIAG_TEXT`;
+
   return [
+    buildHistorySql(
+      ovstCcpDetail(OVST_CC_VARCHAR, BP_FROM_OVSTPRESS),
+      JOIN_OVSTPRESS,
+      BASE_SELECT_MINIMAL
+    ),
+    buildHistorySql(ovstCcpDetail(OVST_CC_VARCHAR, BP_NULL), "", BASE_SELECT_MINIMAL),
+    buildHistorySql(
+      ovstCcpDetail(OVST_CC_LOB, BP_FROM_OVSTPRESS),
+      JOIN_OVSTPRESS,
+      BASE_SELECT_MINIMAL
+    ),
+    buildHistorySql(ovstCcpDetail(OVST_CC_LOB, BP_NULL), "", BASE_SELECT_MINIMAL),
     buildHistorySql(
       `
       COALESCE(k.department, TO_CHAR(ov.main_dep)) AS CLINIC_NAME,
       doc.name                            AS DOCTOR_NAME,
-      os.bw                               AS BW,
-      os.height                           AS HEIGHT,
-      ${OPDSCREEN_BMI}                    AS BMI,
-      os.pulse                            AS PULSE,
-      os.rr                               AS RR,
+${VITALS_WITH_OPDSCREEN},
       os.temperature                      AS TEMPERATURE,
-      os.bps                              AS BPS,
-      os.bpd                              AS BPD,
+${BP_WITH_OPDSCREEN},
       os.fbs                              AS FBS,
       NULL                                AS O2SAT,
-      ${LOB("os.cc")}                     AS CC,
+      ${CC_WITH_OPDSCREEN}                AS CC,
       ${OPDSCREEN_HPI}                    AS HPI,
       ${LOB("os.pe")}                     AS PE,
       ${LOB("os.note")}                   AS NOTE,
@@ -166,60 +238,68 @@ function buildQueryVariants(): string[] {
       `
       LEFT JOIN opdscreen os ON os.vn = ov.vn
       LEFT JOIN doctor doc ON doc.code = ov.doctor
-      LEFT JOIN kskdepartment k ON k.depcode = ov.main_dep`
+      LEFT JOIN kskdepartment k ON k.depcode = ov.main_dep
+${JOIN_OVSTPRESS}`
     ),
     buildHistorySql(
       `
       TO_CHAR(ov.main_dep)                AS CLINIC_NAME,
       doc.name                            AS DOCTOR_NAME,
-      os.bw                               AS BW,
-      os.height                           AS HEIGHT,
-      ${OPDSCREEN_BMI}                    AS BMI,
-      os.pulse                            AS PULSE,
-      os.rr                               AS RR,
+${VITALS_WITH_OPDSCREEN},
       os.temperature                      AS TEMPERATURE,
-      os.bps                              AS BPS,
-      os.bpd                              AS BPD,
+${BP_WITH_OPDSCREEN},
       os.fbs                              AS FBS,
       NULL                                AS O2SAT,
-      ${LOB("os.cc")}                     AS CC,
+      ${CC_WITH_OPDSCREEN}                AS CC,
       ${OPDSCREEN_HPI}                    AS HPI,
       ${LOB("os.pe")}                     AS PE,
       ${LOB("os.note")}                   AS NOTE,
       CAST(NULL AS VARCHAR2(4000))        AS DIAG_TEXT`,
       `
       LEFT JOIN opdscreen os ON os.vn = ov.vn
-      LEFT JOIN doctor doc ON doc.code = ov.doctor`
+      LEFT JOIN doctor doc ON doc.code = ov.doctor
+${JOIN_OVSTPRESS}`
     ),
     buildHistorySql(
       opdscreenDetail,
       `
-      LEFT JOIN opdscreen os ON os.vn = ov.vn`
+      LEFT JOIN opdscreen os ON os.vn = ov.vn
+${JOIN_OVSTPRESS}`
     ),
     buildHistorySql(
       `
       TO_CHAR(ov.main_dep)                AS CLINIC_NAME,
       TO_CHAR(ov.doctor)                  AS DOCTOR_NAME,
-      os.bw                               AS BW,
-      NULL                                AS HEIGHT,
-      NULL                                AS BMI,
-      os.p                                AS PULSE,
-      os.rr                               AS RR,
+${VITALS_WITH_OPDSCREENING},
       os.t                                AS TEMPERATURE,
-      os.bps                              AS BPS,
-      os.bpd                              AS BPD,
+${BP_WITH_OPDSCREENING},
       NULL                                AS FBS,
       NULL                                AS O2SAT,
-      os.cc                               AS CC,
+      ${CC_WITH_OPDSCREENING}             AS CC,
       NULL                                AS HPI,
       NULL                                AS PE,
       os.note                             AS NOTE,
       CAST(NULL AS VARCHAR2(4000))        AS DIAG_TEXT`,
       `
-      LEFT JOIN opdscreening os ON os.vn = ov.vn`
+      LEFT JOIN opdscreening os ON os.vn = ov.vn
+${JOIN_OVSTPRESS}`
     ),
     buildHistorySql(ovstOnlyDetail, "", BASE_SELECT_MINIMAL),
   ];
+}
+
+function dedupeHistoryRows(rows: PatientHistoryRow[]): PatientHistoryRow[] {
+  const seen = new Set<string>();
+  const out: PatientHistoryRow[] = [];
+
+  for (const row of rows) {
+    const key = `${row.HN}|${row.VN ?? ""}|${row.VSTDATE}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+
+  return out;
 }
 
 export default async function handler(
@@ -253,7 +333,9 @@ export default async function handler(
 
     for (const baseSql of buildQueryVariants()) {
       try {
-        const result = await executeQuery<PatientHistoryRow>(baseSql + tail, sql.params);
+        const result = await executeQuery<PatientHistoryRow>(baseSql + tail, sql.params, {
+          logErrors: false,
+        });
         rows = result.rows ?? [];
         break;
       } catch (error) {
@@ -262,13 +344,19 @@ export default async function handler(
     }
 
     if (!rows) {
+      if (lastError) {
+        // eslint-disable-next-line no-console
+        console.error("Query execution failed:", lastError);
+      }
       throw lastError ?? new Error("ไม่สามารถดึงข้อมูลการซักประวัติได้");
     }
 
+    const deduped = dedupeHistoryRows(rows);
+
     return res.status(200).json({
       success: true,
-      count: rows.length,
-      data: rows,
+      count: deduped.length,
+      data: deduped,
     });
   } catch (error) {
     return respondError(res, "ไม่สามารถค้นหาการซักประวัติได้", error);

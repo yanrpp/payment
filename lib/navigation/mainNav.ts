@@ -7,6 +7,8 @@ export type MainNavItem = {
   label: string;
   /** ชื่อไอคอน (map ใน components/layout/NavIcon.tsx) */
   icon: string;
+  /** ปิดใช้งานชั่วคราว — แสดงในเมนูแต่คลิกไม่ได้ */
+  disabled?: boolean;
 };
 
 export type MainNavGroup = {
@@ -17,27 +19,42 @@ export type MainNavGroup = {
 export const MAIN_NAV_GROUPS: MainNavGroup[] = [
   {
     title: "ภาพรวม",
-    items: [{ href: "/", label: "หน้าหลัก", icon: "home" }],
+    items: [{ href: "/", label: "หน้าหลัก", icon: "home", disabled: true }],
   },
   {
     title: "รายงานต้นทุน",
     items: [
-      { href: "/patient-cost", label: "ต้นทุนรายผู้ป่วย", icon: "user" },
+      { href: "/patient-cost", label: "ต้นทุนรายผู้ป่วย", icon: "user", disabled: true },
       {
         href: "/patient-medication-search",
         label: "ข้อมูลการรักษา",
         icon: "search",
       },
-      { href: "/drug-cost-summary", label: "สรุปต้นทุนและกำไรจากยา", icon: "pill" },
-      { href: "/ipd-patient-cost", label: "ต้นทุนรายผู้ป่วย (IPD)", icon: "bed" },
+      {
+        href: "/drug-cost-summary",
+        label: "สรุปต้นทุนและกำไรจากยา",
+        icon: "pill",
+        disabled: true,
+      },
+      {
+        href: "/ipd-patient-cost",
+        label: "ต้นทุนรายผู้ป่วย (IPD)",
+        icon: "bed",
+        disabled: true,
+      },
     ],
   },
   {
     title: "MRLI · บริหารรายได้",
     items: [
-      { href: "/mrli-revenue-worklist", label: "รายการรอทำเบิก", icon: "clipboard" },
-      { href: "/mrli-preclaim-scrub", label: "ตรวจก่อนเบิก", icon: "shield" },
-      { href: "/mrli-rule-admin", label: "ตั้งค่ากฎ", icon: "sliders" },
+      {
+        href: "/mrli-revenue-worklist",
+        label: "รายการรอทำเบิก",
+        icon: "clipboard",
+        disabled: true,
+      },
+      { href: "/mrli-preclaim-scrub", label: "ตรวจก่อนเบิก", icon: "shield", disabled: true },
+      { href: "/mrli-rule-admin", label: "ตั้งค่ากฎ", icon: "sliders", disabled: true },
     ],
   },
 ];

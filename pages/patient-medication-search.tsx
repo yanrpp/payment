@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, FileText, Folder } from "lucide-react";
 
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
@@ -29,6 +29,14 @@ type PatientMedicationRow = {
   PTTYPE_NAME: string | null;
   DRUG_USAGE: string | null;
   DRUG_DOSE: string | null;
+  MEDUSETYPE_NAME: string | null;
+  MEDUSEQTY_NAME: string | null;
+  MEDUSETIME_NAME: string | null;
+  MEDSYMPTOM_NAME: string | null;
+  MEDUSEUNIT_NAME: string | null;
+  MEDLBLHLP1: string | null;
+  MEDNOTE: string | null;
+  PRSCDTEXT_MEDUSAGE: string | null;
 };
 
 type PatientLabRow = {
@@ -44,17 +52,6 @@ type PatientLabRow = {
   MIN_NRM: string | null;
   MAX_NRM: string | null;
   NRM_UNIT: string | null;
-};
-
-type PatientXrayRow = {
-  HN: string;
-  CARDNO: string | null;
-  DSPNAME: string | null;
-  XRAY_DATE: string;
-  AN: string | null;
-  VISIT_TYPE: string;
-  RDOEXM: string | null;
-  EXAM_NAME: string | null;
 };
 
 type PatientHistoryRow = {
@@ -144,6 +141,15 @@ function apiDateToIsoLocal(value: unknown): string {
   ).padStart(2, "0")}`;
 }
 
+/** วันที่ visit — ใช้ YYYY-MM-DD จาก API โดยตรง กันคลาดเคลื่อนจาก timezone */
+function historyDateIso(value: unknown): string {
+  if (value == null) return "";
+  const raw = String(value).trim();
+  const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  return apiDateToIsoLocal(value);
+}
+
 function formatHnDisplay(value: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
@@ -154,6 +160,50 @@ function formatHnDisplay(value: unknown): string {
   const runningRaw = digits.slice(2);
   const running = runningRaw.replace(/^0+/, "") || "0";
   return `${running}/${yearSuffix}`;
+}
+
+const DRUG_USAGE_DETAIL_FIELDS: {
+  key: keyof Pick<
+    PatientMedicationRow,
+    | "MEDUSETYPE_NAME"
+    | "MEDUSEQTY_NAME"
+    | "MEDUSETIME_NAME"
+    | "MEDSYMPTOM_NAME"
+    | "MEDLBLHLP1"
+    | "MEDNOTE"
+  >;
+  label: string;
+}[] = [
+  { key: "MEDUSETYPE_NAME", label: "ประเภทการใช้" },
+  { key: "MEDUSEQTY_NAME", label: "ปริมาณต่อครั้ง" },
+  { key: "MEDUSETIME_NAME", label: "ความถี่" },
+  { key: "MEDSYMPTOM_NAME", label: "เงื่อนไข/เวลา" },
+  { key: "MEDLBLHLP1", label: "ข้อความฉลาก" },
+  { key: "MEDNOTE", label: "หมายเหตุ" },
+];
+
+function formatDrugUsageBreakdown(row: PatientMedicationRow): ReactNode {
+  const lines = DRUG_USAGE_DETAIL_FIELDS.map(({ key, label }) => {
+    const value = String(row[key] ?? "").trim();
+    if (!value) return null;
+    return { label, value };
+  }).filter((line): line is { label: string; value: string } => line != null);
+
+  if (lines.length === 0) {
+    const fallback = row.DRUG_USAGE?.trim();
+    return fallback || "—";
+  }
+
+  return (
+    <dl className="space-y-0.5">
+      {lines.map(({ label, value }) => (
+        <div key={label} className="flex gap-1.5">
+          <dt className="shrink-0 text-[10px] text-flow-muted">{label}</dt>
+          <dd className="min-w-0 text-xs text-flow-text">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function formatQty(value: unknown): string {
@@ -184,12 +234,11 @@ const SEARCH_PROMPT = 'ระบุเงื่อนไขค้นหาแล
 function tabEmptyMessage(hasResults: boolean, filteredMessage: string): string {
   return hasResults ? filteredMessage : SEARCH_PROMPT;
 }
-type TreatmentTab = "drug" | "lab" | "xray" | "history" | "diag";
+type TreatmentTab = "drug" | "lab" | "history" | "diag";
 
 const TREATMENT_TABS: { id: TreatmentTab; label: string; dateLabel: string }[] = [
   { id: "drug", label: "ยา", dateLabel: "วันที่มียา" },
   { id: "lab", label: "Lab", dateLabel: "วันที่มี Lab" },
-  { id: "xray", label: "X-ray", dateLabel: "วันที่มี X-ray" },
   { id: "history", label: "ซักประวัติ", dateLabel: "วันที่มา" },
   { id: "diag", label: "รหัสวินิจฉัย", dateLabel: "วันที่วินิจฉัย" },
 ];
@@ -262,7 +311,7 @@ function formatHistoryText(value: string | null | undefined): string {
 }
 
 function HistoryVisitCard({ row }: { row: PatientHistoryRow }) {
-  const dateIso = apiDateToIsoLocal(row.VSTDATE);
+  const dateIso = historyDateIso(row.VSTDATE);
 
   return (
     <article className="space-y-4 border-b border-flow-border/70 p-4 last:border-b-0">
@@ -398,6 +447,35 @@ function groupTreatmentByDay<T extends { HN: string; VISIT_TYPE: string }>(
   return Array.from(map.values()).sort((a, b) => b.dateIso.localeCompare(a.dateIso));
 }
 
+function groupHistoryByDay(
+  rows: PatientHistoryRow[],
+  groupByHn: boolean
+): TreatmentDayGroup<PatientHistoryRow>[] {
+  const map = new Map<string, TreatmentDayGroup<PatientHistoryRow>>();
+  for (const row of rows) {
+    const dateIso = historyDateIso(row.VSTDATE);
+    if (!dateIso) continue;
+    const key = groupByHn ? diagDayGroupKey(String(row.HN), dateIso) : dateIso;
+    let group = map.get(key);
+    if (!group) {
+      group = { key, dateIso, hn: String(row.HN), visitTypes: [], items: [] };
+      map.set(key, group);
+    }
+    if (row.VISIT_TYPE && !group.visitTypes.includes(row.VISIT_TYPE)) {
+      group.visitTypes.push(row.VISIT_TYPE);
+    }
+    group.items.push(row);
+  }
+
+  return Array.from(map.values())
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((row) => historyDateIso(row.VSTDATE) === group.dateIso),
+    }))
+    .filter((group) => group.items.length > 0)
+    .sort((a, b) => b.dateIso.localeCompare(a.dateIso));
+}
+
 function pickInitialTreatmentTab(counts: Record<TreatmentTab, number>): TreatmentTab {
   for (const tab of TREATMENT_TABS) {
     if (counts[tab.id] > 0) return tab.id;
@@ -411,10 +489,8 @@ function treatmentRowDateIso(tab: TreatmentTab, row: Record<string, unknown>): s
       return apiDateToIsoLocal(row.PRSCDATE);
     case "lab":
       return apiDateToIsoLocal(row.LAB_DATE);
-    case "xray":
-      return apiDateToIsoLocal(row.XRAY_DATE);
     case "history":
-      return apiDateToIsoLocal(row.VSTDATE);
+      return historyDateIso(row.VSTDATE);
     case "diag":
       return apiDateToIsoLocal(row.DIAG_DATE);
     default:
@@ -456,7 +532,6 @@ export default function PatientMedicationSearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<PatientMedicationRow[]>([]);
   const [labRows, setLabRows] = useState<PatientLabRow[]>([]);
-  const [xrayRows, setXrayRows] = useState<PatientXrayRow[]>([]);
   const [historyRows, setHistoryRows] = useState<PatientHistoryRow[]>([]);
   const [diagRows, setDiagRows] = useState<PatientDiagnosisRow[]>([]);
   const [selectedDiagDayKey, setSelectedDiagDayKey] = useState<string | null>(null);
@@ -485,7 +560,6 @@ export default function PatientMedicationSearchPage() {
   const resetResults = () => {
     setRows([]);
     setLabRows([]);
-    setXrayRows([]);
     setHistoryRows([]);
     setDiagRows([]);
     setSelectedDiagDayKey(null);
@@ -506,7 +580,6 @@ export default function PatientMedicationSearchPage() {
   }): Promise<{
     medCount: number;
     labCount: number;
-    xrayCount: number;
     historyCount: number;
     diagCount: number;
     totalCount: number;
@@ -519,17 +592,15 @@ export default function PatientMedicationSearchPage() {
     if (params.name) query.set("name", params.name);
 
     const qs = query.toString();
-    const [medRes, labRes, xrayRes, historyRes, diagRes] = await Promise.all([
+    const [medRes, labRes, historyRes, diagRes] = await Promise.all([
       fetch(`/api/db/patient-medication-search?${qs}`),
       fetch(`/api/db/patient-lab-search?${qs}`),
-      fetch(`/api/db/patient-xray-search?${qs}`),
       fetch(`/api/db/patient-history-search?${qs}`),
       fetch(`/api/db/patient-diagnosis-search?${qs}`),
     ]);
-    const [medJson, labJson, xrayJson, historyJson, diagJson] = await Promise.all([
+    const [medJson, labJson, historyJson, diagJson] = await Promise.all([
       medRes.json(),
       labRes.json(),
-      xrayRes.json(),
       historyRes.json(),
       diagRes.json(),
     ]);
@@ -559,12 +630,6 @@ export default function PatientMedicationSearchPage() {
       "ค้นหารายการยาไม่สำเร็จ"
     );
     const labData = readData(labRes, labJson, setLabRows, "ค้นหารายการ Lab ไม่สำเร็จ");
-    const xrayData = readData(
-      xrayRes,
-      xrayJson,
-      setXrayRows,
-      "ค้นหารายการ X-ray ไม่สำเร็จ"
-    );
     const historyData = readData(
       historyRes,
       historyJson,
@@ -580,7 +645,6 @@ export default function PatientMedicationSearchPage() {
         const counts: Record<TreatmentTab, number> = {
       drug: medData.length,
       lab: labData.length,
-      xray: xrayData.length,
       history: historyData.length,
       diag: countDiagVisitDays(diagData, "all", new Set(diagData.map((row) => row.HN)).size > 1),
     };
@@ -590,7 +654,6 @@ export default function PatientMedicationSearchPage() {
     const patientHn =
       medData[0]?.HN ??
       labData[0]?.HN ??
-      xrayData[0]?.HN ??
       historyData[0]?.HN ??
       diagData[0]?.HN ??
       params.hn ??
@@ -609,7 +672,6 @@ export default function PatientMedicationSearchPage() {
     return {
       medCount: counts.drug,
       labCount: counts.lab,
-      xrayCount: counts.xray,
       historyCount: counts.history,
       diagCount: counts.diag,
       totalCount,
@@ -861,7 +923,6 @@ export default function PatientMedicationSearchPage() {
     return {
       drug: countWithVisit(rows),
       lab: countWithVisit(labRows),
-      xray: countWithVisit(xrayRows),
       history: countWithVisit(historyRows),
       diag: countDiagVisitDays(
         diagRows,
@@ -869,7 +930,7 @@ export default function PatientMedicationSearchPage() {
         new Set(diagRows.map((row) => row.HN)).size > 1
       ),
     };
-  }, [rows, labRows, xrayRows, historyRows, diagRows, filterVisitType]);
+  }, [rows, labRows, historyRows, diagRows, filterVisitType]);
 
   const activeSourceRows = useMemo(() => {
     switch (contentTab) {
@@ -877,8 +938,6 @@ export default function PatientMedicationSearchPage() {
         return rows;
       case "lab":
         return labRows;
-      case "xray":
-        return xrayRows;
       case "history":
         return historyRows;
       case "diag":
@@ -886,7 +945,7 @@ export default function PatientMedicationSearchPage() {
       default:
         return [];
     }
-  }, [contentTab, rows, labRows, xrayRows, historyRows, diagRows]);
+  }, [contentTab, rows, labRows, historyRows, diagRows]);
 
   const activeDates = useMemo(() => {
     const set = new Set<string>();
@@ -944,7 +1003,6 @@ export default function PatientMedicationSearchPage() {
     const nextCounts: Record<TreatmentTab, number> = {
       drug: rows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
       lab: labRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
-      xray: xrayRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
       history: historyRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
       diag: countDiagVisitDays(diagRows, type, new Set(diagRows.map((row) => row.HN)).size > 1),
     };
@@ -970,18 +1028,10 @@ export default function PatientMedicationSearchPage() {
     });
   }, [labRows, selectedDates, selectedYears, filterVisitType]);
 
-  const filteredXrayRows = useMemo(() => {
-    return xrayRows.filter((row) => {
-      if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
-      const iso = apiDateToIsoLocal(row.XRAY_DATE);
-      return matchesDateFilters(iso, selectedYears, selectedDates);
-    });
-  }, [xrayRows, selectedDates, selectedYears, filterVisitType]);
-
   const filteredHistoryRows = useMemo(() => {
     return historyRows.filter((row) => {
       if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
-      const iso = apiDateToIsoLocal(row.VSTDATE);
+      const iso = historyDateIso(row.VSTDATE);
       return matchesDateFilters(iso, selectedYears, selectedDates);
     });
   }, [historyRows, selectedDates, selectedYears, filterVisitType]);
@@ -1006,9 +1056,6 @@ export default function PatientMedicationSearchPage() {
   useEffect(() => {
     if (groupedDiagDays.length === 0) {
       setSelectedDiagDayKey(null);
-    setSelectedDrugDayKey(null);
-    setSelectedLabDayKey(null);
-    setSelectedHistoryDayKey(null);
       return;
     }
     if (!selectedDiagDayKey || !groupedDiagDays.some((g) => g.key === selectedDiagDayKey)) {
@@ -1059,7 +1106,6 @@ export default function PatientMedicationSearchPage() {
   useEffect(() => {
     if (groupedLabDays.length === 0) {
       setSelectedLabDayKey(null);
-    setSelectedHistoryDayKey(null);
       return;
     }
     if (!selectedLabDayKey || !groupedLabDays.some((g) => g.key === selectedLabDayKey)) {
@@ -1078,8 +1124,7 @@ export default function PatientMedicationSearchPage() {
   );
 
   const groupedHistoryDays = useMemo(
-    () =>
-      groupTreatmentByDay(filteredHistoryRows, (row) => apiDateToIsoLocal(row.VSTDATE), historyGroupByHn),
+    () => groupHistoryByDay(filteredHistoryRows, historyGroupByHn),
     [filteredHistoryRows, historyGroupByHn]
   );
 
@@ -1091,18 +1136,24 @@ export default function PatientMedicationSearchPage() {
     if (!selectedHistoryDayKey || !groupedHistoryDays.some((g) => g.key === selectedHistoryDayKey)) {
       setSelectedHistoryDayKey(groupedHistoryDays[0].key);
     }
-  }, [groupedHistoryDays, selectedHistoryDayKey]);
+  }, [groupedHistoryDays, selectedHistoryDayKey, selectedDates, selectedYears]);
 
   const selectedHistoryDay = useMemo(
     () => groupedHistoryDays.find((group) => group.key === selectedHistoryDayKey) ?? null,
     [groupedHistoryDays, selectedHistoryDayKey]
   );
 
+  const selectedHistoryVisits = useMemo(() => {
+    if (!selectedHistoryDay) return [];
+    return filteredHistoryRows.filter(
+      (row) => historyDateIso(row.VSTDATE) === selectedHistoryDay.dateIso
+    );
+  }, [filteredHistoryRows, selectedHistoryDay]);
+
   const patientHeader = useMemo(() => {
     const source = [
       ...rows,
       ...labRows,
-      ...xrayRows,
       ...historyRows,
       ...diagRows,
     ];
@@ -1116,12 +1167,11 @@ export default function PatientMedicationSearchPage() {
       cardno: first.CARDNO,
       patientCount: uniqueHn.size,
     };
-  }, [rows, labRows, xrayRows, historyRows, diagRows]);
+  }, [rows, labRows, historyRows, diagRows]);
 
   const hasResults =
     rows.length > 0 ||
     labRows.length > 0 ||
-    xrayRows.length > 0 ||
     historyRows.length > 0 ||
     diagRows.length > 0;
   const scanHnValue = scanHnFromSearchQuery(searchQuery, resolvedHn);
@@ -1132,7 +1182,7 @@ export default function PatientMedicationSearchPage() {
         <header className="-mx-4 mb-6 border-b border-flow-border bg-white px-4 py-4 md:-mx-6 md:px-6">
           <h1 className="text-xl font-bold text-flow-text md:text-2xl">ข้อมูลการรักษา</h1>
           <p className="mt-1 text-xs text-flow-muted md:text-sm">
-            ค้นหาด้วย HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล — ดูข้อมูลยา, Lab, X-ray, ซักประวัติ, รหัสวินิจฉัย
+            ค้นหาด้วย HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล — ดูข้อมูลยา, Lab, ซักประวัติ, รหัสวินิจฉัย
           </p>
         </header>
 
@@ -1355,7 +1405,8 @@ export default function PatientMedicationSearchPage() {
                               <th className="px-3 py-2">ประเภท</th>
                               <th className="px-3 py-2">ชื่อยา</th>
                               <th className="px-3 py-2">โดสยา</th>
-                              <th className="px-3 py-2">วิธีกินยา</th>
+                              <th className="min-w-[14rem] px-3 py-2">วิธีกินยา</th>
+                              <th className="min-w-[10rem] px-3 py-2">ข้อความวิธีใช้</th>
                               <th className="px-3 py-2">สิทธิการรักษา</th>
                               <th className="px-3 py-2">หมวด</th>
                               <th className="px-3 py-2">คลินิก</th>
@@ -1392,8 +1443,11 @@ export default function PatientMedicationSearchPage() {
                                   <td className="whitespace-nowrap px-3 py-2 text-flow-text">
                                     {row.DRUG_DOSE?.trim() ? row.DRUG_DOSE : "—"}
                                   </td>
-                                  <td className="min-w-[10rem] px-3 py-2 text-flow-muted">
-                                    {row.DRUG_USAGE?.trim() ? row.DRUG_USAGE : "—"}
+                                  <td className="min-w-[14rem] px-3 py-2 align-top">
+                                    {formatDrugUsageBreakdown(row)}
+                                  </td>
+                                  <td className="min-w-[10rem] px-3 py-2 align-top text-flow-muted">
+                                    {row.PRSCDTEXT_MEDUSAGE?.trim() ? row.PRSCDTEXT_MEDUSAGE : "—"}
                                   </td>
                                   <td className="px-3 py-2 text-flow-muted">
                                     {row.PTTYPE_NAME?.trim() ? row.PTTYPE_NAME : "—"}
@@ -1536,50 +1590,6 @@ export default function PatientMedicationSearchPage() {
             </section>
             )}
 
-            {contentTab === "xray" && (
-            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
-                    <tr>
-                      <th className="px-3 py-2">วันที่</th>
-                      {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
-                      <th className="px-3 py-2">ประเภท</th>
-                      <th className="px-3 py-2">รหัส</th>
-                      <th className="px-3 py-2">รายการ X-ray</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-flow-border">
-                    {filteredXrayRows.length === 0 ? (
-                      <tr>
-                        <td className="px-3 py-6 text-center text-flow-muted" colSpan={patientHeader?.multiple ? 5 : 4}>
-                          {tabEmptyMessage(hasResults, "ไม่มีรายการ X-ray ในวันที่เลือก")}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredXrayRows.map((row, index) => {
-                        const dateIso = apiDateToIsoLocal(row.XRAY_DATE);
-                        return (
-                          <tr key={`${row.HN}-${dateIso}-${row.RDOEXM}-${index}`} className="hover:bg-slate-50/80">
-                            <td className="whitespace-nowrap px-3 py-2">{isoToThaiDisplay(dateIso)}</td>
-                            {patientHeader?.multiple ? (
-                              <td className="whitespace-nowrap px-3 py-2">{formatHnDisplay(row.HN)}</td>
-                            ) : null}
-                            <td className="whitespace-nowrap px-3 py-2">
-                              {row.VISIT_TYPE}{row.AN ? ` · ${row.AN}` : ""}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 font-mono">{row.RDOEXM ?? "—"}</td>
-                            <td className="min-w-[14rem] px-3 py-2">{row.EXAM_NAME ?? row.RDOEXM ?? "—"}</td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-            )}
-
             {contentTab === "history" && (
             <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
               {groupedHistoryDays.length === 0 ? (
@@ -1633,9 +1643,18 @@ export default function PatientMedicationSearchPage() {
                     </p>
                     {selectedHistoryDay ? (
                       <div className="max-h-[32rem] overflow-y-auto">
-                        {selectedHistoryDay.items.map((row, index) => (
-                          <HistoryVisitCard key={`${selectedHistoryDay.key}-${row.VN ?? index}`} row={row} />
-                        ))}
+                        {selectedHistoryVisits.length === 0 ? (
+                          <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                            ไม่มี visit ในวันที่เลือก
+                          </p>
+                        ) : (
+                          selectedHistoryVisits.map((row, index) => (
+                            <HistoryVisitCard
+                              key={`${selectedHistoryDay.key}-${row.VN ?? "na"}-${index}`}
+                              row={row}
+                            />
+                          ))
+                        )}
                       </div>
                     ) : (
                       <p className="px-4 py-6 text-center text-xs text-flow-muted">

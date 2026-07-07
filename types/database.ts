@@ -34,6 +34,8 @@ export interface PoolConfig {
 export interface ConnectionOptions {
   autoCommit?: boolean;
   outFormat?: "ARRAY" | "OBJECT";
+  /** ค่าเริ่มต้น true — ปิดเมื่อลอง query แบบ fallback (เช่น ตารางอาจไม่มีใน schema) */
+  logErrors?: boolean;
 }
 
 /**

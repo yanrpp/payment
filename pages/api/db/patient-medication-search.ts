@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
-import { sqlDrugDoseReadable, sqlDrugUsageJoins, sqlDrugUsageReadable } from "@/lib/db/drugUsageSql";
+import { sqlDrugDoseReadable, sqlDrugUsageFieldColumns, sqlDrugUsageJoins, sqlDrugUsageReadable, sqlPrscdtextJoin, sqlPrscdtextMedusageColumn } from "@/lib/db/drugUsageSql";
 import { sqlUnitCost, sqlUnitSale } from "@/lib/db/meditemRateSql";
 
 export type PatientMedicationRow = {
@@ -25,6 +25,14 @@ export type PatientMedicationRow = {
   PTTYPE_NAME: string | null;
   DRUG_USAGE: string | null;
   DRUG_DOSE: string | null;
+  MEDUSETYPE_NAME: string | null;
+  MEDUSEQTY_NAME: string | null;
+  MEDUSETIME_NAME: string | null;
+  MEDSYMPTOM_NAME: string | null;
+  MEDUSEUNIT_NAME: string | null;
+  MEDLBLHLP1: string | null;
+  MEDNOTE: string | null;
+  PRSCDTEXT_MEDUSAGE: string | null;
 };
 
 type SuccessResponse = {
@@ -151,6 +159,8 @@ export default async function handler(
         pty.name                            AS PTTYPE_NAME,
         ${sqlDrugUsageReadable("d")}        AS DRUG_USAGE,
         ${sqlDrugDoseReadable("d")}       AS DRUG_DOSE,
+        ${sqlDrugUsageFieldColumns("d")},
+        ${sqlPrscdtextMedusageColumn()},
         ${unitCost}                         AS UNIT_COST,
         ${unitSale}                         AS UNIT_SALE
       FROM prsc p
@@ -163,6 +173,7 @@ export default async function handler(
         LEFT JOIN lct ON lct.lct = d.sphmlct
         LEFT JOIN pttype pty ON pty.pttype = p.pttype
         ${sqlDrugUsageJoins("d")}
+        ${sqlPrscdtextJoin("d")}
       WHERE 1 = 1
         ${whereDate}
         ${whereHn}
@@ -188,7 +199,15 @@ export default async function handler(
       SUM(QTY * (UNIT_SALE - UNIT_COST)) AS TOTAL_PROFIT,
       PTTYPE_NAME,
       DRUG_USAGE,
-      DRUG_DOSE
+      DRUG_DOSE,
+      MEDUSETYPE_NAME,
+      MEDUSEQTY_NAME,
+      MEDUSETIME_NAME,
+      MEDSYMPTOM_NAME,
+      MEDUSEUNIT_NAME,
+      MEDLBLHLP1,
+      MEDNOTE,
+      PRSCDTEXT_MEDUSAGE
     FROM base
     GROUP BY
       HN,
@@ -205,7 +224,15 @@ export default async function handler(
       DRUG_NAME,
       PTTYPE_NAME,
       DRUG_USAGE,
-      DRUG_DOSE
+      DRUG_DOSE,
+      MEDUSETYPE_NAME,
+      MEDUSEQTY_NAME,
+      MEDUSETIME_NAME,
+      MEDSYMPTOM_NAME,
+      MEDUSEUNIT_NAME,
+      MEDLBLHLP1,
+      MEDNOTE,
+      PRSCDTEXT_MEDUSAGE
     ORDER BY
       PRSCDATE DESC,
       HN,

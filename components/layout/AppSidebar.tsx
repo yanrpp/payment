@@ -78,7 +78,25 @@ export function AppSidebar({ hidden, onHide, mobileOpen, onCloseMobile }: AppSid
               </p>
               <ul className="space-y-1">
                 {group.items.map((item) => {
-                  const active = isActive(item.href);
+                  const active = !item.disabled && isActive(item.href);
+
+                  if (item.disabled) {
+                    return (
+                      <li key={item.href}>
+                        <span
+                          aria-disabled="true"
+                          className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-600 opacity-50"
+                          title="ปิดใช้งานชั่วคราว"
+                        >
+                          <NavIcon
+                            className="h-[18px] w-[18px] shrink-0 text-slate-600"
+                            name={item.icon}
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </span>
+                      </li>
+                    );
+                  }
 
                   return (
                     <li key={item.href}>

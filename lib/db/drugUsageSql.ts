@@ -16,6 +16,28 @@ export function sqlDrugUsageJoins(dAlias = "d"): string {
     LEFT JOIN meduseunit muunit ON muunit.meduseunit = ${dAlias}.meduseunit`;
 }
 
+/** ข้อความวิธีใช้จาก prscdtext — join แบบ 1 แถวต่อ prscno+meditem */
+export function sqlPrscdtextJoin(dAlias = "d"): string {
+  const medusageExpr = `TRIM(COALESCE(DBMS_LOB.SUBSTR(medusage, 4000, 1), CAST(medusage AS VARCHAR2(4000))))`;
+
+  return `
+    LEFT JOIN (
+      SELECT prscno, meditem, MAX(${medusageExpr}) AS medusage
+      FROM prscdtext
+      GROUP BY prscno, meditem
+    ) ptxt_line ON ptxt_line.prscno = ${dAlias}.prscno
+               AND TO_CHAR(ptxt_line.meditem) = TO_CHAR(${dAlias}.meditem)
+    LEFT JOIN (
+      SELECT prscno, MAX(${medusageExpr}) AS medusage
+      FROM prscdtext
+      GROUP BY prscno
+    ) ptxt_hdr ON ptxt_hdr.prscno = ${dAlias}.prscno`;
+}
+
+export function sqlPrscdtextMedusageColumn(): string {
+  return `TRIM(COALESCE(ptxt_line.medusage, ptxt_hdr.medusage)) AS PRSCDTEXT_MEDUSAGE`;
+}
+
 function sqlDrugUsageMasterText(dAlias: string): string {
   return `RTRIM(
     TRIM(muty.name) || ' ' ||
@@ -24,6 +46,18 @@ function sqlDrugUsageMasterText(dAlias: string): string {
     CASE WHEN msym.name IS NOT NULL THEN ' ' || TRIM(msym.name) ELSE '' END,
     ' '
   )`;
+}
+
+/** คอลัมน์วิธีใช้ยาแยกรายการ — ใช้คู่กับ sqlDrugUsageJoins */
+export function sqlDrugUsageFieldColumns(dAlias = "d"): string {
+  return `
+      TRIM(muty.name)                     AS MEDUSETYPE_NAME,
+      TRIM(muqty.name)                    AS MEDUSEQTY_NAME,
+      TRIM(mutm.name)                     AS MEDUSETIME_NAME,
+      TRIM(msym.name)                     AS MEDSYMPTOM_NAME,
+      TRIM(muunit.name)                   AS MEDUSEUNIT_NAME,
+      TRIM(${dAlias}.medlblhlp1)          AS MEDLBLHLP1,
+      TRIM(${dAlias}.mednote)             AS MEDNOTE`;
 }
 
 /** นิพจน์ข้อความวิธีกินยา — ลำดับ: ฉลากไทย → master ไทย → หมายเหตุ → master → ฉลากที่ไม่ใช่รหัส */

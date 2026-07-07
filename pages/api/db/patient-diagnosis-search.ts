@@ -32,6 +32,26 @@ type ErrorResponse = {
 /** ชื่อ ICD-10 จาก icd10 (schema RPP) */
 const ICD10_NAME_EXPR = "COALESCE(ic.thainame, ic.name)";
 
+/** ตาราง/คอลัมน์ไม่มีใน schema บางโรงพยาบาล — ใช้ fallback แทน ไม่ต้อง log error */
+function isOptionalSchemaError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("errorNum" in error)) return false;
+  const code = Number((error as { errorNum: number }).errorNum);
+  return code === 942 || code === 904;
+}
+
+async function tryOptionalDiagQuery(
+  sql: string,
+  params: Record<string, unknown>
+): Promise<PatientDiagnosisRow[]> {
+  try {
+    const result = await executeQuery<PatientDiagnosisRow>(sql, params, { logErrors: false });
+    return result.rows ?? [];
+  } catch (error) {
+    if (isOptionalSchemaError(error)) return [];
+    throw error;
+  }
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<SuccessResponse | ErrorResponse>
@@ -136,26 +156,9 @@ export default async function handler(
       }
     };
 
-    try {
-      const ptdiagResult = await executeQuery<PatientDiagnosisRow>(ptdiagSql, sql.params);
-      appendRows(ptdiagResult.rows);
-    } catch {
-      // ptdiag อาจไม่มีในบาง schema
-    }
-
-    try {
-      const opdResult = await executeQuery<PatientDiagnosisRow>(opdSql, sql.params);
-      appendRows(opdResult.rows);
-    } catch {
-      // ovstdiag อาจไม่มีใน schema
-    }
-
-    try {
-      const ipdResult = await executeQuery<PatientDiagnosisRow>(ipdSql, sql.params);
-      appendRows(ipdResult.rows);
-    } catch {
-      // iptdiag อาจไม่มีใน schema
-    }
+    appendRows(await tryOptionalDiagQuery(ptdiagSql, sql.params));
+    appendRows(await tryOptionalDiagQuery(opdSql, sql.params));
+    appendRows(await tryOptionalDiagQuery(ipdSql, sql.params));
 
     rows.sort((a, b) => {
       const dateCmp = String(b.DIAG_DATE).localeCompare(String(a.DIAG_DATE));
