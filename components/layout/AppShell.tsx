@@ -23,6 +23,7 @@ export function AppShell({ children }: AppShellProps) {
   const router = useRouter();
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const treatmentPageLayout = router.pathname === "/patient-medication-search";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -73,9 +74,13 @@ export function AppShell({ children }: AppShellProps) {
         onCloseMobile={() => setMobileOpen(false)}
         onHide={hideSidebar}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={`flex min-w-0 flex-1 flex-col ${treatmentPageLayout ? "min-h-0" : ""}`}>
         <AppHeaderBar sidebarHidden={sidebarHidden} onOpenSidebar={openSidebar} />
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        {treatmentPageLayout ? (
+          children
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        )}
         <AppFooter />
       </div>
     </div>

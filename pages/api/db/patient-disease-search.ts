@@ -53,13 +53,13 @@ export default async function handler(
       TRUNC(ptdiag.vstdate)               AS VSTDATE,
       TRUNC(ptdiag.diagdate)              AS DIAGDATE,
       ptdiag.icd10                        AS ICD10,
-      ic.name                             AS ICD10_NAME,
+      COALESCE(ic.thainame, ic.name)      AS ICD10_NAME,
       ptdiag.diagtype                     AS DIAGTYPE,
       dct.dspname                         AS DOCTOR_NAME
     FROM ptdiag
       INNER JOIN pt ON pt.hn = ptdiag.hn
       LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
-      LEFT JOIN icd101 ic ON ic.icd101 = ptdiag.icd10
+      LEFT JOIN icd10 ic ON ic.icd10 = ptdiag.icd10
       LEFT JOIN dct ON dct.dct = ptdiag.dct
     WHERE 1 = 1
       ${whereVisitDate || whereDiagDate}

@@ -29,6 +29,9 @@ type ErrorResponse = {
   error?: string;
 };
 
+/** ชื่อ ICD-10 จาก icd10 (schema RPP) */
+const ICD10_NAME_EXPR = "COALESCE(ic.thainame, ic.name)";
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<SuccessResponse | ErrorResponse>
@@ -37,14 +40,39 @@ export default async function handler(
     return res.status(405).json({ success: false, message: "Method not allowed" });
   }
 
-  const parsed = parsePatientSearchFilters(req, "TRUNC(ov.vstdate)");
+  const parsed = parsePatientSearchFilters(req, "TRUNC(ptdiag.vstdate)");
   if (!parsed.ok) {
     return res.status(parsed.status).json({ success: false, message: parsed.message });
   }
 
   const { bind, sql } = parsed;
+  const wherePtdiagDate = sql.whereDate || buildWhereDateClause("TRUNC(ptdiag.vstdate)", bind);
   const whereOpdDate = buildWhereDateClause("TRUNC(ov.vstdate)", bind);
   const whereIpdDate = buildWhereDateClause("TRUNC(ipt.rgtdate)", bind);
+
+  /** รหัสวินิจฉัยหลักของ RPP — อยู่ใน ptdiag (hn + vstdate + icd10) */
+  const ptdiagSql = `
+    SELECT
+      ptdiag.hn                           AS HN,
+      ptno.cardno                         AS CARDNO,
+      pt.dspname                          AS DSPNAME,
+      TRUNC(ptdiag.vstdate)               AS DIAG_DATE,
+      ptdiag.an                           AS AN,
+      CASE WHEN ptdiag.an IS NOT NULL THEN 'IPD' ELSE 'OPD' END AS VISIT_TYPE,
+      ptdiag.icd10                        AS ICD10,
+      ${ICD10_NAME_EXPR}                  AS ICD10_NAME,
+      TO_CHAR(ptdiag.diagtype)            AS DIAGTYPE,
+      COALESCE(TO_CHAR(ptdiag.vn), TO_CHAR(ptdiag.an)) AS VISIT_REF
+    FROM ptdiag
+      INNER JOIN pt ON pt.hn = ptdiag.hn
+      LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
+      LEFT JOIN icd10 ic ON ic.icd10 = ptdiag.icd10
+    WHERE ptdiag.icd10 IS NOT NULL
+      ${wherePtdiagDate}
+      ${sql.whereHn}
+      ${sql.whereCardno}
+      ${sql.whereName}
+  `;
 
   const opdSql = `
     SELECT
@@ -55,14 +83,14 @@ export default async function handler(
       ov.an                               AS AN,
       'OPD'                               AS VISIT_TYPE,
       od.icd10                            AS ICD10,
-      ic.name                             AS ICD10_NAME,
+      ${ICD10_NAME_EXPR}                  AS ICD10_NAME,
       od.diagtype                         AS DIAGTYPE,
       od.vn                               AS VISIT_REF
     FROM ovstdiag od
       INNER JOIN ovst ov ON ov.vn = od.vn
       INNER JOIN pt ON pt.hn = ov.hn
       LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
-      LEFT JOIN icd101 ic ON ic.icd101 = od.icd10
+      LEFT JOIN icd10 ic ON ic.icd10 = od.icd10
     WHERE ov.canceldate IS NULL
       AND ov.an IS NULL
       ${whereOpdDate}
@@ -80,14 +108,14 @@ export default async function handler(
       ipt.an                              AS AN,
       'IPD'                               AS VISIT_TYPE,
       id.icd10                            AS ICD10,
-      ic.name                             AS ICD10_NAME,
+      ${ICD10_NAME_EXPR}                  AS ICD10_NAME,
       id.diagtype                         AS DIAGTYPE,
       id.an                               AS VISIT_REF
     FROM iptdiag id
       INNER JOIN ipt ON ipt.an = id.an
       INNER JOIN pt ON pt.hn = ipt.hn
       LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
-      LEFT JOIN icd101 ic ON ic.icd101 = id.icd10
+      LEFT JOIN icd10 ic ON ic.icd10 = id.icd10
     WHERE 1 = 1
       ${whereIpdDate}
       ${sql.whereHn}
@@ -97,17 +125,34 @@ export default async function handler(
 
   try {
     const rows: PatientDiagnosisRow[] = [];
+    const seen = new Set<string>();
+
+    const appendRows = (batch: PatientDiagnosisRow[] | undefined) => {
+      for (const row of batch ?? []) {
+        const key = `${row.HN}|${String(row.DIAG_DATE).slice(0, 10)}|${row.ICD10 ?? ""}|${row.DIAGTYPE ?? ""}|${row.VISIT_REF ?? ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(row);
+      }
+    };
+
+    try {
+      const ptdiagResult = await executeQuery<PatientDiagnosisRow>(ptdiagSql, sql.params);
+      appendRows(ptdiagResult.rows);
+    } catch {
+      // ptdiag อาจไม่มีในบาง schema
+    }
 
     try {
       const opdResult = await executeQuery<PatientDiagnosisRow>(opdSql, sql.params);
-      rows.push(...(opdResult.rows ?? []));
+      appendRows(opdResult.rows);
     } catch {
       // ovstdiag อาจไม่มีใน schema
     }
 
     try {
       const ipdResult = await executeQuery<PatientDiagnosisRow>(ipdSql, sql.params);
-      rows.push(...(ipdResult.rows ?? []));
+      appendRows(ipdResult.rows);
     } catch {
       // iptdiag อาจไม่มีใน schema
     }
