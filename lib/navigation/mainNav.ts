@@ -16,11 +16,10 @@ export type MainNavGroup = {
   items: MainNavItem[];
 };
 
+/** หน้าเริ่มต้นของแอป */
+export const DEFAULT_APP_PATH = "/patient-medication-search";
+
 export const MAIN_NAV_GROUPS: MainNavGroup[] = [
-  {
-    title: "ภาพรวม",
-    items: [{ href: "/", label: "หน้าหลัก", icon: "home", disabled: true }],
-  },
   {
     title: "รายงานต้นทุน",
     items: [

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, FileText, Folder } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Folder } from "lucide-react";
 
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { isoToThaiDisplay, isoToThaiInput } from "@/lib/date/thaiDate";
+import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import { normalizeHnInput } from "@/lib/hn/normalize";
 import { buildOpdscanUncPath } from "@/lib/opdscan/path";
 import { parsePatientSearchQuery, scanHnFromSearchQuery } from "@/lib/patient/parseSearchQuery";
@@ -137,7 +138,9 @@ function apiDateToIsoLocal(value: unknown): string {
       : value instanceof Date
         ? value
         : new Date(String(value));
+
   if (Number.isNaN(d.getTime())) return "";
+
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
   ).padStart(2, "0")}`;
@@ -148,19 +151,24 @@ function historyDateIso(value: unknown): string {
   if (value == null) return "";
   const raw = String(value).trim();
   const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+
   if (isoMatch) return isoMatch[1];
+
   return apiDateToIsoLocal(value);
 }
 
 function formatHnDisplay(value: unknown): string {
   const raw = String(value ?? "").trim();
+
   if (!raw) return "";
   if (raw.includes("/") || raw.includes("-")) return raw;
   const digits = raw.replace(/\D/g, "");
+
   if (digits.length < 3) return raw;
   const yearSuffix = digits.slice(0, 2);
   const runningRaw = digits.slice(2);
   const running = runningRaw.replace(/^0+/, "") || "0";
+
   return `${running}/${yearSuffix}`;
 }
 
@@ -180,36 +188,58 @@ const DRUG_USAGE_DETAIL_FIELDS: {
 
 function appendLabelHelpText(base: string, row: PatientMedicationRow): string {
   let text = base;
+
   for (const part of [row.MEDLBLHLP_NAME, row.MEDLBLHLP2_NAME]) {
     const help = part?.trim();
+
     if (!help || text.includes(help)) continue;
     text = text ? `${text} ${help}` : help;
   }
+
   return text;
 }
 
 function formatMedusageText(row: PatientMedicationRow): string {
   const fromPrscdtext = row.PRSCDTEXT_MEDUSAGE?.trim();
+
   if (fromPrscdtext) return appendLabelHelpText(fromPrscdtext, row);
   const fromMaster = row.DRUG_USAGE?.trim();
+
   if (fromMaster) return fromMaster;
   const fromHelp = [row.MEDLBLHLP_NAME, row.MEDLBLHLP2_NAME]
     .map((part) => part?.trim())
     .filter(Boolean)
     .join(" ");
+
   return fromHelp || "—";
 }
 
-function formatDrugUsageBreakdown(row: PatientMedicationRow): ReactNode {
+function formatDrugUsageBreakdown(row: PatientMedicationRow, compact = false): ReactNode {
   const lines = DRUG_USAGE_DETAIL_FIELDS.map(({ key, label }) => {
     const value = String(row[key] ?? "").trim();
+
     if (!value) return null;
+
     return { label, value };
   }).filter((line): line is { label: string; value: string } => line != null);
 
   if (lines.length === 0) {
     const fallback = row.DRUG_USAGE?.trim();
+
     return fallback || "—";
+  }
+
+  if (compact) {
+    return (
+      <dl className="grid grid-cols-2 gap-x-2 gap-y-0">
+        {lines.map(({ label, value }) => (
+          <div key={label} className="min-w-0 leading-tight">
+            <dt className="inline text-[9px] text-flow-muted">{label} </dt>
+            <dd className="inline text-[11px] text-flow-text">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    );
   }
 
   return (
@@ -226,6 +256,7 @@ function formatDrugUsageBreakdown(row: PatientMedicationRow): ReactNode {
 
 function formatQty(value: unknown): string {
   const n = Number(value ?? 0);
+
   return Number.isInteger(n) ? String(n) : n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
 }
 
@@ -233,8 +264,10 @@ function formatLabReference(row: PatientLabRow): string {
   const min = row.MIN_NRM?.trim();
   const max = row.MAX_NRM?.trim();
   const unit = row.NRM_UNIT?.trim();
+
   if (!min && !max) return "—";
   const range = min && max ? `${min} - ${max}` : (min ?? max ?? "");
+
   return unit ? `${range} ${unit}` : range;
 }
 
@@ -242,6 +275,7 @@ function formatFileSize(bytes: number): string {
   if (bytes <= 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
@@ -261,7 +295,6 @@ const TREATMENT_TABS: { id: TreatmentTab; label: string; dateLabel: string }[] =
   { id: "diag", label: "รหัสวินิจฉัย", dateLabel: "วันที่วินิจฉัย" },
 ];
 
-
 function diagDayGroupKey(hn: string, dateIso: string): string {
   return `${hn}|${dateIso}`;
 }
@@ -272,25 +305,28 @@ function countDiagVisitDays(
   groupByHn: boolean
 ): number {
   const keys = new Set<string>();
+
   for (const row of rows) {
     if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) continue;
     const dateIso = apiDateToIsoLocal(row.DIAG_DATE);
+
     if (!dateIso) continue;
     keys.add(groupByHn ? diagDayGroupKey(String(row.HN), dateIso) : dateIso);
   }
+
   return keys.size;
 }
 
-function groupDiagnosisByDay(
-  rows: PatientDiagnosisRow[],
-  groupByHn: boolean
-): DiagnosisDayGroup[] {
+function groupDiagnosisByDay(rows: PatientDiagnosisRow[], groupByHn: boolean): DiagnosisDayGroup[] {
   const map = new Map<string, DiagnosisDayGroup>();
+
   for (const row of rows) {
     const dateIso = apiDateToIsoLocal(row.DIAG_DATE);
+
     if (!dateIso) continue;
     const key = groupByHn ? diagDayGroupKey(String(row.HN), dateIso) : dateIso;
     let group = map.get(key);
+
     if (!group) {
       group = { key, dateIso, hn: String(row.HN), visitTypes: [], codes: [] };
       map.set(key, group);
@@ -300,13 +336,202 @@ function groupDiagnosisByDay(
     }
     group.codes.push(row);
   }
+
   return Array.from(map.values()).sort((a, b) => b.dateIso.localeCompare(a.dateIso));
 }
 
 function formatVisitTypes(types: string[]): string {
   if (types.length === 0) return "—";
   if (types.length === 1) return types[0];
+
   return types.join("/");
+}
+
+function VisitTypeBadge({ visitType, an }: { visitType: string; an?: string | null }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+        visitType === "IPD" ? "bg-violet-100 text-violet-800" : "bg-sky-100 text-sky-800"
+      }`}
+    >
+      {visitType}
+      {an ? ` · ${an}` : ""}
+    </span>
+  );
+}
+
+function MobileBackBar({
+  label,
+  onBack,
+  show,
+}: {
+  label: string;
+  onBack: () => void;
+  show: boolean;
+}) {
+  if (!show) return null;
+
+  return (
+    <button
+      className="flex w-full items-center gap-1 border-b border-flow-border bg-white px-3 py-2.5 text-left text-xs font-medium text-brand-700 touch-manipulation active:bg-slate-50 md:hidden"
+      type="button"
+      onClick={onBack}
+    >
+      <ChevronLeft className="h-4 w-4 shrink-0" />
+      {label}
+    </button>
+  );
+}
+
+function TreatmentDayButton({
+  selected,
+  isMobile,
+  dateIso,
+  metaLine,
+  onSelect,
+}: {
+  selected: boolean;
+  isMobile: boolean;
+  dateIso: string;
+  metaLine: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs transition-colors touch-manipulation ${
+        selected
+          ? "bg-brand-50 text-brand-800 ring-1 ring-inset ring-brand-200"
+          : "text-flow-text hover:bg-slate-50 active:bg-slate-100"
+      }`}
+      type="button"
+      onClick={onSelect}
+    >
+      <span className="min-w-0 flex-1 truncate">
+        <span className="font-medium">{isoToThaiDisplay(dateIso)}</span>
+        <span className="text-flow-muted"> · {metaLine}</span>
+      </span>
+      {isMobile ? <ChevronRight className="h-4 w-4 shrink-0 text-flow-muted" /> : null}
+    </button>
+  );
+}
+
+function DrugItemCard({ row, showPatient }: { row: PatientMedicationRow; showPatient: boolean }) {
+  const medusageText = formatMedusageText(row);
+
+  return (
+    <article className="space-y-1.5 px-3 py-2">
+      <div className="flex items-start justify-between gap-1.5">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-xs font-semibold leading-tight text-flow-text">
+            {row.DRUG_NAME ?? "—"}
+          </h3>
+          {row.DRUG_DOSE?.trim() ? (
+            <p className="mt-0.5 text-[11px] text-flow-muted">โดสยา {row.DRUG_DOSE}</p>
+          ) : null}
+          {showPatient ? (
+            <p className="mt-0.5 truncate text-[10px] text-flow-muted">
+              HN {formatHnDisplay(row.HN)}
+              {row.DSPNAME ? ` · ${row.DSPNAME}` : ""}
+            </p>
+          ) : null}
+        </div>
+        <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
+      </div>
+
+      <div className="rounded bg-slate-50 px-2 py-1">
+        <p className="mb-0.5 text-[9px] font-semibold uppercase tracking-wide text-flow-muted">
+          วิธีกินยา
+        </p>
+        {formatDrugUsageBreakdown(row, true)}
+      </div>
+
+      {medusageText !== "—" ? (
+        <p className="text-[11px] leading-snug text-flow-muted">
+          <span className="font-medium text-flow-text">วิธีใช้:</span> {medusageText}
+        </p>
+      ) : null}
+
+      <p className="flex flex-wrap gap-x-2 gap-y-0 text-[10px] leading-tight text-flow-muted">
+        <span>
+          <span className="font-medium text-flow-text">สิทธิ</span>{" "}
+          {row.PTTYPE_NAME?.trim() ? row.PTTYPE_NAME : "—"}
+        </span>
+        <span className="text-slate-300">·</span>
+        <span>
+          <span className="font-medium text-flow-text">จำนวน</span> {formatQty(row.TOTAL_QTY)}
+        </span>
+        <span className="text-slate-300">·</span>
+        <span>
+          <span className="font-medium text-flow-text">หมวด</span> {row.MEDTYPE ?? "—"}
+        </span>
+        <span className="text-slate-300">·</span>
+        <span className="min-w-0">
+          <span className="font-medium text-flow-text">คลินิก</span>{" "}
+          {row.CLINIC_LCT_NAME ?? row.CLINIC_LCT ?? "—"}
+        </span>
+      </p>
+    </article>
+  );
+}
+
+function LabItemCard({
+  row,
+  showPatient,
+}: {
+  row: PatientLabRow;
+  showPatient: boolean;
+}) {
+  const reference = formatLabReference(row);
+
+  return (
+    <article className="space-y-2 border-b border-flow-border px-4 py-3 last:border-b-0">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="min-w-0 flex-1 text-sm font-semibold leading-snug text-flow-text">
+          {row.LAB_NAME ?? "—"}
+        </h3>
+        <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
+      </div>
+
+      {showPatient ? (
+        <p className="text-xs text-flow-muted">
+          HN {formatHnDisplay(row.HN)}
+          {row.DSPNAME ? ` · ${row.DSPNAME}` : ""}
+        </p>
+      ) : null}
+
+      <p className="text-sm font-medium text-flow-text">
+        <span className="text-xs font-medium text-flow-muted">ผล:</span>{" "}
+        {row.RESULT?.trim() ? row.RESULT : "—"}
+      </p>
+
+      {reference !== "—" ? (
+        <p className="text-xs text-flow-muted">
+          <span className="font-medium text-flow-text">ค่าอ้างอิง:</span> {reference}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function DiagnosisItemCard({ row }: { row: PatientDiagnosisRow }) {
+  return (
+    <article className="space-y-1.5 border-b border-flow-border px-4 py-3 last:border-b-0">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-mono text-sm font-semibold text-flow-text">{row.ICD10 ?? "—"}</p>
+        <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-flow-muted">
+          {row.DIAGTYPE ?? "—"}
+        </span>
+      </div>
+      <p className="text-sm leading-snug text-flow-text">{row.ICD10_NAME ?? "—"}</p>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-flow-muted">
+        <span>
+          <span className="font-medium text-flow-text">VN/AN:</span>{" "}
+          <span className="font-mono">{row.VISIT_REF ?? "—"}</span>
+        </span>
+        {row.VISIT_TYPE ? <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} /> : null}
+      </div>
+    </article>
+  );
 }
 
 function formatVitalValue(value: number | null | undefined, unit?: string): string {
@@ -314,17 +539,23 @@ function formatVitalValue(value: number | null | undefined, unit?: string): stri
   const text = Number.isInteger(Number(value))
     ? String(value)
     : Number(value).toLocaleString("th-TH", { maximumFractionDigits: 1 });
+
   return unit ? `${text} ${unit}` : text;
 }
 
-function formatBloodPressure(bps: number | null | undefined, bpd: number | null | undefined): string {
+function formatBloodPressure(
+  bps: number | null | undefined,
+  bpd: number | null | undefined
+): string {
   if (bps == null && bpd == null) return "—";
   if (bps != null && bpd != null) return `${bps}/${bpd} mmHg`;
+
   return String(bps ?? bpd);
 }
 
 function formatHistoryText(value: string | null | undefined): string {
   const text = String(value ?? "").trim();
+
   return text || "—";
 }
 
@@ -367,7 +598,9 @@ function HistoryVisitCard({ row }: { row: PatientHistoryRow }) {
       </div>
 
       <div>
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-flow-muted">Vital Signs</p>
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-flow-muted">
+          Vital Signs
+        </p>
         <div className="grid grid-cols-2 gap-2 rounded-lg border border-flow-border/70 bg-slate-50/60 p-3 sm:grid-cols-3 lg:grid-cols-5">
           <div>
             <p className="text-[10px] text-flow-muted">Weight</p>
@@ -426,13 +659,17 @@ function HistoryVisitCard({ row }: { row: PatientHistoryRow }) {
           </p>
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-flow-muted">HPI</p>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-flow-muted">
+            HPI
+          </p>
           <p className="min-h-[4rem] whitespace-pre-wrap rounded-lg border border-flow-border/70 bg-white p-3 text-xs leading-relaxed text-flow-text">
             {formatHistoryText(row.HPI)}
           </p>
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-flow-muted">Doctor Note</p>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-flow-muted">
+            Doctor Note
+          </p>
           <p className="min-h-[4rem] whitespace-pre-wrap rounded-lg border border-flow-border/70 bg-white p-3 text-xs leading-relaxed text-flow-text">
             {formatHistoryText(row.NOTE)}
           </p>
@@ -448,11 +685,14 @@ function groupTreatmentByDay<T extends { HN: string; VISIT_TYPE: string }>(
   groupByHn: boolean
 ): TreatmentDayGroup<T>[] {
   const map = new Map<string, TreatmentDayGroup<T>>();
+
   for (const row of rows) {
     const dateIso = getDateIso(row);
+
     if (!dateIso) continue;
     const key = groupByHn ? diagDayGroupKey(String(row.HN), dateIso) : dateIso;
     let group = map.get(key);
+
     if (!group) {
       group = { key, dateIso, hn: String(row.HN), visitTypes: [], items: [] };
       map.set(key, group);
@@ -462,6 +702,7 @@ function groupTreatmentByDay<T extends { HN: string; VISIT_TYPE: string }>(
     }
     group.items.push(row);
   }
+
   return Array.from(map.values()).sort((a, b) => b.dateIso.localeCompare(a.dateIso));
 }
 
@@ -470,11 +711,14 @@ function groupHistoryByDay(
   groupByHn: boolean
 ): TreatmentDayGroup<PatientHistoryRow>[] {
   const map = new Map<string, TreatmentDayGroup<PatientHistoryRow>>();
+
   for (const row of rows) {
     const dateIso = historyDateIso(row.VSTDATE);
+
     if (!dateIso) continue;
     const key = groupByHn ? diagDayGroupKey(String(row.HN), dateIso) : dateIso;
     let group = map.get(key);
+
     if (!group) {
       group = { key, dateIso, hn: String(row.HN), visitTypes: [], items: [] };
       map.set(key, group);
@@ -498,6 +742,7 @@ function pickInitialTreatmentTab(counts: Record<TreatmentTab, number>): Treatmen
   for (const tab of TREATMENT_TABS) {
     if (counts[tab.id] > 0) return tab.id;
   }
+
   return "drug";
 }
 
@@ -516,9 +761,13 @@ function treatmentRowDateIso(tab: TreatmentTab, row: Record<string, unknown>): s
   }
 }
 
-function rowMatchesVisitFilter(visitType: string | null | undefined, filter: "all" | "OPD" | "IPD") {
+function rowMatchesVisitFilter(
+  visitType: string | null | undefined,
+  filter: "all" | "OPD" | "IPD"
+) {
   if (filter === "all") return true;
   if (!visitType) return true;
+
   return visitType === filter;
 }
 
@@ -528,17 +777,24 @@ function isoToBuddhistYear(iso: string): number {
 
 function matchesSelectedYears(iso: string, selectedYears: string[]): boolean {
   if (selectedYears.length === 0) return true;
+
   return selectedYears.includes(String(isoToBuddhistYear(iso)));
 }
 
 function matchesSelectedDates(iso: string, selectedDates: string[]): boolean {
   if (selectedDates.length === 0) return true;
+
   return selectedDates.includes(iso);
 }
 
-function matchesDateFilters(iso: string, selectedYears: string[], selectedDates: string[]): boolean {
+function matchesDateFilters(
+  iso: string,
+  selectedYears: string[],
+  selectedDates: string[]
+): boolean {
   if (!iso) return false;
   if (!matchesSelectedYears(iso, selectedYears)) return false;
+
   return matchesSelectedDates(iso, selectedDates);
 }
 
@@ -554,6 +810,11 @@ export default function PatientMedicationSearchPage() {
   const [diagRows, setDiagRows] = useState<PatientDiagnosisRow[]>([]);
   const [selectedDiagDayKey, setSelectedDiagDayKey] = useState<string | null>(null);
   const [selectedDrugDayKey, setSelectedDrugDayKey] = useState<string | null>(null);
+  const [mobileDrugPanel, setMobileDrugPanel] = useState<"days" | "items">("days");
+  const [mobileLabPanel, setMobileLabPanel] = useState<"days" | "items">("days");
+  const [mobileHistoryPanel, setMobileHistoryPanel] = useState<"days" | "items">("days");
+  const [mobileDiagPanel, setMobileDiagPanel] = useState<"days" | "items">("days");
+  const isMobile = useMediaQuery("(max-width: 767px)");
   const [selectedLabDayKey, setSelectedLabDayKey] = useState<string | null>(null);
   const [selectedHistoryDayKey, setSelectedHistoryDayKey] = useState<string | null>(null);
   const [contentTab, setContentTab] = useState<TreatmentTab>("drug");
@@ -582,6 +843,10 @@ export default function PatientMedicationSearchPage() {
     setDiagRows([]);
     setSelectedDiagDayKey(null);
     setSelectedDrugDayKey(null);
+    setMobileDrugPanel("days");
+    setMobileLabPanel("days");
+    setMobileHistoryPanel("days");
+    setMobileDiagPanel("days");
     setSelectedLabDayKey(null);
     setSelectedHistoryDayKey(null);
     setSelectedDates([]);
@@ -605,6 +870,7 @@ export default function PatientMedicationSearchPage() {
     patientHn: string | null;
   }> => {
     const query = new URLSearchParams();
+
     if (params.hn) query.set("hn", params.hn);
     if (params.cardno) query.set("cardno", params.cardno);
     if (params.name) query.set("name", params.name);
@@ -634,19 +900,17 @@ export default function PatientMedicationSearchPage() {
       if (!res.ok || !json.success) {
         errors.push(json.message ?? fallbackMessage);
         setter([]);
+
         return [];
       }
       const data = Array.isArray(json.data) ? json.data : [];
+
       setter(data);
+
       return data;
     };
 
-    const medData = readData(
-      medRes,
-      medJson,
-      setRows,
-      "ค้นหารายการยาไม่สำเร็จ"
-    );
+    const medData = readData(medRes, medJson, setRows, "ค้นหารายการยาไม่สำเร็จ");
     const labData = readData(labRes, labJson, setLabRows, "ค้นหารายการ Lab ไม่สำเร็จ");
     const historyData = readData(
       historyRes,
@@ -654,13 +918,8 @@ export default function PatientMedicationSearchPage() {
       setHistoryRows,
       "ค้นหาการซักประวัติไม่สำเร็จ"
     );
-    const diagData = readData(
-      diagRes,
-      diagJson,
-      setDiagRows,
-      "ค้นหารหัสวินิจฉัยไม่สำเร็จ"
-    );
-        const counts: Record<TreatmentTab, number> = {
+    const diagData = readData(diagRes, diagJson, setDiagRows, "ค้นหารหัสวินิจฉัยไม่สำเร็จ");
+    const counts: Record<TreatmentTab, number> = {
       drug: medData.length,
       lab: labData.length,
       history: historyData.length,
@@ -717,6 +976,7 @@ export default function PatientMedicationSearchPage() {
     if (parsed.kind === "empty") {
       setLoading(false);
       setError("กรุณาระบุ HN, เลขบัตรประชาชน หรือชื่อ-นามสกุล");
+
       return;
     }
 
@@ -731,6 +991,7 @@ export default function PatientMedicationSearchPage() {
 
         if (!res.ok || !json.success) {
           setError(json.message ?? "ค้นหารายชื่อผู้ป่วยไม่สำเร็จ");
+
           return;
         }
 
@@ -738,6 +999,7 @@ export default function PatientMedicationSearchPage() {
 
         if (candidates.length === 0) {
           setError("ไม่พบผู้ป่วยที่ตรงกับชื่อที่ค้นหา");
+
           return;
         }
 
@@ -745,6 +1007,7 @@ export default function PatientMedicationSearchPage() {
         setNameSearchQuery(parsed.name);
         setPatientPickerNotice(null);
         setShowPatientModal(true);
+
         return;
       }
 
@@ -780,11 +1043,13 @@ export default function PatientMedicationSearchPage() {
 
       if (result.totalCount === 0) {
         const displayName = patient.DSPNAME ?? "(ไม่ระบุชื่อ)";
+
         setPatientPickerNotice(
           result.errors.length > 0
             ? result.errors.join(" · ")
             : `${displayName} · HN ${formatHnDisplay(patient.HN)} — ไม่พบข้อมูลการรักษา`
         );
+
         return;
       }
 
@@ -794,9 +1059,7 @@ export default function PatientMedicationSearchPage() {
 
       closePatientModal();
     } catch (fetchError) {
-      setPatientPickerNotice(
-        fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด"
-      );
+      setPatientPickerNotice(fetchError instanceof Error ? fetchError.message : "เกิดข้อผิดพลาด");
     } finally {
       setPatientPickerLoading(false);
     }
@@ -810,6 +1073,7 @@ export default function PatientMedicationSearchPage() {
     };
 
     window.addEventListener("keydown", onKeyDown);
+
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [showPatientModal]);
 
@@ -832,6 +1096,7 @@ export default function PatientMedicationSearchPage() {
 
   const loadScanDirectory = async (hnValue: string, subPath: string) => {
     const params = new URLSearchParams({ hn: hnValue });
+
     if (subPath) params.set("sub", subPath);
 
     const res = await fetch(`/api/opdscan/list?${params}`);
@@ -849,11 +1114,14 @@ export default function PatientMedicationSearchPage() {
 
   const openOpdscan = async () => {
     const hnValue = scanHnFromSearchQuery(searchQuery, resolvedHn);
+
     if (!hnValue) return;
 
     const previewPath = buildOpdscanUncPath(hnValue, OPDSCAN_UNC_ROOT);
+
     if (!previewPath) {
       setScanError("รูปแบบ HN ไม่ถูกต้อง (ใช้เช่น 19999/99)");
+
       return;
     }
 
@@ -887,12 +1155,14 @@ export default function PatientMedicationSearchPage() {
 
   const openScanFolder = (folderName: string) => {
     const nextSubPath = scanSubPath ? `${scanSubPath}\\${folderName}` : folderName;
+
     void navigateScanFolder(nextSubPath);
   };
 
   const goBackScanFolder = () => {
     if (!scanSubPath) return;
     const parts = scanSubPath.split("\\").filter(Boolean);
+
     parts.pop();
     void navigateScanFolder(parts.join("\\"));
   };
@@ -908,6 +1178,7 @@ export default function PatientMedicationSearchPage() {
     }, 1200);
 
     const link = scanFileLinkRef.current;
+
     if (!link) return;
     link.href = url;
     link.click();
@@ -915,6 +1186,7 @@ export default function PatientMedicationSearchPage() {
 
   const scanBreadcrumbs = useMemo(() => {
     if (!scanSubPath) return [];
+
     return scanSubPath.split("\\").filter(Boolean);
   }, [scanSubPath]);
 
@@ -926,6 +1198,7 @@ export default function PatientMedicationSearchPage() {
     };
 
     window.addEventListener("keydown", onKeyDown);
+
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [showScanModal]);
 
@@ -967,20 +1240,26 @@ export default function PatientMedicationSearchPage() {
 
   const activeDates = useMemo(() => {
     const set = new Set<string>();
+
     for (const row of activeSourceRows) {
       const visitType = "VISIT_TYPE" in row ? row.VISIT_TYPE : null;
+
       if (!rowMatchesVisitFilter(visitType, filterVisitType)) continue;
       const iso = treatmentRowDateIso(contentTab, row as unknown as Record<string, unknown>);
+
       if (iso) set.add(iso);
     }
+
     return Array.from(set).sort((a, b) => b.localeCompare(a));
   }, [activeSourceRows, contentTab, filterVisitType]);
 
   const activeYears = useMemo(() => {
     const years = new Set<number>();
+
     for (const iso of activeDates) {
       years.add(isoToBuddhistYear(iso));
     }
+
     return Array.from(years).sort((a, b) => b - a);
   }, [activeDates]);
 
@@ -992,6 +1271,7 @@ export default function PatientMedicationSearchPage() {
     setSelectedDates((prev) => {
       const allowed = new Set(datesInSelectedYears);
       const next = prev.filter((d) => allowed.has(d));
+
       return next.length === prev.length ? prev : next;
     });
   }, [datesInSelectedYears]);
@@ -1004,6 +1284,10 @@ export default function PatientMedicationSearchPage() {
     setSelectedYears([]);
     setSelectedDiagDayKey(null);
     setSelectedDrugDayKey(null);
+    setMobileDrugPanel("days");
+    setMobileLabPanel("days");
+    setMobileHistoryPanel("days");
+    setMobileDiagPanel("days");
     setSelectedLabDayKey(null);
     setSelectedHistoryDayKey(null);
   };
@@ -1015,6 +1299,10 @@ export default function PatientMedicationSearchPage() {
 
     setSelectedDiagDayKey(null);
     setSelectedDrugDayKey(null);
+    setMobileDrugPanel("days");
+    setMobileLabPanel("days");
+    setMobileHistoryPanel("days");
+    setMobileDiagPanel("days");
     setSelectedLabDayKey(null);
     setSelectedHistoryDayKey(null);
 
@@ -1034,6 +1322,7 @@ export default function PatientMedicationSearchPage() {
     return rows.filter((row) => {
       if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
       const iso = apiDateToIsoLocal(row.PRSCDATE);
+
       return matchesDateFilters(iso, selectedYears, selectedDates);
     });
   }, [rows, selectedDates, selectedYears, filterVisitType]);
@@ -1042,6 +1331,7 @@ export default function PatientMedicationSearchPage() {
     return labRows.filter((row) => {
       if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
       const iso = apiDateToIsoLocal(row.LAB_DATE);
+
       return matchesDateFilters(iso, selectedYears, selectedDates);
     });
   }, [labRows, selectedDates, selectedYears, filterVisitType]);
@@ -1050,6 +1340,7 @@ export default function PatientMedicationSearchPage() {
     return historyRows.filter((row) => {
       if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
       const iso = historyDateIso(row.VSTDATE);
+
       return matchesDateFilters(iso, selectedYears, selectedDates);
     });
   }, [historyRows, selectedDates, selectedYears, filterVisitType]);
@@ -1058,6 +1349,7 @@ export default function PatientMedicationSearchPage() {
     return diagRows.filter((row) => {
       if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) return false;
       const iso = apiDateToIsoLocal(row.DIAG_DATE);
+
       return matchesDateFilters(iso, selectedYears, selectedDates);
     });
   }, [diagRows, selectedDates, selectedYears, filterVisitType]);
@@ -1074,6 +1366,8 @@ export default function PatientMedicationSearchPage() {
   useEffect(() => {
     if (groupedDiagDays.length === 0) {
       setSelectedDiagDayKey(null);
+      setMobileDiagPanel("days");
+
       return;
     }
     if (!selectedDiagDayKey || !groupedDiagDays.some((g) => g.key === selectedDiagDayKey)) {
@@ -1092,13 +1386,16 @@ export default function PatientMedicationSearchPage() {
   );
 
   const groupedDrugDays = useMemo(
-    () => groupTreatmentByDay(filteredRows, (row) => apiDateToIsoLocal(row.PRSCDATE), drugGroupByHn),
+    () =>
+      groupTreatmentByDay(filteredRows, (row) => apiDateToIsoLocal(row.PRSCDATE), drugGroupByHn),
     [filteredRows, drugGroupByHn]
   );
 
   useEffect(() => {
     if (groupedDrugDays.length === 0) {
       setSelectedDrugDayKey(null);
+      setMobileDrugPanel("days");
+
       return;
     }
     if (!selectedDrugDayKey || !groupedDrugDays.some((g) => g.key === selectedDrugDayKey)) {
@@ -1111,19 +1408,54 @@ export default function PatientMedicationSearchPage() {
     [groupedDrugDays, selectedDrugDayKey]
   );
 
+  const showDrugDayList = !isMobile || mobileDrugPanel === "days";
+  const showDrugItems = !isMobile || mobileDrugPanel === "items";
+
+  const handleDrugDaySelect = (key: string) => {
+    setSelectedDrugDayKey(key);
+    if (isMobile) setMobileDrugPanel("items");
+  };
+
+  const showLabDayList = !isMobile || mobileLabPanel === "days";
+  const showLabItems = !isMobile || mobileLabPanel === "items";
+
+  const handleLabDaySelect = (key: string) => {
+    setSelectedLabDayKey(key);
+    if (isMobile) setMobileLabPanel("items");
+  };
+
+  const showHistoryDayList = !isMobile || mobileHistoryPanel === "days";
+  const showHistoryItems = !isMobile || mobileHistoryPanel === "items";
+
+  const handleHistoryDaySelect = (key: string) => {
+    setSelectedHistoryDayKey(key);
+    if (isMobile) setMobileHistoryPanel("items");
+  };
+
+  const showDiagDayList = !isMobile || mobileDiagPanel === "days";
+  const showDiagItems = !isMobile || mobileDiagPanel === "items";
+
+  const handleDiagDaySelect = (key: string) => {
+    setSelectedDiagDayKey(key);
+    if (isMobile) setMobileDiagPanel("items");
+  };
+
   const labGroupByHn = useMemo(
     () => new Set(filteredLabRows.map((row) => row.HN)).size > 1,
     [filteredLabRows]
   );
 
   const groupedLabDays = useMemo(
-    () => groupTreatmentByDay(filteredLabRows, (row) => apiDateToIsoLocal(row.LAB_DATE), labGroupByHn),
+    () =>
+      groupTreatmentByDay(filteredLabRows, (row) => apiDateToIsoLocal(row.LAB_DATE), labGroupByHn),
     [filteredLabRows, labGroupByHn]
   );
 
   useEffect(() => {
     if (groupedLabDays.length === 0) {
       setSelectedLabDayKey(null);
+      setMobileLabPanel("days");
+
       return;
     }
     if (!selectedLabDayKey || !groupedLabDays.some((g) => g.key === selectedLabDayKey)) {
@@ -1149,9 +1481,14 @@ export default function PatientMedicationSearchPage() {
   useEffect(() => {
     if (groupedHistoryDays.length === 0) {
       setSelectedHistoryDayKey(null);
+      setMobileHistoryPanel("days");
+
       return;
     }
-    if (!selectedHistoryDayKey || !groupedHistoryDays.some((g) => g.key === selectedHistoryDayKey)) {
+    if (
+      !selectedHistoryDayKey ||
+      !groupedHistoryDays.some((g) => g.key === selectedHistoryDayKey)
+    ) {
       setSelectedHistoryDayKey(groupedHistoryDays[0].key);
     }
   }, [groupedHistoryDays, selectedHistoryDayKey, selectedDates, selectedYears]);
@@ -1163,21 +1500,19 @@ export default function PatientMedicationSearchPage() {
 
   const selectedHistoryVisits = useMemo(() => {
     if (!selectedHistoryDay) return [];
+
     return filteredHistoryRows.filter(
       (row) => historyDateIso(row.VSTDATE) === selectedHistoryDay.dateIso
     );
   }, [filteredHistoryRows, selectedHistoryDay]);
 
   const patientHeader = useMemo(() => {
-    const source = [
-      ...rows,
-      ...labRows,
-      ...historyRows,
-      ...diagRows,
-    ];
+    const source = [...rows, ...labRows, ...historyRows, ...diagRows];
+
     if (source.length === 0) return null;
     const first = source[0];
     const uniqueHn = new Set(source.map((r) => r.HN));
+
     return {
       multiple: uniqueHn.size > 1,
       hn: first.HN,
@@ -1188,10 +1523,7 @@ export default function PatientMedicationSearchPage() {
   }, [rows, labRows, historyRows, diagRows]);
 
   const hasResults =
-    rows.length > 0 ||
-    labRows.length > 0 ||
-    historyRows.length > 0 ||
-    diagRows.length > 0;
+    rows.length > 0 || labRows.length > 0 || historyRows.length > 0 || diagRows.length > 0;
   const scanHnValue = scanHnFromSearchQuery(searchQuery, resolvedHn);
 
   return (
@@ -1200,7 +1532,8 @@ export default function PatientMedicationSearchPage() {
         <header className="-mx-4 mb-6 border-b border-flow-border bg-white px-4 py-4 md:-mx-6 md:px-6">
           <h1 className="text-xl font-bold text-flow-text md:text-2xl">ข้อมูลการรักษา</h1>
           <p className="mt-1 text-xs text-flow-muted md:text-sm">
-            ค้นหาด้วย HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล — ดูข้อมูลยา, Lab, ซักประวัติ, รหัสวินิจฉัย
+            ค้นหาด้วย HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล — ดูข้อมูลยา, Lab, ซักประวัติ,
+            รหัสวินิจฉัย
           </p>
         </header>
 
@@ -1248,7 +1581,7 @@ export default function PatientMedicationSearchPage() {
                 type="button"
                 onClick={() => void openOpdscan()}
               >
-                <FileText className="h-4 w-4 shrink-0" aria-hidden />
+                <FileText aria-hidden className="h-4 w-4 shrink-0" />
                 {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์สแกน"}
               </button>
               {scanError ? (
@@ -1317,6 +1650,7 @@ export default function PatientMedicationSearchPage() {
                     const count = activeDates.filter(
                       (iso) => isoToBuddhistYear(iso) === Number(year)
                     ).length;
+
                     return `${year} (${count} วัน)`;
                   }}
                   label="ปี (พ.ศ.)"
@@ -1344,11 +1678,11 @@ export default function PatientMedicationSearchPage() {
             </p>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 snap-x snap-mandatory scrollbar-thin">
             {TREATMENT_TABS.map((tab) => (
               <button
                 key={tab.id}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                className={`shrink-0 snap-start rounded-lg px-3 py-2 text-xs font-medium touch-manipulation ${
                   contentTab === tab.id
                     ? "bg-brand-600 text-white"
                     : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
@@ -1363,58 +1697,62 @@ export default function PatientMedicationSearchPage() {
         </section>
 
         {contentTab === "drug" && (
-            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
-              {groupedDrugDays.length === 0 ? (
-                <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                  {tabEmptyMessage(hasResults, "ไม่มีรายการยาในวันที่เลือก")}
-                </p>
-              ) : (
-                <div className="flex min-h-[16rem] flex-col md:flex-row">
-                  <div className="border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r">
-                    <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      วันสั่งยา
-                    </p>
-                    <ul className="max-h-[28rem] overflow-y-auto">
-                      {groupedDrugDays.map((group) => {
-                        const selected = selectedDrugDayKey === group.key;
+          <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+            {groupedDrugDays.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                {tabEmptyMessage(hasResults, "ไม่มีรายการยาในวันที่เลือก")}
+              </p>
+            ) : (
+              <div className="flex min-h-[16rem] flex-col md:flex-row">
+                <div
+                  className={`border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r ${
+                    showDrugDayList ? "block" : "hidden md:block"
+                  }`}
+                >
+                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                    วันสั่งยา
+                    <span className="ml-2 font-normal normal-case text-flow-muted">
+                      ({groupedDrugDays.length} วัน)
+                    </span>
+                  </p>
+                  <ul className="max-h-[28rem] divide-y divide-flow-border overflow-y-auto border-t border-flow-border">
+                    {groupedDrugDays.map((group) => (
+                      <li key={group.key}>
+                        <TreatmentDayButton
+                          dateIso={group.dateIso}
+                          isMobile={isMobile}
+                          metaLine={`${group.items.length} รายการ · ${formatVisitTypes(group.visitTypes)}${
+                            patientHeader?.multiple ? ` · HN ${formatHnDisplay(group.hn)}` : ""
+                          }`}
+                          selected={selectedDrugDayKey === group.key}
+                          onSelect={() => handleDrugDaySelect(group.key)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-                        return (
-                          <li key={group.key}>
-                            <button
-                              className={`w-full truncate border-b border-flow-border/60 px-3 py-2 text-left text-xs transition-colors last:border-b-0 ${
-                                selected
-                                  ? "bg-brand-50 text-brand-800 ring-1 ring-inset ring-brand-200"
-                                  : "text-flow-text hover:bg-slate-50"
-                              }`}
-                              type="button"
-                              onClick={() => setSelectedDrugDayKey(group.key)}
-                            >
-                              <span className="font-medium">{isoToThaiDisplay(group.dateIso)}</span>
-                              {patientHeader?.multiple ? (
-                                <span className="text-flow-muted"> · HN {formatHnDisplay(group.hn)}</span>
-                              ) : null}
-                              <span className="text-flow-muted">
-                                {" "}
-                                · {group.items.length} รายการ · {formatVisitTypes(group.visitTypes)}
-                              </span>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      รายการยา
-                      {selectedDrugDay ? (
-                        <span className="ml-2 font-normal normal-case text-flow-text">
-                          — {isoToThaiDisplay(selectedDrugDay.dateIso)}
-                        </span>
-                      ) : null}
-                    </p>
+                <div className={`min-w-0 flex-1 ${showDrugItems ? "block" : "hidden md:block"}`}>
+                  <MobileBackBar
+                    label="กลับไปวันสั่งยา"
+                    show={isMobile && mobileDrugPanel === "items"}
+                    onBack={() => setMobileDrugPanel("days")}
+                  />
+                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                    รายการยา
                     {selectedDrugDay ? (
-                      <div className="overflow-x-auto">
+                      <span className="ml-2 font-normal normal-case text-flow-text">
+                        — {isoToThaiDisplay(selectedDrugDay.dateIso)}
+                        <span className="text-flow-muted">
+                          {" "}
+                          ({selectedDrugDay.items.length} รายการ)
+                        </span>
+                      </span>
+                    ) : null}
+                  </p>
+                  {selectedDrugDay ? (
+                    <>
+                      <div className="hidden overflow-x-auto md:block">
                         <table className="min-w-full text-left text-xs">
                           <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wide text-flow-muted">
                             <tr>
@@ -1446,18 +1784,11 @@ export default function PatientMedicationSearchPage() {
                                     <td className="px-3 py-2">{row.DSPNAME ?? "—"}</td>
                                   ) : null}
                                   <td className="whitespace-nowrap px-3 py-2">
-                                    <span
-                                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                        row.VISIT_TYPE === "IPD"
-                                          ? "bg-violet-100 text-violet-800"
-                                          : "bg-sky-100 text-sky-800"
-                                      }`}
-                                    >
-                                      {row.VISIT_TYPE}
-                                      {row.AN ? ` · ${row.AN}` : ""}
-                                    </span>
+                                    <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
                                   </td>
-                                  <td className="min-w-[12rem] px-3 py-2">{row.DRUG_NAME ?? "—"}</td>
+                                  <td className="min-w-[12rem] px-3 py-2">
+                                    {row.DRUG_NAME ?? "—"}
+                                  </td>
                                   <td className="whitespace-nowrap px-3 py-2 text-flow-text">
                                     {row.DRUG_DOSE?.trim() ? row.DRUG_DOSE : "—"}
                                   </td>
@@ -1470,7 +1801,9 @@ export default function PatientMedicationSearchPage() {
                                   <td className="px-3 py-2 text-flow-muted">
                                     {row.PTTYPE_NAME?.trim() ? row.PTTYPE_NAME : "—"}
                                   </td>
-                                  <td className="px-3 py-2 text-flow-muted">{row.MEDTYPE ?? "—"}</td>
+                                  <td className="px-3 py-2 text-flow-muted">
+                                    {row.MEDTYPE ?? "—"}
+                                  </td>
                                   <td className="px-3 py-2 text-flow-muted">
                                     {row.CLINIC_LCT_NAME ?? row.CLINIC_LCT ?? "—"}
                                   </td>
@@ -1483,70 +1816,88 @@ export default function PatientMedicationSearchPage() {
                           </tbody>
                         </table>
                       </div>
-                    ) : (
-                      <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                        เลือกวันที่จากรายการด้านซ้าย
-                      </p>
-                    )}
-                  </div>
+                      <div className="divide-y divide-flow-border md:hidden">
+                        {selectedDrugDay.items.map((row, index) => {
+                          const rowKey = `${selectedDrugDay.key}-${row.MEDITEM}-${row.CLINIC_LCT}-${row.AN ?? ""}-${row.DRUG_USAGE ?? ""}-${index}`;
+
+                          return (
+                            <DrugItemCard
+                              key={rowKey}
+                              row={row}
+                              showPatient={Boolean(patientHeader?.multiple)}
+                            />
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                      {isMobile ? "แตะวันที่เพื่อดูรายการยา" : "เลือกวันที่จากรายการด้านซ้าย"}
+                    </p>
+                  )}
                 </div>
-              )}
-            </section>
+              </div>
             )}
+          </section>
+        )}
 
-            {contentTab === "lab" && (
-            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
-              {groupedLabDays.length === 0 ? (
-                <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                  {tabEmptyMessage(hasResults, "ไม่มีรายการ Lab ในวันที่เลือก")}
-                </p>
-              ) : (
-                <div className="flex min-h-[16rem] flex-col md:flex-row">
-                  <div className="border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r">
-                    <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      วันที่ตรวจ
-                    </p>
-                    <ul className="max-h-[28rem] overflow-y-auto">
-                      {groupedLabDays.map((group) => {
-                        const selected = selectedLabDayKey === group.key;
+        {contentTab === "lab" && (
+          <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+            {groupedLabDays.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                {tabEmptyMessage(hasResults, "ไม่มีรายการ Lab ในวันที่เลือก")}
+              </p>
+            ) : (
+              <div className="flex min-h-[16rem] flex-col md:flex-row">
+                <div
+                  className={`border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r ${
+                    showLabDayList ? "block" : "hidden md:block"
+                  }`}
+                >
+                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                    วันที่ตรวจ
+                    <span className="ml-2 font-normal normal-case text-flow-muted">
+                      ({groupedLabDays.length} วัน)
+                    </span>
+                  </p>
+                  <ul className="max-h-[28rem] divide-y divide-flow-border overflow-y-auto border-t border-flow-border">
+                    {groupedLabDays.map((group) => (
+                      <li key={group.key}>
+                        <TreatmentDayButton
+                          dateIso={group.dateIso}
+                          isMobile={isMobile}
+                          metaLine={`${group.items.length} รายการ · ${formatVisitTypes(group.visitTypes)}${
+                            patientHeader?.multiple ? ` · HN ${formatHnDisplay(group.hn)}` : ""
+                          }`}
+                          selected={selectedLabDayKey === group.key}
+                          onSelect={() => handleLabDaySelect(group.key)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-                        return (
-                          <li key={group.key}>
-                            <button
-                              className={`w-full truncate border-b border-flow-border/60 px-3 py-2 text-left text-xs transition-colors last:border-b-0 ${
-                                selected
-                                  ? "bg-brand-50 text-brand-800 ring-1 ring-inset ring-brand-200"
-                                  : "text-flow-text hover:bg-slate-50"
-                              }`}
-                              type="button"
-                              onClick={() => setSelectedLabDayKey(group.key)}
-                            >
-                              <span className="font-medium">{isoToThaiDisplay(group.dateIso)}</span>
-                              {patientHeader?.multiple ? (
-                                <span className="text-flow-muted"> · HN {formatHnDisplay(group.hn)}</span>
-                              ) : null}
-                              <span className="text-flow-muted">
-                                {" "}
-                                · {group.items.length} รายการ · {formatVisitTypes(group.visitTypes)}
-                              </span>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      ผล Lab
-                      {selectedLabDay ? (
-                        <span className="ml-2 font-normal normal-case text-flow-text">
-                          — {isoToThaiDisplay(selectedLabDay.dateIso)}
-                        </span>
-                      ) : null}
-                    </p>
+                <div className={`min-w-0 flex-1 ${showLabItems ? "block" : "hidden md:block"}`}>
+                  <MobileBackBar
+                    label="กลับไปวันที่ตรวจ"
+                    show={isMobile && mobileLabPanel === "items"}
+                    onBack={() => setMobileLabPanel("days")}
+                  />
+                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                    ผล Lab
                     {selectedLabDay ? (
-                      <div className="overflow-x-auto">
+                      <span className="ml-2 font-normal normal-case text-flow-text">
+                        — {isoToThaiDisplay(selectedLabDay.dateIso)}
+                        <span className="text-flow-muted">
+                          {" "}
+                          ({selectedLabDay.items.length} รายการ)
+                        </span>
+                      </span>
+                    ) : null}
+                  </p>
+                  {selectedLabDay ? (
+                    <>
+                      <div className="hidden overflow-x-auto md:block">
                         <table className="min-w-full text-left text-xs">
                           <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wide text-flow-muted">
                             <tr>
@@ -1573,16 +1924,7 @@ export default function PatientMedicationSearchPage() {
                                     <td className="px-3 py-2">{row.DSPNAME ?? "—"}</td>
                                   ) : null}
                                   <td className="whitespace-nowrap px-3 py-2">
-                                    <span
-                                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                        row.VISIT_TYPE === "IPD"
-                                          ? "bg-violet-100 text-violet-800"
-                                          : "bg-sky-100 text-sky-800"
-                                      }`}
-                                    >
-                                      {row.VISIT_TYPE}
-                                      {row.AN ? ` · ${row.AN}` : ""}
-                                    </span>
+                                    <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
                                   </td>
                                   <td className="min-w-[14rem] px-3 py-2">{row.LAB_NAME ?? "—"}</td>
                                   <td className="min-w-[8rem] px-3 py-2 font-medium text-flow-text">
@@ -1597,147 +1939,168 @@ export default function PatientMedicationSearchPage() {
                           </tbody>
                         </table>
                       </div>
-                    ) : (
-                      <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                        เลือกวันที่จากรายการด้านซ้าย
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </section>
-            )}
+                      <div className="divide-y divide-flow-border md:hidden">
+                        {selectedLabDay.items.map((row, index) => {
+                          const rowKey = `${selectedLabDay.key}-${row.LABEXM}-${row.AN ?? ""}-${index}`;
 
-            {contentTab === "history" && (
-            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
-              {groupedHistoryDays.length === 0 ? (
-                <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                  {tabEmptyMessage(hasResults, "ไม่มีข้อมูลการซักประวัติในวันที่เลือก")}
-                </p>
-              ) : (
-                <div className="flex min-h-[16rem] flex-col md:flex-row">
-                  <div className="border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r">
-                    <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      วันที่มา
-                    </p>
-                    <ul className="max-h-[28rem] overflow-y-auto">
-                      {groupedHistoryDays.map((group) => {
-                        const selected = selectedHistoryDayKey === group.key;
-
-                        return (
-                          <li key={group.key}>
-                            <button
-                              className={`w-full truncate border-b border-flow-border/60 px-3 py-2 text-left text-xs transition-colors last:border-b-0 ${
-                                selected
-                                  ? "bg-brand-50 text-brand-800 ring-1 ring-inset ring-brand-200"
-                                  : "text-flow-text hover:bg-slate-50"
-                              }`}
-                              type="button"
-                              onClick={() => setSelectedHistoryDayKey(group.key)}
-                            >
-                              <span className="font-medium">{isoToThaiDisplay(group.dateIso)}</span>
-                              {patientHeader?.multiple ? (
-                                <span className="text-flow-muted"> · HN {formatHnDisplay(group.hn)}</span>
-                              ) : null}
-                              <span className="text-flow-muted">
-                                {" "}
-                                · {group.items.length} ครั้ง · {formatVisitTypes(group.visitTypes)}
-                              </span>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      การซักประวัติ
-                      {selectedHistoryDay ? (
-                        <span className="ml-2 font-normal normal-case text-flow-text">
-                          — {isoToThaiDisplay(selectedHistoryDay.dateIso)}
-                        </span>
-                      ) : null}
-                    </p>
-                    {selectedHistoryDay ? (
-                      <div className="max-h-[32rem] overflow-y-auto">
-                        {selectedHistoryVisits.length === 0 ? (
-                          <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                            ไม่มี visit ในวันที่เลือก
-                          </p>
-                        ) : (
-                          selectedHistoryVisits.map((row, index) => (
-                            <HistoryVisitCard
-                              key={`${selectedHistoryDay.key}-${row.VN ?? "na"}-${index}`}
+                          return (
+                            <LabItemCard
+                              key={rowKey}
                               row={row}
+                              showPatient={Boolean(patientHeader?.multiple)}
                             />
-                          ))
-                        )}
+                          );
+                        })}
                       </div>
-                    ) : (
-                      <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                        เลือกวันที่จากรายการด้านซ้าย
-                      </p>
-                    )}
-                  </div>
+                    </>
+                  ) : (
+                    <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                      {isMobile ? "แตะวันที่เพื่อดูผล Lab" : "เลือกวันที่จากรายการด้านซ้าย"}
+                    </p>
+                  )}
                 </div>
-              )}
-            </section>
+              </div>
             )}
+          </section>
+        )}
 
-            {contentTab === "diag" && (
-            <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
-              {groupedDiagDays.length === 0 ? (
-                <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                  {tabEmptyMessage(hasResults, "ไม่มีรหัสวินิจฉัยในวันที่เลือก")}
-                </p>
-              ) : (
-                <div className="flex min-h-[16rem] flex-col md:flex-row">
-                  <div className="border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r">
-                    <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      วันที่ visit
-                    </p>
-                    <ul className="max-h-[28rem] overflow-y-auto">
-                      {groupedDiagDays.map((group) => {
-                        const selected = selectedDiagDayKey === group.key;
+        {contentTab === "history" && (
+          <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+            {groupedHistoryDays.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                {tabEmptyMessage(hasResults, "ไม่มีข้อมูลการซักประวัติในวันที่เลือก")}
+              </p>
+            ) : (
+              <div className="flex min-h-[16rem] flex-col md:flex-row">
+                <div
+                  className={`border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r ${
+                    showHistoryDayList ? "block" : "hidden md:block"
+                  }`}
+                >
+                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                    วันที่มา
+                    <span className="ml-2 font-normal normal-case text-flow-muted">
+                      ({groupedHistoryDays.length} วัน)
+                    </span>
+                  </p>
+                  <ul className="max-h-[28rem] divide-y divide-flow-border overflow-y-auto border-t border-flow-border">
+                    {groupedHistoryDays.map((group) => (
+                      <li key={group.key}>
+                        <TreatmentDayButton
+                          dateIso={group.dateIso}
+                          isMobile={isMobile}
+                          metaLine={`${group.items.length} ครั้ง · ${formatVisitTypes(group.visitTypes)}${
+                            patientHeader?.multiple ? ` · HN ${formatHnDisplay(group.hn)}` : ""
+                          }`}
+                          selected={selectedHistoryDayKey === group.key}
+                          onSelect={() => handleHistoryDaySelect(group.key)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-                        return (
-                          <li key={group.key}>
-                            <button
-                              className={`w-full truncate border-b border-flow-border/60 px-3 py-2 text-left text-xs transition-colors last:border-b-0 ${
-                                selected
-                                  ? "bg-brand-50 text-brand-800 ring-1 ring-inset ring-brand-200"
-                                  : "text-flow-text hover:bg-slate-50"
-                              }`}
-                              type="button"
-                              onClick={() => setSelectedDiagDayKey(group.key)}
-                            >
-                              <span className="font-medium">{isoToThaiDisplay(group.dateIso)}</span>
-                              {patientHeader?.multiple ? (
-                                <span className="text-flow-muted"> · HN {formatHnDisplay(group.hn)}</span>
-                              ) : null}
-                              <span className="text-flow-muted">
-                                {" "}
-                                · {group.codes.length} รหัส · {formatVisitTypes(group.visitTypes)}
-                              </span>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      รหัสวินิจฉัย
-                      {selectedDiagDay ? (
-                        <span className="ml-2 font-normal normal-case text-flow-text">
-                          — {isoToThaiDisplay(selectedDiagDay.dateIso)}
+                <div className={`min-w-0 flex-1 ${showHistoryItems ? "block" : "hidden md:block"}`}>
+                  <MobileBackBar
+                    label="กลับไปวันที่มา"
+                    show={isMobile && mobileHistoryPanel === "items"}
+                    onBack={() => setMobileHistoryPanel("days")}
+                  />
+                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                    การซักประวัติ
+                    {selectedHistoryDay ? (
+                      <span className="ml-2 font-normal normal-case text-flow-text">
+                        — {isoToThaiDisplay(selectedHistoryDay.dateIso)}
+                        <span className="text-flow-muted">
+                          {" "}
+                          ({selectedHistoryVisits.length} ครั้ง)
                         </span>
-                      ) : null}
+                      </span>
+                    ) : null}
+                  </p>
+                  {selectedHistoryDay ? (
+                    <div className="max-h-[32rem] overflow-y-auto">
+                      {selectedHistoryVisits.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                          ไม่มี visit ในวันที่เลือก
+                        </p>
+                      ) : (
+                        selectedHistoryVisits.map((row, index) => (
+                          <HistoryVisitCard
+                            key={`${selectedHistoryDay.key}-${row.VN ?? "na"}-${index}`}
+                            row={row}
+                          />
+                        ))
+                      )}
+                    </div>
+                  ) : (
+                    <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                      {isMobile ? "แตะวันที่เพื่อดูการซักประวัติ" : "เลือกวันที่จากรายการด้านซ้าย"}
                     </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {contentTab === "diag" && (
+          <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+            {groupedDiagDays.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                {tabEmptyMessage(hasResults, "ไม่มีรหัสวินิจฉัยในวันที่เลือก")}
+              </p>
+            ) : (
+              <div className="flex min-h-[16rem] flex-col md:flex-row">
+                <div
+                  className={`border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r ${
+                    showDiagDayList ? "block" : "hidden md:block"
+                  }`}
+                >
+                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                    วันที่รับบริการ
+                    <span className="ml-2 font-normal normal-case text-flow-muted">
+                      ({groupedDiagDays.length} วัน)
+                    </span>
+                  </p>
+                  <ul className="max-h-[28rem] divide-y divide-flow-border overflow-y-auto border-t border-flow-border">
+                    {groupedDiagDays.map((group) => (
+                      <li key={group.key}>
+                        <TreatmentDayButton
+                          dateIso={group.dateIso}
+                          isMobile={isMobile}
+                          metaLine={`${group.codes.length} รหัส · ${formatVisitTypes(group.visitTypes)}${
+                            patientHeader?.multiple ? ` · HN ${formatHnDisplay(group.hn)}` : ""
+                          }`}
+                          selected={selectedDiagDayKey === group.key}
+                          onSelect={() => handleDiagDaySelect(group.key)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className={`min-w-0 flex-1 ${showDiagItems ? "block" : "hidden md:block"}`}>
+                  <MobileBackBar
+                    label="กลับไปวันที่รับบริการ"
+                    show={isMobile && mobileDiagPanel === "items"}
+                    onBack={() => setMobileDiagPanel("days")}
+                  />
+                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                    รหัสวินิจฉัย
                     {selectedDiagDay ? (
-                      <div className="overflow-x-auto">
+                      <span className="ml-2 font-normal normal-case text-flow-text">
+                        — {isoToThaiDisplay(selectedDiagDay.dateIso)}
+                        <span className="text-flow-muted">
+                          {" "}
+                          ({selectedDiagDay.codes.length} รหัส)
+                        </span>
+                      </span>
+                    ) : null}
+                  </p>
+                  {selectedDiagDay ? (
+                    <>
+                      <div className="hidden overflow-x-auto md:block">
                         <table className="min-w-full text-left text-xs">
                           <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wide text-flow-muted">
                             <tr>
@@ -1753,25 +2116,38 @@ export default function PatientMedicationSearchPage() {
                                 key={`${selectedDiagDay.key}-${row.ICD10}-${row.VISIT_REF}-${index}`}
                                 className="hover:bg-slate-50/80"
                               >
-                                <td className="whitespace-nowrap px-3 py-2 font-mono">{row.ICD10 ?? "—"}</td>
+                                <td className="whitespace-nowrap px-3 py-2 font-mono">
+                                  {row.ICD10 ?? "—"}
+                                </td>
                                 <td className="min-w-[14rem] px-3 py-2">{row.ICD10_NAME ?? "—"}</td>
                                 <td className="whitespace-nowrap px-3 py-2">{row.DIAGTYPE ?? "—"}</td>
-                                <td className="whitespace-nowrap px-3 py-2 font-mono">{row.VISIT_REF ?? "—"}</td>
+                                <td className="whitespace-nowrap px-3 py-2 font-mono">
+                                  {row.VISIT_REF ?? "—"}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
-                    ) : (
-                      <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                        เลือกวันที่จากรายการด้านซ้าย
-                      </p>
-                    )}
-                  </div>
+                      <div className="divide-y divide-flow-border md:hidden">
+                        {selectedDiagDay.codes.map((row, index) => (
+                          <DiagnosisItemCard
+                            key={`${selectedDiagDay.key}-${row.ICD10}-${row.VISIT_REF}-${index}`}
+                            row={row}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                      {isMobile ? "แตะวันที่เพื่อดูรหัสวินิจฉัย" : "เลือกวันที่จากรายการด้านซ้าย"}
+                    </p>
+                  )}
                 </div>
-              )}
-            </section>
+              </div>
             )}
+          </section>
+        )}
       </main>
 
       {showPatientModal ? (
@@ -1931,7 +2307,9 @@ export default function PatientMedicationSearchPage() {
               {scanDirLoading ? (
                 <p className="px-4 py-8 text-center text-sm text-flow-muted">กำลังโหลด...</p>
               ) : scanFiles.length === 0 ? (
-                <p className="px-4 py-8 text-center text-sm text-flow-muted">ไม่พบไฟล์ในโฟลเดอร์นี้</p>
+                <p className="px-4 py-8 text-center text-sm text-flow-muted">
+                  ไม่พบไฟล์ในโฟลเดอร์นี้
+                </p>
               ) : (
                 <table className="min-w-full text-left text-xs">
                   <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">

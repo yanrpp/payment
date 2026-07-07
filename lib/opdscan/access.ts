@@ -26,13 +26,12 @@ async function connectShare(): Promise<void> {
   const { username, password } = opdscanConfig;
 
   try {
-    await execFileAsync(
-      "net",
-      ["use", uncRoot, password, `/user:${username}`],
-      { windowsHide: true }
-    );
+    await execFileAsync("net", ["use", uncRoot, password, `/user:${username}`], {
+      windowsHide: true,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
     if (!/already|1219|multiple connections/i.test(message)) {
       throw new Error(`เชื่อมต่อโฟลเดอร์สแกน OPD ไม่สำเร็จ: ${message}`);
     }
@@ -72,6 +71,7 @@ function resolvePatientDir(
   subPath = ""
 ): { uncPath: string; relativePath: string; patientRoot: string } {
   const parts = parseHnForOpdscan(hnInput);
+
   if (!parts) {
     throw new Error("รูปแบบ HN ไม่ถูกต้อง (ใช้เช่น 19999/99)");
   }
@@ -91,6 +91,7 @@ function resolvePatientDir(
 
 function assertSafeFileName(fileName: string): void {
   const base = path.win32.basename(fileName);
+
   if (!base || base !== fileName || base === "." || base === "..") {
     throw new Error("ชื่อไฟล์ไม่ถูกต้อง");
   }
@@ -110,10 +111,12 @@ export async function listOpdscanFiles(
   const { uncPath, relativePath } = resolvePatientDir(hnInput, subPath);
 
   let entries;
+
   try {
     entries = await fs.readdir(uncPath, { withFileTypes: true });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
+
     if (code === "ENOENT") {
       throw new Error(`ไม่พบโฟลเดอร์สแกน: ${uncPath}`);
     }
@@ -136,6 +139,7 @@ export async function listOpdscanFiles(
 
     try {
       const stat = await fs.stat(fullPath);
+
       size = stat.size;
       modified = stat.mtime.toISOString();
     } catch {
@@ -152,6 +156,7 @@ export async function listOpdscanFiles(
 
   files.sort((a, b) => {
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+
     return a.name.localeCompare(b.name, "th");
   });
 
@@ -170,11 +175,13 @@ export async function resolveOpdscanFilePath(
   await ensureShare();
 
   const segments = normalizeSubPathSegments(relativeFile.replace(/\\/g, "/"));
+
   if (segments.length === 0) {
     throw new Error("ชื่อไฟล์ไม่ถูกต้อง");
   }
 
   const fileName = segments[segments.length - 1]!;
+
   assertSafeFileName(fileName);
 
   const { patientRoot } = resolvePatientDir(hnInput);
@@ -182,11 +189,13 @@ export async function resolveOpdscanFilePath(
 
   try {
     const stat = await fs.stat(filePath);
+
     if (!stat.isFile()) {
       throw new Error("ไม่พบไฟล์ที่ต้องการ");
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
+
     if (code === "ENOENT") {
       throw new Error("ไม่พบไฟล์ที่ต้องการ");
     }
@@ -198,6 +207,7 @@ export async function resolveOpdscanFilePath(
 
 export function guessContentType(fileName: string): string {
   const ext = path.extname(fileName).toLowerCase();
+
   switch (ext) {
     case ".pdf":
       return "application/pdf";

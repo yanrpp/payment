@@ -49,8 +49,7 @@ export default async function handler(
   }
 
   const hnValue = typeof hn === "string" && hn.trim() !== "" ? hn.trim() : null;
-  const cardnoValue =
-    typeof cardno === "string" && cardno.trim() !== "" ? cardno.trim() : null;
+  const cardnoValue = typeof cardno === "string" && cardno.trim() !== "" ? cardno.trim() : null;
 
   const whereHn = hnValue != null ? " AND ovst.hn = :hn" : "";
   const whereCardno = cardnoValue != null ? " AND ptno.cardno = :cardno" : "";
@@ -113,6 +112,7 @@ export default async function handler(
   `;
 
   const params: Record<string, unknown> = { d1, d2 };
+
   if (hnValue != null) params.hn = hnValue;
   if (cardnoValue != null) params.cardno = cardnoValue;
 
@@ -136,4 +136,3 @@ export default async function handler(
     });
   }
 }
-

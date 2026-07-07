@@ -8,5 +8,6 @@ export const opdscanConfig = {
 
 export function getOpdscanUncRoot(): string {
   const { host, share } = opdscanConfig;
+
   return `\\\\${host}\\${share}`;
 }

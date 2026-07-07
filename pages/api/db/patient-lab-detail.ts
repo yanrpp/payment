@@ -124,6 +124,7 @@ export default async function handler(
 
   try {
     const labResult = await executeQuery<PatientLabItemRow>(sqlLabItems, params);
+
     labItems = labResult.rows ?? [];
   } catch {
     // ตาราง lvstexm อาจไม่มีใน schema (ORA-00942) — คืน labItems เป็น []
@@ -131,6 +132,7 @@ export default async function handler(
 
   try {
     const egfrResult = await executeQuery<PatientLabEgfrSummaryRow>(sqlEgfrSummary, params);
+
     egfrSummary = egfrResult.rows ?? [];
   } catch {
     // ตาราง ptdiag หรือ dct อาจไม่มีใน schema (ORA-00942) — คืน egfrSummary เป็น []

@@ -10,13 +10,16 @@ import { siteConfig } from "@/config/site";
 
 function normalizeFieldForFilter(value: unknown): string {
   if (value === null || value === undefined) return "";
+
   return String(value).toLowerCase();
 }
 
 function filterStringOptions(options: string[], query: string): string[] {
   const trimmed = query.trim();
+
   if (!trimmed) return options;
   const needle = normalizeFieldForFilter(trimmed);
+
   return options.filter((opt) => normalizeFieldForFilter(opt).includes(needle));
 }
 
@@ -32,6 +35,7 @@ type PatientCostRow = {
 
 function pttypeDisplayName(row: PatientCostRow): string {
   const n = row.PTTYPE_NAME?.trim();
+
   return n ? n : "(ไม่ระบุ)";
 }
 
@@ -106,15 +110,18 @@ type PatientCostItemRow = {
 
 function formatHnDisplay(value: unknown): string {
   const raw = String(value ?? "").trim();
+
   if (!raw) return "";
   if (raw.includes("/") || raw.includes("-")) return raw;
 
   const digits = raw.replace(/\D/g, "");
+
   if (digits.length < 3) return raw;
 
   const yearSuffix = digits.slice(0, 2);
   const runningRaw = digits.slice(2);
   const running = runningRaw.replace(/^0+/, "") || "0";
+
   return `${running}/${yearSuffix}`;
 }
 
@@ -145,10 +152,12 @@ function filterDrugSummaryByIncgrp(
     input.filter((r) => {
       const sale = Number(r.TOTAL_SALE ?? 0);
       const profit = Number(r.TOTAL_PROFIT ?? 0);
+
       if (zeroSaleOnly && sale !== 0) return false;
       if (negativeProfitOnly && profit >= 0) return false;
       if (excludeZeroSale && sale === 0) return false;
       if (excludeNegativeProfit && profit < 0) return false;
+
       return true;
     });
 
@@ -223,7 +232,12 @@ export default function PatientCostPage() {
   const [costItemsError, setCostItemsError] = useState<string | null>(null);
   const [expandedIncgrp, setExpandedIncgrp] = useState<number | null>(null);
 
-  const runSearch = async (params: { d1: string; d2: string; hnValue: string; cardnoValue: string }) => {
+  const runSearch = async (params: {
+    d1: string;
+    d2: string;
+    hnValue: string;
+    cardnoValue: string;
+  }) => {
     setLoading(true);
     setError(null);
     setRows([]);
@@ -280,14 +294,17 @@ export default function PatientCostPage() {
 
   useEffect(() => {
     const today = localTodayIso();
+
     void runSearch({ d1: today, d2: today, hnValue: "", cardnoValue: "" });
   }, []);
 
   const pttypeOptions = useMemo(() => {
     const set = new Set<string>();
+
     for (const r of rows) {
       set.add(pttypeDisplayName(r));
     }
+
     return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
   }, [rows]);
 
@@ -298,6 +315,7 @@ export default function PatientCostPage() {
 
   const filteredRows = useMemo(() => {
     if (filterPttype.length === 0) return rows;
+
     return rows.filter((r) => filterPttype.includes(pttypeDisplayName(r)));
   }, [rows, filterPttype]);
 
@@ -329,11 +347,14 @@ export default function PatientCostPage() {
     if (!pttypeDropdownOpen) return;
     const closeOnOutside = (e: MouseEvent) => {
       const el = pttypeDropdownRef.current;
+
       if (el && !el.contains(e.target as Node)) {
         setPttypeDropdownOpen(false);
       }
     };
+
     document.addEventListener("mousedown", closeOnOutside);
+
     return () => document.removeEventListener("mousedown", closeOnOutside);
   }, [pttypeDropdownOpen]);
 
@@ -503,7 +524,9 @@ export default function PatientCostPage() {
         setCostItems(Array.isArray(jsonCostItems.data) ? jsonCostItems.data : []);
       }
     } catch (err) {
-      setCostItemsError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดรายการค่าใช้จ่าย");
+      setCostItemsError(
+        err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดรายการค่าใช้จ่าย"
+      );
     } finally {
       setCostItemsLoading(false);
     }
@@ -584,12 +607,12 @@ export default function PatientCostPage() {
                 </p>
                 <div ref={pttypeDropdownRef} className="relative w-full">
                   <button
-                    type="button"
-                    disabled={pttypeOptions.length === 0}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-flow-border bg-white px-3 py-2 text-left text-[11px] text-flow-text shadow-sm hover:bg-flow-input focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-controls="patient-cost-pttype-listbox"
                     aria-expanded={pttypeDropdownOpen}
                     aria-haspopup="listbox"
-                    aria-controls="patient-cost-pttype-listbox"
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-flow-border bg-white px-3 py-2 text-left text-[11px] text-flow-text shadow-sm hover:bg-flow-input focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={pttypeOptions.length === 0}
+                    type="button"
                     onClick={() => {
                       if (pttypeOptions.length === 0) return;
                       setPttypeDropdownOpen((o) => !o);
@@ -599,29 +622,33 @@ export default function PatientCostPage() {
                       {pttypeOptions.length === 0
                         ? "ไม่มีรายการสิทธิในผลลัพธ์"
                         : filterPttype.length === 0
-                          ? "ทุกสิทธิ — แตะเพื่อเลือกกรอง (มีทั้งหมด " + pttypeOptions.length + " รายการ)"
+                          ? "ทุกสิทธิ — แตะเพื่อเลือกกรอง (มีทั้งหมด " +
+                            pttypeOptions.length +
+                            " รายการ)"
                           : `เลือกแล้ว ${filterPttype.length} สิทธิ — แตะเพื่อเปลี่ยน`}
                     </span>
-                    <span className="shrink-0 text-slate-400" aria-hidden>
+                    <span aria-hidden className="shrink-0 text-slate-400">
                       {pttypeDropdownOpen ? "▲" : "▼"}
                     </span>
                   </button>
                   {pttypeDropdownOpen && pttypeOptions.length > 0 && (
                     <div
-                      id="patient-cost-pttype-listbox"
-                      className="absolute left-0 right-0 z-30 mt-1 rounded-lg border border-flow-border bg-white p-2 shadow-lg ring-1 ring-black/5"
-                      role="listbox"
-                      aria-multiselectable="true"
                       aria-labelledby="patient-cost-pttype-filter-label"
+                      aria-multiselectable="true"
+                      className="absolute left-0 right-0 z-30 mt-1 rounded-lg border border-flow-border bg-white p-2 shadow-lg ring-1 ring-black/5"
+                      id="patient-cost-pttype-listbox"
+                      role="listbox"
                     >
                       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-2 text-[10px]">
                         <button
-                          type="button"
                           className="rounded border border-flow-border bg-flow-input px-2 py-0.5 text-flow-text hover:bg-brand-50"
+                          type="button"
                           onClick={() => {
                             setFilterPttype((prev) => {
                               const next = new Set(prev);
+
                               for (const o of pttypeOptionsFiltered) next.add(o);
+
                               return Array.from(next);
                             });
                             setPage(1);
@@ -630,10 +657,11 @@ export default function PatientCostPage() {
                           เลือกทั้งหมด (ตามที่ค้นเห็น)
                         </button>
                         <button
-                          type="button"
                           className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
+                          type="button"
                           onClick={() => {
                             const visible = new Set(pttypeOptionsFiltered);
+
                             setFilterPttype((prev) => prev.filter((item) => !visible.has(item)));
                             setPage(1);
                           }}
@@ -641,8 +669,8 @@ export default function PatientCostPage() {
                           ไม่เลือกทั้งหมด (ตามที่ค้นเห็น)
                         </button>
                         <button
-                          type="button"
                           className="rounded border border-flow-border bg-white px-2 py-0.5 text-flow-text hover:bg-flow-input"
+                          type="button"
                           onClick={() => {
                             setFilterPttype([]);
                             setFilterPttypeListQuery("");
@@ -653,12 +681,12 @@ export default function PatientCostPage() {
                         </button>
                       </div>
                       <input
+                        autoComplete="off"
+                        className="ui-input-sm mt-2 text-[11px] py-1.5"
+                        placeholder="พิมพ์เพื่อค้นหาชื่อสิทธิ..."
                         type="search"
                         value={filterPttypeListQuery}
                         onChange={(e) => setFilterPttypeListQuery(e.target.value)}
-                        placeholder="พิมพ์เพื่อค้นหาชื่อสิทธิ..."
-                        className="ui-input-sm mt-2 text-[11px] py-1.5"
-                        autoComplete="off"
                         onKeyDown={(e) => {
                           if (e.key === "Escape") setPttypeDropdownOpen(false);
                         }}
@@ -679,17 +707,19 @@ export default function PatientCostPage() {
                                 className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-[11px] text-flow-text hover:bg-white"
                               >
                                 <input
-                                  type="checkbox"
                                   checked={filterPttype.includes(opt)}
+                                  className="ui-checkbox mt-0.5 shrink-0"
+                                  type="checkbox"
                                   onChange={(e) => {
                                     if (e.target.checked) {
                                       setFilterPttype((prev) => [...prev, opt]);
                                     } else {
-                                      setFilterPttype((prev) => prev.filter((item) => item !== opt));
+                                      setFilterPttype((prev) =>
+                                        prev.filter((item) => item !== opt)
+                                      );
                                     }
                                     setPage(1);
                                   }}
-                                  className="ui-checkbox mt-0.5 shrink-0"
                                 />
                                 <span className="min-w-0 flex-1 leading-snug" title={opt}>
                                   {opt}
@@ -703,7 +733,8 @@ export default function PatientCostPage() {
                   )}
                 </div>
                 <p className="mt-2 text-[10px] text-flow-muted">
-                  ไม่เลือก = แสดงทุกสิทธิ · เลือกอย่างน้อยหนึ่งรายการ = แสดงเฉพาะแถวที่ตรงสิทธิที่เลือก
+                  ไม่เลือก = แสดงทุกสิทธิ · เลือกอย่างน้อยหนึ่งรายการ =
+                  แสดงเฉพาะแถวที่ตรงสิทธิที่เลือก
                 </p>
               </div>
             )}
@@ -812,7 +843,8 @@ export default function PatientCostPage() {
                         className="px-3 py-6 text-center text-xs text-amber-900 md:text-sm"
                         colSpan={7}
                       >
-                        ไม่มีแถวที่ตรงกับสิทธิที่เลือก กรุณาเลือกสิทธิเพิ่มหรือกด &quot;ล้างฟิลเตอร์สิทธิ&quot;
+                        ไม่มีแถวที่ตรงกับสิทธิที่เลือก กรุณาเลือกสิทธิเพิ่มหรือกด
+                        &quot;ล้างฟิลเตอร์สิทธิ&quot;
                       </td>
                     </tr>
                   ) : (
@@ -843,7 +875,10 @@ export default function PatientCostPage() {
                           {row.CARDNO ?? "—"}
                         </td>
                         <td className="px-3 py-2 text-flow-text">
-                          <span className="line-clamp-2 break-words" title={row.DSPNAME ?? undefined}>
+                          <span
+                            className="line-clamp-2 break-words"
+                            title={row.DSPNAME ?? undefined}
+                          >
                             {row.DSPNAME ?? "—"}
                           </span>
                         </td>
@@ -902,7 +937,8 @@ export default function PatientCostPage() {
 
         <section className="mt-4 text-[11px] md:text-xs text-flow-muted">
           <p>
-            เวอร์ชันระบบต้นแบบ: {siteConfig.version} — API: <code>/api/db/patient-cost</code>
+            เวอร์ชัน
+            : {siteConfig.version} — API: <code>/api/db/patient-cost</code>
           </p>
         </section>
       </main>
@@ -1019,8 +1055,8 @@ export default function PatientCostPage() {
                                     className="border-b border-dashed border-slate-100 py-1"
                                   >
                                     <button
-                                      type="button"
                                       className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-flow-input"
+                                      type="button"
                                       onClick={() =>
                                         setExpandedIncgrp((prev) =>
                                           prev === igr.INCGRP ? null : igr.INCGRP
@@ -1052,7 +1088,6 @@ export default function PatientCostPage() {
                                     </button>
                                   </div>
                                 ))}
-
                               </div>
                             )}
                           {!incgrpBreakdownLoading &&
@@ -1205,17 +1240,23 @@ export default function PatientCostPage() {
                                                   </td>
                                                   <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {item.SALE_PRICE != null
-                                                      ? Number(item.SALE_PRICE).toLocaleString("th-TH", {
-                                                          minimumFractionDigits: 2,
-                                                          maximumFractionDigits: 2,
-                                                        })
+                                                      ? Number(item.SALE_PRICE).toLocaleString(
+                                                          "th-TH",
+                                                          {
+                                                            minimumFractionDigits: 2,
+                                                            maximumFractionDigits: 2,
+                                                          }
+                                                        )
                                                       : "—"}
                                                   </td>
                                                   <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
-                                                    {Number(item.INCAMT ?? 0).toLocaleString("th-TH", {
-                                                      minimumFractionDigits: 2,
-                                                      maximumFractionDigits: 2,
-                                                    })}
+                                                    {Number(item.INCAMT ?? 0).toLocaleString(
+                                                      "th-TH",
+                                                      {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                      }
+                                                    )}
                                                   </td>
                                                 </tr>
                                               ))}
@@ -1223,7 +1264,9 @@ export default function PatientCostPage() {
                                           </table>
                                         </div>
                                       ) : (
-                                        <p className="text-flow-muted">ไม่มีรายการค่าใช้จ่าย Lab ในวันนี้</p>
+                                        <p className="text-flow-muted">
+                                          ไม่มีรายการค่าใช้จ่าย Lab ในวันนี้
+                                        </p>
                                       )}
                                     </div>
                                   )}
@@ -1238,56 +1281,58 @@ export default function PatientCostPage() {
                               {expandedIncgrp !== SPECIAL_SECTION_XRAY &&
                                 expandedIncgrp !== SPECIAL_SECTION_LAB &&
                                 !isDrugRelatedIncgrp(expandedIncgrp) && (
-                                <>
-                                  {costItemsLoading && (
-                                    <p className="py-2 text-[11px] text-flow-muted">
-                                      กำลังโหลดรายการค่าใช้จ่าย...
-                                    </p>
-                                  )}
-                                  {costItemsError && (
-                                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
-                                      {costItemsError}
-                                    </p>
-                                  )}
-                                  {!costItemsLoading &&
-                                    !costItemsError &&
-                                    filterCostItemsByIncgrp(costItems, expandedIncgrp).length ===
-                                      0 && (
-                                      <p className="text-[11px] text-flow-muted">
-                                        ไม่พบรายการค่าใช้จ่ายย่อยในหมวดนี้สำหรับเคสดังกล่าว
+                                  <>
+                                    {costItemsLoading && (
+                                      <p className="py-2 text-[11px] text-flow-muted">
+                                        กำลังโหลดรายการค่าใช้จ่าย...
                                       </p>
                                     )}
-                                  {!costItemsLoading &&
-                                    !costItemsError &&
-                                    filterCostItemsByIncgrp(costItems, expandedIncgrp).length >
-                                      0 && (
-                                      <div className="overflow-x-auto rounded border border-flow-border bg-white">
-                                        <table className="min-w-full border-collapse text-[11px] text-left">
-                                          <thead>
-                                            <tr className="border-b border-flow-border bg-slate-100">
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
-                                                รหัสรายการ
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
-                                                ชื่อรายการ
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
-                                                จำนวน
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
-                                                ต้นทุน
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
-                                                ราคาขาย
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
-                                                ค่าใช้จ่าย (บาท)
-                                              </th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {filterCostItemsByIncgrp(costItems, expandedIncgrp).map(
-                                              (item, idx) => (
+                                    {costItemsError && (
+                                      <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                                        {costItemsError}
+                                      </p>
+                                    )}
+                                    {!costItemsLoading &&
+                                      !costItemsError &&
+                                      filterCostItemsByIncgrp(costItems, expandedIncgrp).length ===
+                                        0 && (
+                                        <p className="text-[11px] text-flow-muted">
+                                          ไม่พบรายการค่าใช้จ่ายย่อยในหมวดนี้สำหรับเคสดังกล่าว
+                                        </p>
+                                      )}
+                                    {!costItemsLoading &&
+                                      !costItemsError &&
+                                      filterCostItemsByIncgrp(costItems, expandedIncgrp).length >
+                                        0 && (
+                                        <div className="overflow-x-auto rounded border border-flow-border bg-white">
+                                          <table className="min-w-full border-collapse text-[11px] text-left">
+                                            <thead>
+                                              <tr className="border-b border-flow-border bg-slate-100">
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                                                  รหัสรายการ
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                                                  ชื่อรายการ
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
+                                                  จำนวน
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
+                                                  ต้นทุน
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
+                                                  ราคาขาย
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
+                                                  ค่าใช้จ่าย (บาท)
+                                                </th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {filterCostItemsByIncgrp(
+                                                costItems,
+                                                expandedIncgrp
+                                              ).map((item, idx) => (
                                                 <tr
                                                   key={`cost-item-${expandedIncgrp}-${item.INCOME ?? ""}-${idx}`}
                                                   className="border-b border-slate-100 hover:bg-flow-input"
@@ -1313,240 +1358,261 @@ export default function PatientCostPage() {
                                                   </td>
                                                   <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
                                                     {item.SALE_PRICE != null
-                                                      ? Number(item.SALE_PRICE).toLocaleString("th-TH", {
-                                                          minimumFractionDigits: 2,
-                                                          maximumFractionDigits: 2,
-                                                        })
+                                                      ? Number(item.SALE_PRICE).toLocaleString(
+                                                          "th-TH",
+                                                          {
+                                                            minimumFractionDigits: 2,
+                                                            maximumFractionDigits: 2,
+                                                          }
+                                                        )
                                                       : "—"}
                                                   </td>
                                                   <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
-                                                    {Number(item.INCAMT ?? 0).toLocaleString("th-TH", {
-                                                      minimumFractionDigits: 2,
-                                                      maximumFractionDigits: 2,
-                                                    })}
+                                                    {Number(item.INCAMT ?? 0).toLocaleString(
+                                                      "th-TH",
+                                                      {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                      }
+                                                    )}
                                                   </td>
                                                 </tr>
-                                              )
-                                            )}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    )}
-                                </>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      )}
+                                  </>
                                 )}
 
                               {expandedIncgrp !== SPECIAL_SECTION_XRAY &&
                                 expandedIncgrp !== SPECIAL_SECTION_LAB &&
                                 isDrugRelatedIncgrp(expandedIncgrp) && (
-                                <>
-                                  <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded border border-flow-border bg-flow-input px-2 py-1.5 text-[11px]">
-                                    <div className="flex flex-wrap items-center gap-3">
-                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
-                                        <input
-                                          type="checkbox"
-                                          className="ui-checkbox"
-                                          checked={filterNegativeProfitOnly}
-                                          onChange={(event) => setFilterNegativeProfitOnly(event.target.checked)}
-                                        />
-                                        แสดงเฉพาะรายการที่กำไรรวมติดลบ
-                                      </label>
-                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
-                                        <input
-                                          type="checkbox"
-                                          className="ui-checkbox"
-                                          checked={excludeZeroSale}
-                                          onChange={(event) => setExcludeZeroSale(event.target.checked)}
-                                        />
-                                        ไม่แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
-                                      </label>
-                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
-                                        <input
-                                          type="checkbox"
-                                          className="ui-checkbox"
-                                          checked={excludeNegativeProfit}
-                                          onChange={(event) => setExcludeNegativeProfit(event.target.checked)}
-                                        />
-                                        ไม่แสดงเฉพาะรายการที่กำไรรวมติดลบ
-                                      </label>
-                                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
-                                        <input
-                                          type="checkbox"
-                                          className="ui-checkbox"
-                                          checked={filterZeroSaleOnly}
-                                          onChange={(event) => setFilterZeroSaleOnly(event.target.checked)}
-                                        />
-                                        แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
-                                      </label>
+                                  <>
+                                    <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded border border-flow-border bg-flow-input px-2 py-1.5 text-[11px]">
+                                      <div className="flex flex-wrap items-center gap-3">
+                                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
+                                          <input
+                                            checked={filterNegativeProfitOnly}
+                                            className="ui-checkbox"
+                                            type="checkbox"
+                                            onChange={(event) =>
+                                              setFilterNegativeProfitOnly(event.target.checked)
+                                            }
+                                          />
+                                          แสดงเฉพาะรายการที่กำไรรวมติดลบ
+                                        </label>
+                                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
+                                          <input
+                                            checked={excludeZeroSale}
+                                            className="ui-checkbox"
+                                            type="checkbox"
+                                            onChange={(event) =>
+                                              setExcludeZeroSale(event.target.checked)
+                                            }
+                                          />
+                                          ไม่แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
+                                        </label>
+                                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
+                                          <input
+                                            checked={excludeNegativeProfit}
+                                            className="ui-checkbox"
+                                            type="checkbox"
+                                            onChange={(event) =>
+                                              setExcludeNegativeProfit(event.target.checked)
+                                            }
+                                          />
+                                          ไม่แสดงเฉพาะรายการที่กำไรรวมติดลบ
+                                        </label>
+                                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-flow-text">
+                                          <input
+                                            checked={filterZeroSaleOnly}
+                                            className="ui-checkbox"
+                                            type="checkbox"
+                                            onChange={(event) =>
+                                              setFilterZeroSaleOnly(event.target.checked)
+                                            }
+                                          />
+                                          แสดงเฉพาะรายการที่มูลค่าขายรวม = 0
+                                        </label>
+                                      </div>
+                                      <button
+                                        className="rounded border border-flow-border bg-white px-2 py-0.5 text-[11px] text-flow-text hover:bg-flow-input"
+                                        type="button"
+                                        onClick={() => {
+                                          setFilterZeroSaleOnly(false);
+                                          setFilterNegativeProfitOnly(false);
+                                          setExcludeZeroSale(false);
+                                          setExcludeNegativeProfit(false);
+                                        }}
+                                      >
+                                        ล้างฟิลเตอร์
+                                      </button>
                                     </div>
-                                    <button
-                                      type="button"
-                                      className="rounded border border-flow-border bg-white px-2 py-0.5 text-[11px] text-flow-text hover:bg-flow-input"
-                                      onClick={() => {
-                                        setFilterZeroSaleOnly(false);
-                                        setFilterNegativeProfitOnly(false);
-                                        setExcludeZeroSale(false);
-                                        setExcludeNegativeProfit(false);
-                                      }}
-                                    >
-                                      ล้างฟิลเตอร์
-                                    </button>
-                                  </div>
-                                  {drugSummaryLoading && (
-                                    <p className="py-2 text-[11px] text-flow-muted">
-                                      กำลังโหลดข้อมูลค่ายา...
-                                    </p>
-                                  )}
-                                  {drugSummaryError && (
-                                    <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
-                                      {drugSummaryError}
-                                    </p>
-                                  )}
-                                  {!drugSummaryLoading &&
-                                    !drugSummaryError &&
-                                    drugSummary &&
-                                    filteredDrugRowsForExpanded.length ===
-                                      0 && (
+                                    {drugSummaryLoading && (
                                       <p className="py-2 text-[11px] text-flow-muted">
-                                        ไม่มีข้อมูลรายการยาสำหรับหมวดที่เลือก
+                                        กำลังโหลดข้อมูลค่ายา...
                                       </p>
                                     )}
-                                  {!drugSummaryLoading &&
-                                    !drugSummaryError &&
-                                    drugSummary &&
-                                    filteredDrugRowsForExpanded.length >
-                                      0 && (
-                                      <div className="overflow-x-auto rounded border border-flow-border bg-white">
-                                        <table className="min-w-full border-collapse text-[11px] text-left">
-                                          <thead>
-                                            <tr className="border-b border-flow-border bg-slate-100">
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
-                                                คลินิก
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
-                                                รหัสยา
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
-                                                ชื่อยา
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
-                                                จำนวนรวม
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
-                                                ต้นทุนรวม (ต้นทุน/หน่วย)
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
-                                                มูลค่าขายรวม
-                                              </th>
-                                              <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
-                                                กำไรรวม
-                                              </th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {filteredDrugRowsForExpanded.map(
-                                              (drug, idx) => (
-                                              <tr
-                                                key={`compact-${drug.MEDITEM}-${idx}`}
-                                                className="border-b border-slate-100 hover:bg-flow-input"
-                                              >
-                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
-                                                  {drug.CLINIC_LCT_NAME ?? drug.CLINIC_LCT ?? "—"}
-                                                </td>
-                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
-                                                  {drug.MEDITEM}
-                                                </td>
-                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
-                                                  {drug.DRUG_NAME ?? "—"}
-                                                </td>
-                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
-                                                  {Number(drug.TOTAL_QTY ?? 0).toLocaleString("th-TH")}
-                                                </td>
-                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
-                                                  {(() => {
-                                                    const totalCost = Number(drug.TOTAL_COST ?? 0);
-                                                    const totalQty = Number(drug.TOTAL_QTY ?? 0);
-                                                    const unitCost =
-                                                      totalQty > 0 ? totalCost / totalQty : 0;
+                                    {drugSummaryError && (
+                                      <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                                        {drugSummaryError}
+                                      </p>
+                                    )}
+                                    {!drugSummaryLoading &&
+                                      !drugSummaryError &&
+                                      drugSummary &&
+                                      filteredDrugRowsForExpanded.length === 0 && (
+                                        <p className="py-2 text-[11px] text-flow-muted">
+                                          ไม่มีข้อมูลรายการยาสำหรับหมวดที่เลือก
+                                        </p>
+                                      )}
+                                    {!drugSummaryLoading &&
+                                      !drugSummaryError &&
+                                      drugSummary &&
+                                      filteredDrugRowsForExpanded.length > 0 && (
+                                        <div className="overflow-x-auto rounded border border-flow-border bg-white">
+                                          <table className="min-w-full border-collapse text-[11px] text-left">
+                                            <thead>
+                                              <tr className="border-b border-flow-border bg-slate-100">
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                                                  คลินิก
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                                                  รหัสยา
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap">
+                                                  ชื่อยา
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
+                                                  จำนวนรวม
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
+                                                  ต้นทุนรวม (ต้นทุน/หน่วย)
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
+                                                  มูลค่าขายรวม
+                                                </th>
+                                                <th className="px-2 py-1.5 font-semibold text-flow-text whitespace-nowrap text-right">
+                                                  กำไรรวม
+                                                </th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {filteredDrugRowsForExpanded.map((drug, idx) => (
+                                                <tr
+                                                  key={`compact-${drug.MEDITEM}-${idx}`}
+                                                  className="border-b border-slate-100 hover:bg-flow-input"
+                                                >
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
+                                                    {drug.CLINIC_LCT_NAME ?? drug.CLINIC_LCT ?? "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
+                                                    {drug.MEDITEM}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap">
+                                                    {drug.DRUG_NAME ?? "—"}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
+                                                    {Number(drug.TOTAL_QTY ?? 0).toLocaleString(
+                                                      "th-TH"
+                                                    )}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
+                                                    {(() => {
+                                                      const totalCost = Number(
+                                                        drug.TOTAL_COST ?? 0
+                                                      );
+                                                      const totalQty = Number(drug.TOTAL_QTY ?? 0);
+                                                      const unitCost =
+                                                        totalQty > 0 ? totalCost / totalQty : 0;
 
-                                                    return `${totalCost.toLocaleString("th-TH", {
+                                                      return `${totalCost.toLocaleString("th-TH", {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                      })} (${unitCost.toLocaleString("th-TH", {
+                                                        minimumFractionDigits: 1,
+                                                        maximumFractionDigits: 2,
+                                                      })})`;
+                                                    })()}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
+                                                    {Number(drug.TOTAL_SALE ?? 0).toLocaleString(
+                                                      "th-TH",
+                                                      {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                      }
+                                                    )}
+                                                  </td>
+                                                  <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
+                                                    {Number(drug.TOTAL_PROFIT ?? 0).toLocaleString(
+                                                      "th-TH",
+                                                      {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                      }
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                              <tr className="bg-flow-input font-semibold text-flow-text">
+                                                <td className="px-2 py-1.5 whitespace-nowrap">
+                                                  รวม
+                                                </td>
+                                                <td className="px-2 py-1.5 whitespace-nowrap">—</td>
+                                                <td className="px-2 py-1.5 whitespace-nowrap">—</td>
+                                                <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                                  {filteredDrugRowsForExpanded
+                                                    .reduce(
+                                                      (acc, r) => acc + Number(r.TOTAL_QTY ?? 0),
+                                                      0
+                                                    )
+                                                    .toLocaleString("th-TH")}
+                                                </td>
+                                                <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                                  {(() => {
+                                                    const rows = filteredDrugRowsForExpanded;
+                                                    const totalCost = rows.reduce(
+                                                      (acc, r) => acc + Number(r.TOTAL_COST ?? 0),
+                                                      0
+                                                    );
+
+                                                    return totalCost.toLocaleString("th-TH", {
                                                       minimumFractionDigits: 2,
                                                       maximumFractionDigits: 2,
-                                                    })} (${unitCost.toLocaleString("th-TH", {
-                                                      minimumFractionDigits: 1,
-                                                      maximumFractionDigits: 2,
-                                                    })})`;
+                                                    });
                                                   })()}
                                                 </td>
-                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
-                                                  {Number(drug.TOTAL_SALE ?? 0).toLocaleString("th-TH", {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                  })}
+                                                <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                                  {filteredDrugRowsForExpanded
+                                                    .reduce(
+                                                      (acc, r) => acc + Number(r.TOTAL_SALE ?? 0),
+                                                      0
+                                                    )
+                                                    .toLocaleString("th-TH", {
+                                                      minimumFractionDigits: 2,
+                                                      maximumFractionDigits: 2,
+                                                    })}
                                                 </td>
-                                                <td className="px-2 py-1.5 text-flow-text whitespace-nowrap text-right">
-                                                  {Number(drug.TOTAL_PROFIT ?? 0).toLocaleString("th-TH", {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                  })}
+                                                <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                                  {filteredDrugRowsForExpanded
+                                                    .reduce(
+                                                      (acc, r) => acc + Number(r.TOTAL_PROFIT ?? 0),
+                                                      0
+                                                    )
+                                                    .toLocaleString("th-TH", {
+                                                      minimumFractionDigits: 2,
+                                                      maximumFractionDigits: 2,
+                                                    })}
                                                 </td>
                                               </tr>
-                                            )
-                                            )}
-                                            <tr className="bg-flow-input font-semibold text-flow-text">
-                                              <td className="px-2 py-1.5 whitespace-nowrap">รวม</td>
-                                              <td className="px-2 py-1.5 whitespace-nowrap">—</td>
-                                              <td className="px-2 py-1.5 whitespace-nowrap">—</td>
-                                              <td className="px-2 py-1.5 whitespace-nowrap text-right">
-                                                {filteredDrugRowsForExpanded
-                                                  .reduce(
-                                                    (acc, r) => acc + Number(r.TOTAL_QTY ?? 0),
-                                                    0
-                                                  )
-                                                  .toLocaleString("th-TH")}
-                                              </td>
-                                              <td className="px-2 py-1.5 whitespace-nowrap text-right">
-                                                {(() => {
-                                                  const rows = filteredDrugRowsForExpanded;
-                                                  const totalCost = rows.reduce(
-                                                    (acc, r) => acc + Number(r.TOTAL_COST ?? 0),
-                                                    0
-                                                  );
-
-                                                  return totalCost.toLocaleString("th-TH", {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                  });
-                                                })()}
-                                              </td>
-                                              <td className="px-2 py-1.5 whitespace-nowrap text-right">
-                                                {filteredDrugRowsForExpanded
-                                                  .reduce(
-                                                    (acc, r) => acc + Number(r.TOTAL_SALE ?? 0),
-                                                    0
-                                                  )
-                                                  .toLocaleString("th-TH", {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                  })}
-                                              </td>
-                                              <td className="px-2 py-1.5 whitespace-nowrap text-right">
-                                                {filteredDrugRowsForExpanded
-                                                  .reduce(
-                                                    (acc, r) => acc + Number(r.TOTAL_PROFIT ?? 0),
-                                                    0
-                                                  )
-                                                  .toLocaleString("th-TH", {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                  })}
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    )}
-                                </>
-                              )}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      )}
+                                  </>
+                                )}
                             </div>
                           )}
                         </div>
@@ -1555,7 +1621,6 @@ export default function PatientCostPage() {
                   })()}
                 </>
               )}
-
             </div>
           </div>
         </div>

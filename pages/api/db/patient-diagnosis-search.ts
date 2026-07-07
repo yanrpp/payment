@@ -36,6 +36,7 @@ const ICD10_NAME_EXPR = "COALESCE(ic.thainame, ic.name)";
 function isOptionalSchemaError(error: unknown): boolean {
   if (typeof error !== "object" || error === null || !("errorNum" in error)) return false;
   const code = Number((error as { errorNum: number }).errorNum);
+
   return code === 942 || code === 904;
 }
 
@@ -45,6 +46,7 @@ async function tryOptionalDiagQuery(
 ): Promise<PatientDiagnosisRow[]> {
   try {
     const result = await executeQuery<PatientDiagnosisRow>(sql, params, { logErrors: false });
+
     return result.rows ?? [];
   } catch (error) {
     if (isOptionalSchemaError(error)) return [];
@@ -61,6 +63,7 @@ export default async function handler(
   }
 
   const parsed = parsePatientSearchFilters(req, "TRUNC(ptdiag.vstdate)");
+
   if (!parsed.ok) {
     return res.status(parsed.status).json({ success: false, message: parsed.message });
   }
@@ -150,6 +153,7 @@ export default async function handler(
     const appendRows = (batch: PatientDiagnosisRow[] | undefined) => {
       for (const row of batch ?? []) {
         const key = `${row.HN}|${String(row.DIAG_DATE).slice(0, 10)}|${row.ICD10 ?? ""}|${row.DIAGTYPE ?? ""}|${row.VISIT_REF ?? ""}`;
+
         if (seen.has(key)) continue;
         seen.add(key);
         rows.push(row);
@@ -162,7 +166,9 @@ export default async function handler(
 
     rows.sort((a, b) => {
       const dateCmp = String(b.DIAG_DATE).localeCompare(String(a.DIAG_DATE));
+
       if (dateCmp !== 0) return dateCmp;
+
       return String(a.ICD10 ?? "").localeCompare(String(b.ICD10 ?? ""));
     });
 

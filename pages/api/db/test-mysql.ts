@@ -1,7 +1,7 @@
 /**
  * API Route: ทดสอบการเชื่อมต่อ MySQL Database
  * GET /api/db/test-mysql
- * ใช้สำหรับระบบต้นแบบ — ตรวจสอบ version และรายชื่อตารางใน schema ปัจจุบัน
+ * ใช้สำหรับระบบตรวจสอบค่าบริการ — ตรวจสอบ version และรายชื่อตารางใน schema ปัจจุบัน
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";

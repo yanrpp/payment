@@ -38,6 +38,7 @@ export function MultiSelectFilter({
 
   const filtered = options.filter((o) => {
     const haystack = formatOption ? `${formatOption(o)} ${o}` : o;
+
     return haystack.toLowerCase().includes(q.trim().toLowerCase());
   });
   const toggle = (opt: string) =>
@@ -106,7 +107,10 @@ export function MultiSelectFilter({
                     type="checkbox"
                     onChange={() => toggle(opt)}
                   />
-                  <span className="min-w-0 flex-1 leading-snug" title={formatOption ? formatOption(opt) : opt}>
+                  <span
+                    className="min-w-0 flex-1 leading-snug"
+                    title={formatOption ? formatOption(opt) : opt}
+                  >
                     {formatOption ? formatOption(opt) : opt}
                   </span>
                 </label>

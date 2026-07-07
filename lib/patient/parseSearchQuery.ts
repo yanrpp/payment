@@ -10,6 +10,7 @@ export type ParsedPatientSearch =
 /** แยกข้อความค้นหาเดียวเป็น HN / เลขบัตร 13 หลัก / ชื่อ-นามสกุล */
 export function parsePatientSearchQuery(raw: string): ParsedPatientSearch {
   const trimmed = raw.trim();
+
   if (!trimmed) return { kind: "empty" };
 
   const digitsOnly = trimmed.replace(/\D/g, "");
@@ -40,6 +41,8 @@ export function parsePatientSearchQuery(raw: string): ParsedPatientSearch {
 /** HN สำหรับเปิดไฟล์สแกน OPD จากช่องค้นหาเดียว */
 export function scanHnFromSearchQuery(searchQuery: string, resolvedHn: string): string {
   const parsed = parsePatientSearchQuery(searchQuery);
+
   if (parsed.kind === "hn") return searchQuery.trim();
+
   return resolvedHn.trim();
 }

@@ -5,10 +5,9 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
+import type { Entry } from "ldapts";
 
 import { Client } from "ldapts";
-
-import type { Entry } from "ldapts";
 
 function getLdapConfig(): {
   url: string;
@@ -33,9 +32,12 @@ function getAttr(entry: Entry, name: string): string {
     (k) => k.toLowerCase() === name.toLowerCase() && k !== "dn"
   );
   const key = keys[0];
+
   if (!key) return "";
   const val = entry[key];
+
   if (Array.isArray(val)) return (val[0] ?? "").toString().trim();
+
   return val != null ? String(val).trim() : "";
 }
 
@@ -45,10 +47,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const config = getLdapConfig();
+
   if (!config) {
     return res.status(400).json({
       success: false,
-      message: "ไม่ได้ตั้งค่า LDAP ใน .env.local (ต้องการ LDAP_URL, LDAP_BASE_DN, LDAP_BIND_DN, LDAP_BIND_PASSWORD)",
+      message:
+        "ไม่ได้ตั้งค่า LDAP ใน .env.local (ต้องการ LDAP_URL, LDAP_BASE_DN, LDAP_BIND_DN, LDAP_BIND_PASSWORD)",
       data: [],
       timestamp: new Date().toISOString(),
     });
@@ -58,10 +62,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     url: config.url,
     timeout: 15000,
     connectTimeout: 10000,
-    tlsOptions:
-      config.url.toLowerCase().startsWith("ldaps")
-        ? { minVersion: "TLSv1.2", rejectUnauthorized: false }
-        : undefined,
+    tlsOptions: config.url.toLowerCase().startsWith("ldaps")
+      ? { minVersion: "TLSv1.2", rejectUnauthorized: false }
+      : undefined,
   });
 
   try {
@@ -96,6 +99,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sizeLimit: 1,
         });
         const userEntry = userSearch.searchEntries[0] as Entry | undefined;
+
         if (!userEntry) continue;
         members.push({
           cn: getAttr(userEntry, "cn"),
@@ -119,6 +123,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
     try {
       await client.unbind();
     } catch {

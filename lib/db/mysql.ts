@@ -1,5 +1,5 @@
 /**
- * MySQL Connection Utility — ระบบต้นแบบ
+ * MySQL Connection Utility — ระบบตรวจสอบค่าบริการ
  * รองรับ MySQL / MariaDB / phpMyAdmin
  */
 

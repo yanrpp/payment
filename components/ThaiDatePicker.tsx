@@ -20,6 +20,7 @@ type ThaiDatePickerProps = {
 
 function parseIsoLocal(iso: string): Date {
   const [yearStr, monthStr, dayStr] = iso.split("-");
+
   return new Date(Number(yearStr), Number(monthStr) - 1, Number(dayStr));
 }
 
@@ -36,6 +37,7 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
     if (!value) return;
     setInputValue(isoToThaiInput(value));
     const d = parseIsoLocal(value);
+
     setViewYear(d.getFullYear());
     setViewMonth(d.getMonth());
   }, [value]);
@@ -45,15 +47,18 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
 
     // ถ้าผู้ใช้กรอกเป็นตัวเลขล้วน 8 หลัก เช่น 01012569 ให้จัดรูปแบบเป็น 01/01/2569 อัตโนมัติ
     const digitsOnly = raw.replace(/\D/g, "");
+
     if (digitsOnly.length === 8) {
       const day = digitsOnly.slice(0, 2);
       const month = digitsOnly.slice(2, 4);
       const year = digitsOnly.slice(4, 8);
+
       nextValue = `${day}/${month}/${year}`;
     }
 
     setInputValue(nextValue);
     const iso = thaiInputToIso(nextValue);
+
     if (iso) {
       onChange(iso);
     }
@@ -63,6 +68,7 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
     const iso = `${viewYear.toString().padStart(4, "0")}-${(viewMonth + 1)
       .toString()
       .padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+
     onChange(iso);
     setInputValue(isoToThaiInput(iso));
     setOpen(false);
@@ -71,6 +77,7 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
   const goMonth = (delta: number) => {
     let newMonth = viewMonth + delta;
     let newYear = viewYear;
+
     if (newMonth < 0) {
       newMonth = 11;
       newYear -= 1;
@@ -89,6 +96,7 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
   const selectedLabel = isoToThaiDisplay(value);
 
   const cells: (number | null)[] = [];
+
   for (let i = 0; i < firstDay; i += 1) {
     cells.push(null);
   }
@@ -98,14 +106,15 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
 
   return (
     <div className="relative flex w-full min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-medium text-flow-text">
+      <label className="text-xs font-medium text-flow-text" htmlFor={id}>
         {label}
       </label>
       <div className="relative">
         <input
-          id={id}
-          type="text"
           className="ui-input w-full pr-9"
+          id={id}
+          placeholder="เช่น 10/03/2569"
+          type="text"
           value={inputValue}
           onChange={(event) => handleInputChange(event.target.value)}
           onKeyDown={(event) => {
@@ -113,15 +122,17 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
               event.preventDefault();
             }
           }}
-          placeholder="เช่น 10/03/2569"
         />
         <button
-          type="button"
           aria-label="เปิดปฏิทินเลือกวันที่"
           className="absolute inset-y-0 right-0 flex items-center justify-center px-2 text-flow-muted hover:text-brand-600"
+          type="button"
           onClick={() => setOpen((prev) => !prev)}
         >
-          <span aria-hidden="true" className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-[10px]">
+          <span
+            aria-hidden="true"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-[10px]"
+          >
             📅
           </span>
         </button>
@@ -133,8 +144,8 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
         <div className="absolute z-30 top-full left-0 mt-1 w-64 rounded-xl border border-flow-border bg-white p-3 shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <button
-              type="button"
               className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50"
+              type="button"
               onClick={() => goMonth(-1)}
             >
               ‹
@@ -144,10 +155,11 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
             </div>
             <div className="flex items-center gap-1">
               <button
-                type="button"
                 className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-50"
+                type="button"
                 onClick={() => {
                   const d = parseIsoLocal(localTodayIso());
+
                   setViewYear(d.getFullYear());
                   setViewMonth(d.getMonth());
                 }}
@@ -155,9 +167,9 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
                 วันนี้
               </button>
               <button
-                type="button"
                 aria-label="ปิดปฏิทิน"
                 className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50"
+                type="button"
                 onClick={() => setOpen(false)}
               >
                 ✕
@@ -177,18 +189,16 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
             {cells.map((day, index) =>
               day ? (
                 <button
-                  // eslint-disable-next-line react/no-array-index-key
                   key={index}
-                  type="button"
                   className="h-7 rounded-md border border-transparent text-flow-text hover:border-brand-500 hover:bg-brand-50"
+                  type="button"
                   onClick={() => handleSelectDay(day)}
                 >
                   {day}
                 </button>
               ) : (
-                // eslint-disable-next-line react/no-array-index-key
                 <span key={index} />
-              ),
+              )
             )}
           </div>
         </div>
@@ -196,4 +206,3 @@ export function ThaiDatePicker({ id, label, value, onChange }: ThaiDatePickerPro
     </div>
   );
 }
-

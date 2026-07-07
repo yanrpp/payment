@@ -36,6 +36,7 @@ export default async function handler(
   }
 
   const parsed = parsePatientSearchFilters(req, "TRUNC(r.rvstdate)");
+
   if (!parsed.ok) {
     return res.status(parsed.status).json({ success: false, message: parsed.message });
   }

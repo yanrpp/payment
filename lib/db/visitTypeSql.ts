@@ -13,6 +13,7 @@ export function buildVisitTypeWhereSql(
   if (includeOpd) {
     return `\n        AND ${ovAlias}.an IS NULL AND ${prscAlias}.an IS NULL`;
   }
+
   return `\n        AND COALESCE(${ovAlias}.an, ${prscAlias}.an) IS NOT NULL`;
 }
 

@@ -294,6 +294,7 @@ function dedupeHistoryRows(rows: PatientHistoryRow[]): PatientHistoryRow[] {
 
   for (const row of rows) {
     const key = `${row.HN}|${row.VN ?? ""}|${row.VSTDATE}`;
+
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(row);
@@ -311,6 +312,7 @@ export default async function handler(
   }
 
   const parsed = parsePatientSearchFilters(req, "TRUNC(ov.vstdate)");
+
   if (!parsed.ok) {
     return res.status(parsed.status).json({ success: false, message: parsed.message });
   }
@@ -336,6 +338,7 @@ export default async function handler(
         const result = await executeQuery<PatientHistoryRow>(baseSql + tail, sql.params, {
           logErrors: false,
         });
+
         rows = result.rows ?? [];
         break;
       } catch (error) {

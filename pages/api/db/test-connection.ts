@@ -1,7 +1,7 @@
 /**
  * API Route: ทดสอบการเชื่อมต่อ Oracle Database
  * GET /api/db/test-connection
- * ใช้สำหรับระบบต้นแบบ — ตรวจสอบการเชื่อมต่อและ pool stats
+ * ใช้สำหรับระบบตรวจสอบค่าบริการ — ตรวจสอบการเชื่อมต่อและ pool stats
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";

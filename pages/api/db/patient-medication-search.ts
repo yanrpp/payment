@@ -2,7 +2,14 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
 import { executeQuery } from "@/lib/db/connection";
-import { sqlDrugDoseReadable, sqlDrugUsageFieldColumns, sqlDrugUsageJoins, sqlDrugUsageReadable, sqlPrscdtextJoin, sqlPrscdtextMedusageColumn } from "@/lib/db/drugUsageSql";
+import {
+  sqlDrugDoseReadable,
+  sqlDrugUsageFieldColumns,
+  sqlDrugUsageJoins,
+  sqlDrugUsageReadable,
+  sqlPrscdtextJoin,
+  sqlPrscdtextMedusageColumn,
+} from "@/lib/db/drugUsageSql";
 import { sqlUnitCost, sqlUnitSale } from "@/lib/db/meditemRateSql";
 
 export type PatientMedicationRow = {
@@ -53,19 +60,23 @@ const MAX_RANGE_DAYS = 366;
 
 function parseIsoDate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+
   if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
   const d = new Date(year, month - 1, day);
+
   if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
     return null;
   }
+
   return d;
 }
 
 function daysBetweenInclusive(d1: Date, d2: Date): number {
   const ms = d2.getTime() - d1.getTime();
+
   return Math.floor(ms / (24 * 60 * 60 * 1000)) + 1;
 }
 
@@ -90,9 +101,11 @@ export default async function handler(
   }
 
   let whereDate = "";
+
   if (d1Value != null && d2Value != null) {
     const start = parseIsoDate(d1Value);
     const end = parseIsoDate(d2Value);
+
     if (!start || !end) {
       return res.status(400).json({
         success: false,
@@ -117,8 +130,7 @@ export default async function handler(
   }
 
   const hnValue = typeof hn === "string" && hn.trim() !== "" ? hn.trim() : null;
-  const cardnoValue =
-    typeof cardno === "string" && cardno.trim() !== "" ? cardno.trim() : null;
+  const cardnoValue = typeof cardno === "string" && cardno.trim() !== "" ? cardno.trim() : null;
   const nameValue = typeof name === "string" && name.trim() !== "" ? name.trim() : null;
 
   if (hnValue == null && cardnoValue == null && nameValue == null) {
@@ -246,6 +258,7 @@ export default async function handler(
   `;
 
   const params: Record<string, unknown> = {};
+
   if (d1Value != null && d2Value != null) {
     params.d1 = d1Value;
     params.d2 = d2Value;

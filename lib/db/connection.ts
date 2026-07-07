@@ -116,6 +116,7 @@ async function initializeThickMode(): Promise<void> {
 
     if (errorMessage.includes("already been initialized")) {
       isThickModeInitialized = true;
+
       return;
     }
 

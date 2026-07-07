@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
@@ -57,6 +58,7 @@ export function AppShell({ children }: AppShellProps) {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(NAV_HIDDEN_KEY, "0");
       }
+
       return;
     }
 

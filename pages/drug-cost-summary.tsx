@@ -2303,7 +2303,7 @@ export default function DrugCostSummaryPage() {
 
         <section className="mt-4 text-[11px] md:text-xs text-flow-muted">
           <p>
-            เวอร์ชันระบบต้นแบบ: {siteConfig.version} — API:{" "}
+            เวอร์ชันระบบตรวจสอบค่าบริการ: {siteConfig.version} — API:{" "}
             <code>
               {activeTab === "period"
                 ? "/api/db/drug-cost-summary-period"

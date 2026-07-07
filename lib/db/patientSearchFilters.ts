@@ -23,19 +23,23 @@ type ParseErr = { ok: false; status: number; message: string };
 
 function parseIsoDate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+
   if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
   const d = new Date(year, month - 1, day);
+
   if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
     return null;
   }
+
   return d;
 }
 
 function daysBetweenInclusive(d1: Date, d2: Date): number {
   const ms = d2.getTime() - d1.getTime();
+
   return Math.floor(ms / (24 * 60 * 60 * 1000)) + 1;
 }
 
@@ -58,9 +62,11 @@ export function parsePatientSearchFilters(
   }
 
   let whereDate = "";
+
   if (d1Value != null && d2Value != null) {
     const start = parseIsoDate(d1Value);
     const end = parseIsoDate(d2Value);
+
     if (!start || !end) {
       return { ok: false, status: 400, message: "รูปแบบวันที่ไม่ถูกต้อง (ใช้ YYYY-MM-DD)" };
     }
@@ -80,8 +86,7 @@ export function parsePatientSearchFilters(
   }
 
   const hnValue = typeof hn === "string" && hn.trim() !== "" ? hn.trim() : null;
-  const cardnoValue =
-    typeof cardno === "string" && cardno.trim() !== "" ? cardno.trim() : null;
+  const cardnoValue = typeof cardno === "string" && cardno.trim() !== "" ? cardno.trim() : null;
   const nameValue = typeof name === "string" && name.trim() !== "" ? name.trim() : null;
 
   if (hnValue == null && cardnoValue == null && nameValue == null) {
@@ -104,6 +109,7 @@ export function parsePatientSearchFilters(
       : "";
 
   const params: Record<string, unknown> = {};
+
   if (d1Value != null && d2Value != null) {
     params.d1 = d1Value;
     params.d2 = d2Value;
@@ -122,6 +128,7 @@ export function parsePatientSearchFilters(
 /** สร้างเงื่อนไขช่วงวันที่สำหรับคอลัมน์ที่กำหนด (ใช้ bind :d1/:d2 เดิม) */
 export function buildWhereDateClause(dateColumnSql: string, bind: PatientSearchBind): string {
   if (bind.d1 == null || bind.d2 == null) return "";
+
   return `
         AND ${dateColumnSql} >= TO_DATE(:d1, 'YYYY-MM-DD')
         AND ${dateColumnSql} < TO_DATE(:d2, 'YYYY-MM-DD') + 1`;

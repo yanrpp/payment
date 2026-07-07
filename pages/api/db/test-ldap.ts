@@ -51,10 +51,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     url: config.url,
     timeout: 10000,
     connectTimeout: 10000,
-    tlsOptions:
-      config.url.toLowerCase().startsWith("ldaps")
-        ? { minVersion: "TLSv1.2", rejectUnauthorized: false }
-        : undefined,
+    tlsOptions: config.url.toLowerCase().startsWith("ldaps")
+      ? { minVersion: "TLSv1.2", rejectUnauthorized: false }
+      : undefined,
   });
 
   try {

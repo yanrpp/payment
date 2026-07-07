@@ -18,8 +18,7 @@ type AppSidebarProps = {
 export function AppSidebar({ hidden, onHide, mobileOpen, onCloseMobile }: AppSidebarProps) {
   const router = useRouter();
   const pathname = router.pathname;
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   const showMobileDrawer = !hidden && mobileOpen;
 
@@ -36,8 +35,8 @@ export function AppSidebar({ hidden, onHide, mobileOpen, onCloseMobile }: AppSid
       )}
 
       <aside
-        aria-label="เมนูหลัก"
         aria-hidden={hidden}
+        aria-label="เมนูหลัก"
         className={`flex h-screen w-64 shrink-0 flex-col bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 text-slate-300 shadow-xl transition-transform duration-200 ease-out md:static md:translate-x-0 ${
           hidden
             ? "hidden"

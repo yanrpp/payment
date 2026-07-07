@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+
 import { createReadStream } from "node:fs";
 
 import { respondError } from "@/lib/api/respond";
@@ -24,6 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(fileName)}"`);
 
     const stream = createReadStream(filePath);
+
     stream.on("error", (error) => {
       if (!res.headersSent) {
         respondError(res, "อ่านไฟล์สแกนไม่สำเร็จ", error);

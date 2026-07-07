@@ -53,7 +53,9 @@ export const Navbar = () => {
             />
             <div>
               <p className={subtitle({ class: "text-2xl font-bold" })}>{siteConfig.name}</p>
-              <p className={subtitle({ class: "text-sm text-default-500" })}>{siteConfig.description}</p>
+              <p className={subtitle({ class: "text-sm text-default-500" })}>
+                {siteConfig.description}
+              </p>
             </div>
           </NextLink>
         </NavbarBrand>

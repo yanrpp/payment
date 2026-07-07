@@ -34,12 +34,14 @@ export default async function handler(
   }
 
   const hnValue = typeof req.query.hn === "string" ? req.query.hn.trim() : "";
+
   if (!hnValue) {
     return res.status(400).json({ success: false, message: "กรุณาระบุ HN" });
   }
 
   const uncRoot = getOpdscanUncRoot();
   const previewPath = buildOpdscanUncPath(hnValue, uncRoot);
+
   if (!previewPath) {
     return res.status(400).json({
       success: false,
