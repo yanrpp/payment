@@ -23,6 +23,7 @@ import {
   formatPrescriptionNo,
   type PatientDrugRepeatPrintPayload,
 } from "@/lib/print/patientDrugRepeat";
+import type { PatientRegistrationData } from "@/pages/api/db/patient-registration";
 
 type PatientMedicationRow = {
   HN: string;
@@ -314,9 +315,10 @@ const NO_TREATMENT_DATA_MESSAGE =
 function tabEmptyMessage(hasResults: boolean, filteredMessage: string): string {
   return hasResults ? filteredMessage : SEARCH_PROMPT;
 }
-type TreatmentTab = "drug" | "lab" | "history" | "diag";
+type TreatmentTab = "register" | "drug" | "lab" | "history" | "diag";
 
 const TREATMENT_TABS: { id: TreatmentTab; label: string; dateLabel: string }[] = [
+  { id: "register", label: "ทะเบียน", dateLabel: "" },
   { id: "drug", label: "ยา", dateLabel: "วันที่มียา" },
   { id: "lab", label: "Lab", dateLabel: "วันที่มี Lab" },
   { id: "history", label: "ซักประวัติ", dateLabel: "วันที่มา" },
@@ -714,6 +716,173 @@ function resolveClinicalDataText(visit: DiagnosisVisitGroup): string | null {
   return joinUniqueClinicalTexts([visit.clinicalLeft, visit.clinicalRight]);
 }
 
+function FieldLine({
+  label,
+  value,
+  className = "",
+}: {
+  label: string;
+  value?: string | number | null;
+  className?: string;
+}) {
+  const text = value == null || String(value).trim() === "" ? "—" : String(value);
+
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-flow-muted">{label}</p>
+      <p className="mt-0.5 break-words text-sm text-flow-text">{text}</p>
+    </div>
+  );
+}
+
+function RegistrationPanel({ data }: { data: PatientRegistrationData }) {
+  const allergyOptions = [
+    { code: 1, label: "ไม่ทราบประวัติการแพ้ยา" },
+    { code: 2, label: "ไม่มีประวัติการแพ้ยา" },
+    { code: 3, label: "มีประวัติแพ้ยา" },
+  ] as const;
+
+  return (
+    <div className="space-y-4 p-3 md:p-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-flow-text">
+        <span>
+          <span className="text-flow-muted">HN</span>{" "}
+          <span className="font-semibold">{formatHnDisplay(data.HN)}</span>
+        </span>
+        <span className="font-semibold text-brand-700">{data.DSPNAME ?? "—"}</span>
+        <span>
+          <span className="text-flow-muted">เพศ</span> {data.SEX_NAME ?? "—"}
+        </span>
+        <span>
+          <span className="text-flow-muted">อายุ [y-m-d]</span> {data.AGE_YMD ?? "—"}
+        </span>
+        {data.VIP_NAME ? <span className="text-flow-muted">{data.VIP_NAME}</span> : null}
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-2">
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <header className={`${TABLE_HEAD_CLASS} px-3 py-2`}>ชื่อ-นามสกุล</header>
+          <div className="grid gap-3 p-3 sm:grid-cols-2">
+            <FieldLine label="ชื่อ" value={data.FNAME} />
+            <FieldLine label="นามสกุล" value={data.LNAME} />
+            <FieldLine label="คำนำหน้า" value={data.PREFIX_NAME} />
+            <FieldLine label="เพศ" value={data.SEX_NAME} />
+            <FieldLine label="ชื่อเล่น" value={data.NICKNAME} />
+            <FieldLine label="สังกัด" value={data.BELONG_NAME} />
+            <FieldLine label="ชื่อ (อังกฤษ)" value={data.EFNAME} />
+            <FieldLine label="นามสกุล (อังกฤษ)" value={data.ELNAME} />
+            <FieldLine label="ชื่อกลาง" value={data.MIDDLENAME} />
+            <FieldLine label="VIP / กลุ่มพิเศษ" value={data.VIP_NAME} />
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <header className={`${TABLE_HEAD_CLASS} px-3 py-2`}>ข้อมูลจำเพาะ</header>
+          <div className="grid gap-3 p-3 sm:grid-cols-2">
+            <FieldLine
+              label="วัน/เดือน/ปี เกิด"
+              value={data.BRTHDATE ? isoToThaiInput(data.BRTHDATE) : null}
+            />
+            <FieldLine label="อายุ [y-m-d]" value={data.AGE_YMD} />
+            <FieldLine label="เชื้อชาติ" value={data.NTNLTY_NAME} />
+            <FieldLine label="สัญชาติ" value={data.CTZSHP_NAME} />
+            <FieldLine label="ศาสนา" value={data.RLGN_NAME} />
+            <FieldLine label="สถานภาพ" value={data.MRTLST_NAME} />
+            <FieldLine label="หมู่เลือด" value={data.BLOODGRP_NAME} />
+            <FieldLine label="อาชีพ" value={data.OCCPTN_NAME} />
+            <FieldLine className="sm:col-span-2" label="รูปพรรณสัณฐาน" value={data.PTMORPHOLOGY} />
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <header className={`${TABLE_HEAD_CLASS} px-3 py-2`}>
+            เลขบัตรประชาชน / ต่างด้าว / หนังสือเดินทาง
+          </header>
+          <div className="space-y-3 p-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FieldLine label="ประเภทบัตร" value={data.NOTYPE_NAME} />
+              <FieldLine label="เลขที่บัตร" value={data.CARDNO} />
+            </div>
+            <div>
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-flow-muted">
+                ประวัติการแพ้ยา
+              </p>
+              <div className="flex flex-wrap gap-3 text-sm text-flow-text">
+                {allergyOptions.map((option) => {
+                  const checked = data.ALLERGYST === option.code;
+
+                  return (
+                    <span
+                      key={option.code}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${
+                        checked
+                          ? "bg-brand-100 font-semibold text-brand-800 ring-1 ring-inset ring-brand-200"
+                          : "bg-slate-50 text-flow-muted ring-1 ring-inset ring-slate-200"
+                      }`}
+                    >
+                      <span
+                        aria-hidden
+                        className={`h-2 w-2 rounded-full ${checked ? "bg-brand-600" : "bg-slate-300"}`}
+                      />
+                      {option.label}
+                    </span>
+                  );
+                })}
+              </div>
+              {data.ALLERGY?.trim() ? (
+                <p className="mt-2 text-xs text-flow-muted">รายละเอียด: {data.ALLERGY}</p>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <header className={`${TABLE_HEAD_CLASS} px-3 py-2`}>ที่อยู่ปัจจุบัน</header>
+          <div className="grid gap-3 p-3 sm:grid-cols-2">
+            <FieldLine className="sm:col-span-2" label="ที่อยู่" value={data.ADDRESS} />
+            <FieldLine label="ซอย" value={data.SOI} />
+            <FieldLine label="ถนน" value={data.STREET} />
+            <FieldLine
+              className="sm:col-span-2"
+              label="ตำบล / อำเภอ / จังหวัด"
+              value={data.DISTRICT_TEXT}
+            />
+            <FieldLine label="รหัสไปรษณีย์" value={data.ZIPCODE} />
+            <FieldLine label="ประเทศ" value={data.COUNTRY_NAME} />
+            <FieldLine label="โทรศัพท์มือถือ" value={data.MOBILE_PHONE ?? data.PHONE} />
+          </div>
+        </section>
+      </div>
+
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <header className={`${TABLE_HEAD_CLASS} px-3 py-2`}>บุคคลอ้างอิง</header>
+        {data.INFORMERS.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-flow-muted">ไม่มีข้อมูลบุคคลอ้างอิง</p>
+        ) : (
+          <div className="divide-y divide-flow-border">
+            {data.INFORMERS.map((person, index) => (
+              <div
+                key={`${person.ITEMNO ?? index}-${person.FIRST_NAME}-${person.LAST_NAME}`}
+                className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                <FieldLine
+                  label="ชื่อ-นามสกุล"
+                  value={[person.PREFIX_NAME, person.FIRST_NAME, person.LAST_NAME]
+                    .filter(Boolean)
+                    .join(" ")}
+                />
+                <FieldLine label="ความสัมพันธ์" value={person.RELATION_NAME} />
+                <FieldLine label="ที่อยู่" value={person.ADDRESS} />
+                <FieldLine label="โทรศัพท์" value={person.MOBILE_PHONE ?? person.PHONE} />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function DiagnosisTypeLegend() {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-flow-muted">
@@ -1032,14 +1201,17 @@ function groupHistoryByDay(
 
 function pickInitialTreatmentTab(counts: Record<TreatmentTab, number>): TreatmentTab {
   for (const tab of TREATMENT_TABS) {
+    if (tab.id === "register") continue;
     if (counts[tab.id] > 0) return tab.id;
   }
 
-  return "drug";
+  return counts.register > 0 ? "register" : "drug";
 }
 
 function treatmentRowDateIso(tab: TreatmentTab, row: Record<string, unknown>): string {
   switch (tab) {
+    case "register":
+      return "";
     case "drug":
       return apiDateToIsoLocal(row.PRSCDATE);
     case "lab":
@@ -1100,6 +1272,7 @@ export default function PatientMedicationSearchPage() {
   const [labRows, setLabRows] = useState<PatientLabRow[]>([]);
   const [historyRows, setHistoryRows] = useState<PatientHistoryRow[]>([]);
   const [diagRows, setDiagRows] = useState<PatientDiagnosisRow[]>([]);
+  const [registration, setRegistration] = useState<PatientRegistrationData | null>(null);
   const [selectedDiagDayKey, setSelectedDiagDayKey] = useState<string | null>(null);
   const [selectedDrugDayKey, setSelectedDrugDayKey] = useState<string | null>(null);
   const [selectedDrugPrintKeys, setSelectedDrugPrintKeys] = useState<Set<string>>(() => new Set());
@@ -1142,6 +1315,7 @@ export default function PatientMedicationSearchPage() {
     setLabRows([]);
     setHistoryRows([]);
     setDiagRows([]);
+    setRegistration(null);
     setSelectedDiagDayKey(null);
     setSelectedDrugDayKey(null);
     setSelectedDrugPrintKeys(new Set());
@@ -1171,6 +1345,7 @@ export default function PatientMedicationSearchPage() {
     labCount: number;
     historyCount: number;
     diagCount: number;
+    registerCount: number;
     totalCount: number;
     errors: string[];
     patientHn: string | null;
@@ -1182,17 +1357,26 @@ export default function PatientMedicationSearchPage() {
     if (params.name) query.set("name", params.name);
 
     const qs = query.toString();
-    const [medRes, labRes, historyRes, diagRes] = await Promise.all([
+    const regQuery = new URLSearchParams();
+
+    if (params.hn) regQuery.set("hn", params.hn);
+    if (params.cardno) regQuery.set("cardno", params.cardno);
+
+    const [medRes, labRes, historyRes, diagRes, regRes] = await Promise.all([
       fetch(`/api/db/patient-medication-search?${qs}`),
       fetch(`/api/db/patient-lab-search?${qs}`),
       fetch(`/api/db/patient-history-search?${qs}`),
       fetch(`/api/db/patient-diagnosis-search?${qs}`),
+      params.hn || params.cardno
+        ? fetch(`/api/db/patient-registration?${regQuery.toString()}`)
+        : Promise.resolve(null),
     ]);
-    const [medJson, labJson, historyJson, diagJson] = await Promise.all([
+    const [medJson, labJson, historyJson, diagJson, regJson] = await Promise.all([
       medRes.json(),
       labRes.json(),
       historyRes.json(),
       diagRes.json(),
+      regRes ? regRes.json() : Promise.resolve(null),
     ]);
 
     const errors: string[] = [];
@@ -1225,7 +1409,26 @@ export default function PatientMedicationSearchPage() {
       "ค้นหาการซักประวัติไม่สำเร็จ"
     );
     const diagData = readData(diagRes, diagJson, setDiagRows, "ค้นหารหัสวินิจฉัยไม่สำเร็จ");
+
+    let registrationData: PatientRegistrationData | null = null;
+
+    if (regRes && regJson) {
+      if (!regRes.ok || !regJson.success) {
+        errors.push(regJson.message ?? "โหลดข้อมูลทะเบียนไม่สำเร็จ");
+        setRegistration(null);
+      } else {
+        registrationData =
+          regJson.data && typeof regJson.data === "object"
+            ? (regJson.data as PatientRegistrationData)
+            : null;
+        setRegistration(registrationData);
+      }
+    } else {
+      setRegistration(null);
+    }
+
     const counts: Record<TreatmentTab, number> = {
+      register: registrationData ? 1 : 0,
       drug: medData.length,
       lab: labData.length,
       history: historyData.length,
@@ -1234,7 +1437,8 @@ export default function PatientMedicationSearchPage() {
 
     setContentTab(pickInitialTreatmentTab(counts));
 
-    const patientHn =
+    let patientHn =
+      registrationData?.HN ??
       medData[0]?.HN ??
       labData[0]?.HN ??
       historyData[0]?.HN ??
@@ -1248,18 +1452,37 @@ export default function PatientMedicationSearchPage() {
         setSearchQuery(formatHnDisplay(patientHn));
       }
       setScanError(null);
+
+      if (!registrationData) {
+        try {
+          const lateRegRes = await fetch(
+            `/api/db/patient-registration?hn=${encodeURIComponent(normalizeHnInput(String(patientHn)))}`
+          );
+          const lateRegJson = await lateRegRes.json();
+
+          if (lateRegRes.ok && lateRegJson.success && lateRegJson.data) {
+            registrationData = lateRegJson.data as PatientRegistrationData;
+            setRegistration(registrationData);
+            counts.register = 1;
+          }
+        } catch {
+          // ไม่บล็อกแท็บอื่นถ้าโหลดทะเบียนไม่ได้
+        }
+      }
     }
 
-    const totalCount = Object.values(counts).reduce((sum, n) => sum + n, 0);
+    const totalCount =
+      counts.drug + counts.lab + counts.history + counts.diag + counts.register;
 
     return {
       medCount: counts.drug,
       labCount: counts.lab,
       historyCount: counts.history,
       diagCount: counts.diag,
+      registerCount: counts.register,
       totalCount,
       errors,
-      patientHn,
+      patientHn: patientHn ? String(patientHn) : null,
     };
   };
 
@@ -1620,6 +1843,7 @@ export default function PatientMedicationSearchPage() {
       items.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)).length;
 
     return {
+      register: registration ? 1 : 0,
       drug: countWithVisit(rows),
       lab: countWithVisit(labRows),
       history: countWithVisit(historyRows),
@@ -1629,10 +1853,12 @@ export default function PatientMedicationSearchPage() {
         new Set(diagRows.map((row) => row.HN)).size > 1
       ),
     };
-  }, [rows, labRows, historyRows, diagRows, filterVisitType]);
+  }, [registration, rows, labRows, historyRows, diagRows, filterVisitType]);
 
   const activeSourceRows = useMemo(() => {
     switch (contentTab) {
+      case "register":
+        return [];
       case "drug":
         return rows;
       case "lab":
@@ -1715,13 +1941,14 @@ export default function PatientMedicationSearchPage() {
     setSelectedHistoryDayKey(null);
 
     const nextCounts: Record<TreatmentTab, number> = {
+      register: registration ? 1 : 0,
       drug: rows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
       lab: labRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
       history: historyRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
       diag: countDiagVisitDays(diagRows, type, new Set(diagRows.map((row) => row.HN)).size > 1),
     };
 
-    if (nextCounts[contentTab] === 0) {
+    if (contentTab !== "register" && nextCounts[contentTab] === 0) {
       setContentTab(pickInitialTreatmentTab(nextCounts));
     }
   };
@@ -2053,6 +2280,16 @@ export default function PatientMedicationSearchPage() {
   }, [filteredHistoryRows, selectedHistoryDay]);
 
   const patientHeader = useMemo(() => {
+    if (registration) {
+      return {
+        multiple: false,
+        hn: registration.HN,
+        dspname: registration.DSPNAME,
+        cardno: registration.CARDNO,
+        patientCount: 1,
+      };
+    }
+
     const source = [...rows, ...labRows, ...historyRows, ...diagRows];
 
     if (source.length === 0) return null;
@@ -2066,26 +2303,51 @@ export default function PatientMedicationSearchPage() {
       cardno: first.CARDNO,
       patientCount: uniqueHn.size,
     };
-  }, [rows, labRows, historyRows, diagRows]);
+  }, [registration, rows, labRows, historyRows, diagRows]);
 
   const hasResults =
-    rows.length > 0 || labRows.length > 0 || historyRows.length > 0 || diagRows.length > 0;
+    Boolean(registration) ||
+    rows.length > 0 ||
+    labRows.length > 0 ||
+    historyRows.length > 0 ||
+    diagRows.length > 0;
   const scanHnValue = scanHnFromSearchQuery(searchQuery, resolvedHn);
 
   return (
     <>
-      <main className="min-h-0 flex-1 w-full overflow-y-auto px-4 py-6 md:px-6 md:py-8">
-        <header className="-mx-4 mb-6 border-b border-flow-border bg-white px-4 py-4 md:-mx-6 md:px-6">
-          <h1 className="text-xl font-bold text-flow-text md:text-2xl">ข้อมูลการรักษา</h1>
-          <p className="mt-1 text-xs text-flow-muted md:text-sm">
-            ค้นหาด้วย HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล — ดูข้อมูลยา, Lab, ซักประวัติ,
-            รหัสวินิจฉัย
-          </p>
+      <main className="min-h-0 flex-1 w-full overflow-y-auto px-4 py-3 md:px-6 md:py-4">
+        <header className="-mx-4 mb-3 border-b border-flow-border bg-white px-4 py-2.5 md:-mx-6 md:px-6">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-lg font-bold text-flow-text md:text-xl">ข้อมูลการรักษา</h1>
+            {patientHeader && !patientHeader.multiple ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="text-sm font-bold tracking-tight text-brand-700 md:text-base dark:text-brand-300">
+                  {patientHeader.dspname ?? "(ไม่ระบุชื่อ)"}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-semibold text-brand-800 ring-1 ring-inset ring-brand-200">
+                  HN {formatHnDisplay(patientHeader.hn)}
+                </span>
+                {patientHeader.cardno ? (
+                  <span className="text-xs text-flow-muted">บัตร {patientHeader.cardno}</span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          {patientHeader?.multiple ? (
+            <p className="mt-1 text-xs text-flow-muted">
+              พบผู้ป่วย {patientHeader.patientCount} ราย — แสดงข้อมูลการรักษาที่ตรงเงื่อนไข
+            </p>
+          ) : !patientHeader ? (
+            <p className="mt-0.5 text-xs text-flow-muted">
+              ค้นหาด้วย HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล — ดูข้อมูลยา, Lab, ซักประวัติ,
+              รหัสวินิจฉัย
+            </p>
+          ) : null}
         </header>
 
-        <section className="mb-6">
+        <section className="mb-3">
           <form
-            className="space-y-4 rounded-xl border border-accent-border bg-white p-4 shadow-sm"
+            className="rounded-xl border border-accent-border bg-white p-3 shadow-sm"
             onSubmit={handleSearch}
           >
             <div className="flex flex-wrap items-end gap-3">
@@ -2167,31 +2429,10 @@ export default function PatientMedicationSearchPage() {
           </div>
         ) : null}
 
-        <section className="mb-4 rounded-xl border border-flow-border bg-white p-4 shadow-sm">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <section className="mb-3 rounded-xl border border-flow-border bg-white p-3 shadow-sm">
+          {contentTab !== "register" ? (
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-flow-text">
-              {patientHeader && !patientHeader.multiple ? (
-                <>
-                  <span className="text-base font-bold tracking-tight text-brand-700 md:text-lg dark:text-brand-300">
-                    {patientHeader.dspname ?? "(ไม่ระบุชื่อ)"}
-                  </span>
-                  <span
-                    className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-semibold text-brand-800 ring-1 ring-inset ring-brand-200"
-                  >
-                    HN {formatHnDisplay(patientHeader.hn)}
-                  </span>
-                  {patientHeader.cardno ? (
-                    <span className="text-xs text-flow-muted">บัตร {patientHeader.cardno}</span>
-                  ) : null}
-                </>
-              ) : patientHeader?.multiple ? (
-                <span className="text-flow-muted">
-                  พบผู้ป่วย {patientHeader.patientCount} ราย — แสดงข้อมูลการรักษาที่ตรงเงื่อนไข
-                </span>
-              ) : (
-                <span className="text-flow-muted">ค้นหาผู้ป่วยเพื่อแสดงข้อมูล</span>
-              )}
-              <span className="mx-1 hidden h-5 w-px bg-flow-border sm:block" />
               {(["all", "OPD", "IPD"] as const).map((type) => (
                 <button
                   key={type}
@@ -2237,8 +2478,9 @@ export default function PatientMedicationSearchPage() {
               </div>
             </div>
           </div>
+          ) : null}
 
-          {hasResults && activeDates.length === 0 ? (
+          {hasResults && contentTab !== "register" && activeDates.length === 0 ? (
             <p className="mb-3 text-xs text-flow-muted">
               ไม่พบข้อมูลในหมวด {activeTabMeta.label} ตามตัวกรองที่เลือก
             </p>
@@ -2256,7 +2498,9 @@ export default function PatientMedicationSearchPage() {
                   type="button"
                   onClick={() => handleContentTabChange(tab.id)}
                 >
-                  {tab.label} ({tabCounts[tab.id]})
+                  {tab.id === "register"
+                    ? tab.label
+                    : `${tab.label} (${tabCounts[tab.id]})`}
                 </button>
                 {tab.id === "diag" && labResultTodayNotice && hasResults ? (
                   <button
@@ -2274,6 +2518,18 @@ export default function PatientMedicationSearchPage() {
             ))}
           </div>
         </section>
+
+        {contentTab === "register" && (
+          <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
+            {registration ? (
+              <RegistrationPanel data={registration} />
+            ) : (
+              <p className="px-4 py-6 text-center text-xs text-flow-muted">
+                {tabEmptyMessage(hasResults, "ไม่พบข้อมูลทะเบียนผู้ป่วย")}
+              </p>
+            )}
+          </section>
+        )}
 
         {contentTab === "drug" && (
           <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">

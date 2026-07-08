@@ -22,7 +22,7 @@ const NAV_HIDDEN_KEY = "nav_hidden";
  */
 export function AppShell({ children }: AppShellProps) {
   const router = useRouter();
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const treatmentPageLayout = router.pathname === "/patient-medication-search";
 
@@ -31,7 +31,9 @@ export function AppShell({ children }: AppShellProps) {
 
     const savedHidden = window.localStorage.getItem(NAV_HIDDEN_KEY);
 
-    if (savedHidden === "1") setSidebarHidden(true);
+    // ค่าเริ่มต้น: ซ่อนเมนู — แสดงเฉพาะเมื่อผู้ใช้เคยเปิดไว้ (nav_hidden=0)
+    if (savedHidden === "0") setSidebarHidden(false);
+    else setSidebarHidden(true);
   }, []);
 
   useEffect(() => {
