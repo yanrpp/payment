@@ -726,14 +726,14 @@ function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
         <thead className="bg-slate-100 text-[11px] text-slate-700">
           <tr>
             <th className="w-10 border border-slate-300 px-2 py-1.5 text-center font-semibold">No.</th>
-            <th className="w-28 border border-slate-300 px-2 py-1.5 font-semibold">VN</th>
-            <th className="border border-slate-300 px-2 py-1.5 font-semibold">Diagnosis (ICD10)</th>
-            <th className="border border-slate-300 px-2 py-1.5 font-semibold">Diagnosis (Text)</th>
             <th className="w-20 border border-slate-300 px-2 py-1.5 font-semibold">ICD10</th>
-            <th className="w-16 border border-slate-300 px-2 py-1.5 font-semibold">ลำดับ</th>
+            <th className="border border-slate-300 px-2 py-1.5 font-semibold">Diagnosis (ICD10)</th>
+            <th className="border border-slate-300 px-2 py-1.5 font-semibold">ชื่อภาษาไทย</th>
+            <th className="w-16 border border-slate-300 px-2 py-1.5 font-semibold">DiagType</th>
             <th className="min-w-[10rem] border border-slate-300 px-2 py-1.5 font-semibold">
               แพทย์ผู้วินิจฉัย
             </th>
+            <th className="w-28 border border-slate-300 px-2 py-1.5 font-semibold">VN</th>
           </tr>
         </thead>
         <tbody>
@@ -742,8 +742,8 @@ function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
               <td className="border border-slate-300 px-2 py-1.5 text-center align-top text-flow-muted">
                 {index + 1}
               </td>
-              <td className="whitespace-nowrap border border-slate-300 px-2 py-1.5 align-top font-mono text-flow-text">
-                {row.VISIT_REF ?? "—"}
+              <td className="border border-slate-300 px-2 py-1.5 align-top font-mono text-flow-text">
+                {row.ICD10 ?? "—"}
               </td>
               <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-text">
                 {row.ICD10_NAME_EN ?? row.ICD10_NAME ?? "—"}
@@ -751,14 +751,14 @@ function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
               <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-muted">
                 {row.ICD10_NAME ?? "—"}
               </td>
-              <td className="border border-slate-300 px-2 py-1.5 align-top font-mono text-flow-text">
-                {row.ICD10 ?? "—"}
-              </td>
               <td className="border border-slate-300 px-2 py-1.5 align-top text-center font-medium text-flow-text">
                 {row.DIAGTYPE ?? "—"}
               </td>
               <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-text">
                 {row.DOCTOR_NAME ?? "—"}
+              </td>
+              <td className="whitespace-nowrap border border-slate-300 px-2 py-1.5 align-top font-mono text-flow-text">
+                {row.VISIT_REF ?? "—"}
               </td>
             </tr>
           ))}
@@ -1917,6 +1917,40 @@ export default function PatientMedicationSearchPage() {
     [drugRepeatPreview]
   );
 
+  useEffect(() => {
+    if (!drugRepeatPreviewHtml) return;
+
+    const iframe = drugRepeatPreviewFrameRef.current;
+
+    if (!iframe) return;
+
+    const syncPreviewHeight = () => {
+      const doc = iframe.contentDocument;
+
+      if (!doc?.body) return;
+
+      const sheet = doc.querySelector(".sheet") as HTMLElement | null;
+      const contentHeight = sheet?.scrollHeight ?? doc.body.scrollHeight;
+      const width = iframe.clientWidth || iframe.getBoundingClientRect().width;
+
+      if (width <= 0) return;
+
+      const maxA4Height = width * (297 / 210);
+
+      iframe.style.height = `${Math.min(contentHeight, maxA4Height)}px`;
+    };
+
+    const handleLoad = () => {
+      syncPreviewHeight();
+      window.setTimeout(syncPreviewHeight, 50);
+    };
+
+    iframe.addEventListener("load", handleLoad);
+    handleLoad();
+
+    return () => iframe.removeEventListener("load", handleLoad);
+  }, [drugRepeatPreviewHtml]);
+
   const showDrugDayList = !isMobile || mobileDrugPanel === "days";
   const showDrugItems = !isMobile || mobileDrugPanel === "items";
 
@@ -2327,13 +2361,13 @@ export default function PatientMedicationSearchPage() {
                               {patientHeader?.multiple ? <th className="px-3 py-2">ชื่อ</th> : null}
                               <th className="px-3 py-2">ประเภท</th>
                               <th className="px-3 py-2">ชื่อยา</th>
-                              <th className="px-3 py-2">โดสยา</th>
+                              <th className="px-3 py-2 text-right">จำนวน</th>
                               <th className="min-w-[14rem] px-3 py-2">วิธีกินยา</th>
                               <th className="min-w-[10rem] px-3 py-2">ข้อความวิธีใช้</th>
+                              <th className="px-3 py-2">โดสยา</th>
                               <th className="px-3 py-2">สิทธิการรักษา</th>
                               <th className="px-3 py-2">หมวด</th>
                               <th className="px-3 py-2">คลินิก</th>
-                              <th className="px-3 py-2 text-right">จำนวน</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-flow-border">
@@ -2368,14 +2402,17 @@ export default function PatientMedicationSearchPage() {
                                   <td className="min-w-[12rem] px-3 py-2">
                                     <DrugNameDisplay row={row} />
                                   </td>
-                                  <td className="whitespace-nowrap px-3 py-2 text-flow-text">
-                                    {row.DRUG_DOSE?.trim() ? row.DRUG_DOSE : "—"}
+                                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                                    {formatQty(row.TOTAL_QTY)}
                                   </td>
                                   <td className="min-w-[14rem] px-3 py-2 align-top">
                                     {formatDrugUsageBreakdown(row)}
                                   </td>
                                   <td className="min-w-[10rem] px-3 py-2 align-top text-flow-muted">
                                     {formatMedusageText(row)}
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 text-flow-text">
+                                    {row.DRUG_DOSE?.trim() ? row.DRUG_DOSE : "—"}
                                   </td>
                                   <td className="px-3 py-2 text-flow-muted">
                                     {row.PTTYPE_NAME?.trim() ? row.PTTYPE_NAME : "—"}
@@ -2385,9 +2422,6 @@ export default function PatientMedicationSearchPage() {
                                   </td>
                                   <td className="px-3 py-2 text-flow-muted">
                                     {row.CLINIC_LCT_NAME ?? row.CLINIC_LCT ?? "—"}
-                                  </td>
-                                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                                    {formatQty(row.TOTAL_QTY)}
                                   </td>
                                 </tr>
                               );
@@ -2731,39 +2765,40 @@ export default function PatientMedicationSearchPage() {
         <div
           aria-labelledby="drug-repeat-preview-title"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex flex-col bg-white"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 sm:p-4"
           role="dialog"
+          onClick={closeDrugRepeatPreview}
         >
           <div
-            className="flex h-full w-full flex-col overflow-hidden"
+            className="flex max-h-[94vh] w-[min(210mm,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-flow-border bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-flow-border bg-gradient-to-r from-slate-50 to-white px-4 py-3 sm:px-6 sm:py-4">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-flow-border bg-slate-50 px-4 py-3">
               <div className="min-w-0">
                 <h2
-                  className="flex items-center gap-2 text-base font-semibold text-flow-text"
+                  className="flex items-center gap-2 text-sm font-semibold text-flow-text"
                   id="drug-repeat-preview-title"
                 >
                   <Printer aria-hidden className="h-4 w-4 shrink-0 text-brand-600" />
-                  ตัวอย่างใบรายการยาเดิมของผู้ป่วย
+                  ตัวอย่างใบรายการยาเดิม
                 </h2>
-                <p className="mt-1 truncate text-xs text-flow-muted sm:whitespace-normal">
-                  ตรวจสอบรายการก่อนสั่งพิมพ์ — HN {drugRepeatPreview.hn}
+                <p className="mt-0.5 truncate text-xs text-flow-muted">
+                  HN {drugRepeatPreview.hn}
                   {drugRepeatPreview.patientName ? ` · ${drugRepeatPreview.patientName}` : ""}
                   {" · "}
                   {drugRepeatPreview.items.length} รายการ
                 </p>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <button
-                  className="rounded-lg border border-flow-border bg-white px-4 py-2 text-sm font-medium text-flow-text hover:bg-slate-50"
+                  className="rounded-lg border border-flow-border bg-white px-3 py-1.5 text-sm font-medium text-flow-text hover:bg-slate-50"
                   type="button"
                   onClick={closeDrugRepeatPreview}
                 >
                   ปิด
                 </button>
                 <button
-                  className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-md hover:bg-brand-700"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
                   type="button"
                   onClick={handleDrugRepeatPreviewPrint}
                 >
@@ -2772,10 +2807,11 @@ export default function PatientMedicationSearchPage() {
                 </button>
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-200/80 p-3 sm:p-4">
+            <div className="min-h-0 overflow-y-auto overflow-x-hidden bg-white">
               <iframe
                 ref={drugRepeatPreviewFrameRef}
-                className="block aspect-[210/297] h-full w-auto max-h-full max-w-full min-h-0 border border-slate-300/80 bg-white shadow-lg"
+                className="block w-full border-0 bg-white"
+                scrolling="no"
                 srcDoc={drugRepeatPreviewHtml ?? undefined}
                 title="ตัวอย่างใบรายการยาเดิมของผู้ป่วย"
               />

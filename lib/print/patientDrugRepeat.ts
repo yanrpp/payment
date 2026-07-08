@@ -154,17 +154,27 @@ export function buildPatientDrugRepeatPrintHtml(
     ${
       preview
         ? `
+    html, body.preview-doc {
+      width: 100%;
+      overflow-x: hidden;
+    }
     body.preview-doc {
       min-height: 100%;
-      padding: 6px;
-      background: #cbd5e1;
-    }
-    .sheet {
-      margin: 0 auto;
+      margin: 0;
+      padding: 0;
       background: #fff;
-      border: 1px solid #94a3b8;
-      border-radius: 4px;
-      box-shadow: 0 6px 24px rgba(15, 23, 42, 0.14);
+    }
+    body.preview-doc .sheet {
+      width: 100%;
+      max-width: 100%;
+      min-height: 0;
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    body.preview-doc .meta {
+      white-space: normal;
     }
     @media print {
       body.preview-doc {
