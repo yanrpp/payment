@@ -3,7 +3,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { createReadStream } from "node:fs";
 
 import { respondError } from "@/lib/api/respond";
-import { guessContentType, resolveOpdscanFilePath } from "@/lib/opdscan/access";
+import { guessContentType, OpdscanNotFoundError, resolveOpdscanFilePath } from "@/lib/opdscan/access";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -35,6 +35,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     stream.pipe(res);
   } catch (error) {
+    if (error instanceof OpdscanNotFoundError) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+
     return respondError(res, "เปิดไฟล์สแกนไม่สำเร็จ", error);
   }
 }

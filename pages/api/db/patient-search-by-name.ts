@@ -21,7 +21,7 @@ type ErrorResponse = {
   error?: string;
 };
 
-const MAX_RESULTS = 50;
+const MAX_RESULTS = 100;
 
 export default async function handler(
   req: NextApiRequest,

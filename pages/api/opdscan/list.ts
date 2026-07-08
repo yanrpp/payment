@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
 import { respondError } from "@/lib/api/respond";
-import { listOpdscanFiles } from "@/lib/opdscan/access";
+import { listOpdscanFiles, OpdscanNotFoundError } from "@/lib/opdscan/access";
 import { buildOpdscanUncPath } from "@/lib/opdscan/path";
 import { getOpdscanUncRoot } from "@/config/opdscan";
 
@@ -63,6 +63,10 @@ export default async function handler(
       files: result.files,
     });
   } catch (error) {
+    if (error instanceof OpdscanNotFoundError) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+
     return respondError(res, "ไม่สามารถเปิดโฟลเดอร์สแกน OPD ได้", error);
   }
 }

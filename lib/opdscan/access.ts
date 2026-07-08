@@ -4,9 +4,16 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { getOpdscanUncRoot, opdscanConfig } from "@/config/opdscan";
-import { parseHnForOpdscan } from "@/lib/opdscan/path";
+import { parseHnForOpdscan, type OpdscanHnParts } from "@/lib/opdscan/path";
 
 const execFileAsync = promisify(execFile);
+
+export class OpdscanNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpdscanNotFoundError";
+  }
+}
 
 export type OpdscanFileEntry = {
   name: string;
@@ -25,16 +32,42 @@ async function connectShare(): Promise<void> {
   const uncRoot = getOpdscanUncRoot();
   const { username, password } = opdscanConfig;
 
-  try {
+  async function deleteShareMapping(): Promise<void> {
+    try {
+      await execFileAsync("net", ["use", uncRoot, "/delete", "/y"], {
+        windowsHide: true,
+      });
+    } catch {
+      // ไม่มี mapping เดิม — ข้ามได้
+    }
+  }
+
+  async function mapShare(): Promise<void> {
     await execFileAsync("net", ["use", uncRoot, password, `/user:${username}`], {
       windowsHide: true,
     });
+  }
+
+  try {
+    await mapShare();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
-    if (!/already|1219|multiple connections/i.test(message)) {
+    // Windows 1219: มีการเชื่อมต่อเดิมด้วย user อื่น — ลบแล้ว map ใหม่
+    if (/1219|multiple connections/i.test(message)) {
+      await deleteShareMapping();
+      await mapShare();
+    } else if (!/already|already connected/i.test(message)) {
       throw new Error(`เชื่อมต่อโฟลเดอร์สแกน OPD ไม่สำเร็จ: ${message}`);
     }
+  }
+
+  try {
+    await fs.readdir(uncRoot);
+  } catch {
+    await deleteShareMapping();
+    await mapShare();
+    await fs.readdir(uncRoot);
   }
 }
 
@@ -66,25 +99,161 @@ function normalizeSubPathSegments(subPath?: string): string[] {
   return segments;
 }
 
-function resolvePatientDir(
-  hnInput: string,
-  subPath = ""
-): { uncPath: string; relativePath: string; patientRoot: string } {
+function resetShareConnection(): void {
+  shareConnectPromise = null;
+}
+
+async function disconnectShare(): Promise<void> {
+  resetShareConnection();
+
+  if (process.platform !== "win32") return;
+
+  const uncRoot = getOpdscanUncRoot();
+
+  try {
+    await execFileAsync("net", ["use", uncRoot, "/delete", "/y"], {
+      windowsHide: true,
+    });
+  } catch {
+    // ไม่มี mapping — ข้ามได้
+  }
+}
+
+async function isAccessibleDirectory(dirPath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(dirPath);
+
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function findPatientFolderAcrossYears(
+  patientFolder: string,
+  preferredYear: number
+): Promise<{ uncPath: string; relativePath: string } | null> {
+  const uncRoot = getOpdscanUncRoot();
+
+  let entries;
+
+  try {
+    entries = await fs.readdir(uncRoot, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  const yearDirs = entries
+    .filter((entry) => entry.isDirectory() && /^\d{4}$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => {
+      if (a === String(preferredYear)) return -1;
+      if (b === String(preferredYear)) return 1;
+
+      return b.localeCompare(a);
+    });
+
+  for (const year of yearDirs) {
+    const candidate = path.win32.join(uncRoot, year, patientFolder);
+
+    if (await isAccessibleDirectory(candidate)) {
+      return {
+        uncPath: candidate,
+        relativePath: `${year}\\${patientFolder}`,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function resolveOpdscanPatientRoot(
+  hnInput: string
+): Promise<{ uncPath: string; relativePath: string; parts: OpdscanHnParts }> {
   const parts = parseHnForOpdscan(hnInput);
 
   if (!parts) {
     throw new Error("รูปแบบ HN ไม่ถูกต้อง (ใช้เช่น 19999/99)");
   }
 
+  await ensureShare();
+
   const uncRoot = getOpdscanUncRoot();
-  const patientRoot = path.win32.join(uncRoot, String(parts.buddhistYear), parts.patientFolder);
+  const canonicalPath = path.win32.join(uncRoot, String(parts.buddhistYear), parts.patientFolder);
+
+  if (await isAccessibleDirectory(canonicalPath)) {
+    return {
+      uncPath: canonicalPath,
+      relativePath: parts.relativePath,
+      parts,
+    };
+  }
+
+  const fallback = await findPatientFolderAcrossYears(parts.patientFolder, parts.buddhistYear);
+
+  if (fallback) {
+    return {
+      uncPath: fallback.uncPath,
+      relativePath: fallback.relativePath,
+      parts,
+    };
+  }
+
+  throw new OpdscanNotFoundError(`ไม่พบโฟลเดอร์สแกน: ${canonicalPath}`);
+}
+
+async function readdirOpdscanDir(dirPath: string) {
+  try {
+    return await fs.readdir(dirPath, { withFileTypes: true });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+
+    if (code === "UNKNOWN") {
+      await disconnectShare();
+      await ensureShare();
+
+      try {
+        return await fs.readdir(dirPath, { withFileTypes: true });
+      } catch (retryError) {
+        const retryCode = (retryError as NodeJS.ErrnoException).code;
+
+        if (retryCode === "ENOENT" || retryCode === "UNKNOWN") {
+          throw new OpdscanNotFoundError(`ไม่พบโฟลเดอร์สแกน: ${dirPath}`);
+        }
+        if (retryCode === "ENOTDIR") {
+          throw new OpdscanNotFoundError(`พาธไม่ใช่โฟลเดอร์: ${dirPath}`);
+        }
+
+        throw retryError;
+      }
+    }
+
+    if (code === "ENOENT") {
+      throw new OpdscanNotFoundError(`ไม่พบโฟลเดอร์สแกน: ${dirPath}`);
+    }
+    if (code === "ENOTDIR") {
+      throw new OpdscanNotFoundError(`พาธไม่ใช่โฟลเดอร์: ${dirPath}`);
+    }
+
+    throw new Error(
+      `เปิดโฟลเดอร์สแกนไม่ได้: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+async function resolvePatientDir(
+  hnInput: string,
+  subPath = ""
+): Promise<{ uncPath: string; relativePath: string; patientRoot: string }> {
+  const { uncPath: patientRoot, relativePath: patientRelativePath } =
+    await resolveOpdscanPatientRoot(hnInput);
   const subSegments = normalizeSubPathSegments(subPath);
   const uncPath =
     subSegments.length > 0 ? path.win32.join(patientRoot, ...subSegments) : patientRoot;
   const relativePath =
     subSegments.length > 0
-      ? `${parts.relativePath}\\${subSegments.join("\\")}`
-      : parts.relativePath;
+      ? `${patientRelativePath}\\${subSegments.join("\\")}`
+      : patientRelativePath;
 
   return { uncPath, relativePath, patientRoot };
 }
@@ -106,32 +275,15 @@ export async function listOpdscanFiles(
   subPath: string;
   files: OpdscanFileEntry[];
 }> {
-  await ensureShare();
+  const { uncPath, relativePath } = await resolvePatientDir(hnInput, subPath);
 
-  const { uncPath, relativePath } = resolvePatientDir(hnInput, subPath);
-
-  let entries;
-
-  try {
-    entries = await fs.readdir(uncPath, { withFileTypes: true });
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-
-    if (code === "ENOENT") {
-      throw new Error(`ไม่พบโฟลเดอร์สแกน: ${uncPath}`);
-    }
-    if (code === "ENOTDIR") {
-      throw new Error(`พาธไม่ใช่โฟลเดอร์: ${uncPath}`);
-    }
-    throw new Error(
-      `เปิดโฟลเดอร์สแกนไม่ได้: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
+  const entries = await readdirOpdscanDir(uncPath);
 
   const files: OpdscanFileEntry[] = [];
 
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
+    if (!entry.isDirectory() && isIgnoredOpdscanFile(entry.name)) continue;
 
     const fullPath = path.win32.join(uncPath, entry.name);
     let size = 0;
@@ -178,8 +330,8 @@ function isLocalCalendarToday(date: Date, reference = new Date()): boolean {
   );
 }
 
-/** ไฟล์ระบบ/ค้างหลังลบผล lab — ไม่นับเป็นผล lab อัปโหลดวันนี้ */
-function isIgnoredLabTodayFile(name: string): boolean {
+/** ไฟล์ระบบ Windows (เช่น Thumbs.db) — ไม่แสดงใน explorer และไม่นับเป็นผล lab วันนี้ */
+function isIgnoredOpdscanFile(name: string): boolean {
   return /\.db$/i.test(name);
 }
 
@@ -196,7 +348,7 @@ async function countFilesModifiedTodayInDir(dirPath: string): Promise<number> {
 
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
-    if (!entry.isDirectory() && isIgnoredLabTodayFile(entry.name)) continue;
+    if (!entry.isDirectory() && isIgnoredOpdscanFile(entry.name)) continue;
 
     const fullPath = path.win32.join(dirPath, entry.name);
 
@@ -225,44 +377,29 @@ export async function checkOpdscanLabUpdatedToday(hnInput: string): Promise<{
   labFolderName: string | null;
   todayFileCount: number;
 }> {
-  const parts = parseHnForOpdscan(hnInput);
-
-  if (!parts) {
-    return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
-  }
-
   try {
-    await ensureShare();
+    const { uncPath } = await resolveOpdscanPatientRoot(hnInput);
+    const entries = await readdirOpdscanDir(uncPath);
+
+    const labDir = entries.find(
+      (entry) => entry.isDirectory() && LAB_FOLDER_NAME_PATTERN.test(entry.name)
+    );
+
+    if (!labDir) {
+      return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
+    }
+
+    const labPath = path.win32.join(uncPath, labDir.name);
+    const todayFileCount = await countFilesModifiedTodayInDir(labPath);
+
+    return {
+      hasTodayLabFiles: todayFileCount > 0,
+      labFolderName: labDir.name,
+      todayFileCount,
+    };
   } catch {
     return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
   }
-
-  const { uncPath } = resolvePatientDir(hnInput);
-
-  let entries;
-
-  try {
-    entries = await fs.readdir(uncPath, { withFileTypes: true });
-  } catch {
-    return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
-  }
-
-  const labDir = entries.find(
-    (entry) => entry.isDirectory() && LAB_FOLDER_NAME_PATTERN.test(entry.name)
-  );
-
-  if (!labDir) {
-    return { hasTodayLabFiles: false, labFolderName: null, todayFileCount: 0 };
-  }
-
-  const labPath = path.win32.join(uncPath, labDir.name);
-  const todayFileCount = await countFilesModifiedTodayInDir(labPath);
-
-  return {
-    hasTodayLabFiles: todayFileCount > 0,
-    labFolderName: labDir.name,
-    todayFileCount,
-  };
 }
 
 /** ตรวจว่าโฟลเดอร์สแกนของ HN มีไฟล์/โฟลเดอร์อย่างน้อย 1 รายการ (ไม่ throw ถ้าไม่มีโฟลเดอร์) */
@@ -271,23 +408,17 @@ export async function checkOpdscanHasContent(hnInput: string): Promise<{
   uncPath: string | null;
   entryCount: number;
 }> {
-  const parts = parseHnForOpdscan(hnInput);
-
-  if (!parts) {
+  if (!parseHnForOpdscan(hnInput)) {
     return { hasContent: false, uncPath: null, entryCount: 0 };
   }
 
   try {
-    await ensureShare();
-  } catch {
-    return { hasContent: false, uncPath: null, entryCount: 0 };
-  }
-
-  const { uncPath } = resolvePatientDir(hnInput);
-
-  try {
-    const entries = await fs.readdir(uncPath, { withFileTypes: true });
-    const visible = entries.filter((entry) => !entry.name.startsWith("."));
+    const { uncPath } = await resolveOpdscanPatientRoot(hnInput);
+    const entries = await readdirOpdscanDir(uncPath);
+    const visible = entries.filter(
+      (entry) =>
+        !entry.name.startsWith(".") && (entry.isDirectory() || !isIgnoredOpdscanFile(entry.name))
+    );
 
     return {
       hasContent: visible.length > 0,
@@ -295,10 +426,8 @@ export async function checkOpdscanHasContent(hnInput: string): Promise<{
       entryCount: visible.length,
     };
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-
-    if (code === "ENOENT" || code === "ENOTDIR") {
-      return { hasContent: false, uncPath, entryCount: 0 };
+    if (error instanceof OpdscanNotFoundError) {
+      return { hasContent: false, uncPath: null, entryCount: 0 };
     }
 
     throw error;
@@ -309,8 +438,6 @@ export async function resolveOpdscanFilePath(
   hnInput: string,
   relativeFile: string
 ): Promise<{ uncPath: string; filePath: string }> {
-  await ensureShare();
-
   const segments = normalizeSubPathSegments(relativeFile.replace(/\\/g, "/"));
 
   if (segments.length === 0) {
@@ -321,7 +448,7 @@ export async function resolveOpdscanFilePath(
 
   assertSafeFileName(fileName);
 
-  const { patientRoot } = resolvePatientDir(hnInput);
+  const { patientRoot } = await resolvePatientDir(hnInput);
   const filePath = path.win32.join(patientRoot, ...segments);
 
   try {

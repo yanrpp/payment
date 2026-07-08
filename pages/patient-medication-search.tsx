@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, FileText, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Package2, Pill, Printer } from "lucide-react";
 
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import {
@@ -70,6 +70,8 @@ type PatientLabRow = {
   AN: string | null;
   VISIT_TYPE: string;
   LABEXM: number | null;
+  LABGRP: number | null;
+  LABGRP_NAME: string | null;
   LAB_NAME: string | null;
   RESULT: string | null;
   MIN_NRM: string | null;
@@ -199,6 +201,63 @@ function formatHnDisplay(value: unknown): string {
   return `${running}/${yearSuffix}`;
 }
 
+function formatAnDisplay(value: unknown): string {
+  const raw = String(value ?? "").trim();
+
+  if (!raw) return "";
+  if (/^\d{2}-\d+$/.test(raw)) return raw;
+
+  const digits = raw.replace(/\D/g, "");
+
+  if (digits.length < 3) return raw;
+
+  const yearSuffix = digits.slice(0, 2);
+  const running = digits.slice(2).replace(/^0+/, "") || "0";
+
+  return `${yearSuffix}-${running}`;
+}
+
+function visitTypeBadgeLabel(visitType: string, an?: string | number | null): string {
+  const anText = String(an ?? "").trim();
+
+  if (visitType === "IPD" && anText) {
+    return formatAnDisplay(anText);
+  }
+
+  return visitType;
+}
+
+function highlightQueryText(text: string | null | undefined, query: string): ReactNode {
+  const source = text?.trim() ?? "";
+  const terms = query
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!source) return "(ไม่ระบุชื่อ)";
+  if (terms.length === 0) return source;
+
+  const pattern = terms
+    .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const regex = new RegExp(`(${pattern})`, "gi");
+  const parts = source.split(regex);
+
+  if (parts.length <= 1) return source;
+
+  return parts.map((part, index) => {
+    const isMatch = terms.some((term) => part.toLowerCase() === term.toLowerCase());
+
+    if (!isMatch) return <Fragment key={index}>{part}</Fragment>;
+
+    return (
+      <mark key={index} className="rounded bg-amber-200 px-0.5 text-flow-text">
+        {part}
+      </mark>
+    );
+  });
+}
+
 const DRUG_USAGE_DETAIL_FIELDS: {
   key: keyof Pick<
     PatientMedicationRow,
@@ -241,50 +300,32 @@ function formatMedusageText(row: PatientMedicationRow): string {
   return fromHelp || "—";
 }
 
-function formatDrugUsageBreakdown(row: PatientMedicationRow, compact = false): ReactNode {
-  const lines = DRUG_USAGE_DETAIL_FIELDS.map(({ key, label }) => {
-    const value = String(row[key] ?? "").trim();
-
-    if (!value) return null;
-
-    return { label, value };
-  }).filter((line): line is { label: string; value: string } => line != null);
-
-  if (lines.length === 0) {
-    const fallback = row.DRUG_USAGE?.trim();
-
-    return fallback || "—";
-  }
-
-  if (compact) {
-    return (
-      <dl className="grid grid-cols-2 gap-x-2 gap-y-0">
-        {lines.map(({ label, value }) => (
-          <div key={label} className="min-w-0 leading-tight">
-            <dt className="inline text-[9px] text-flow-muted">{label} </dt>
-            <dd className="inline text-[11px] text-flow-text">{value}</dd>
-          </div>
-        ))}
-      </dl>
-    );
-  }
-
-  return (
-    <dl className="space-y-0.5">
-      {lines.map(({ label, value }) => (
-        <div key={label} className="flex gap-1.5">
-          <dt className="shrink-0 text-[10px] text-flow-muted">{label}</dt>
-          <dd className="min-w-0 text-xs text-flow-text">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
 function formatQty(value: unknown): string {
   const n = Number(value ?? 0);
 
   return Number.isInteger(n) ? String(n) : n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+}
+
+function uniqueDrugDayLabels(
+  items: PatientMedicationRow[],
+  pick: (row: PatientMedicationRow) => string | null | undefined
+): string[] {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+
+  for (const row of items) {
+    const value = String(pick(row) ?? "").trim();
+
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    labels.push(value);
+  }
+
+  return labels;
+}
+
+function formatDrugDayMeta(labels: string[]): string {
+  return labels.length > 0 ? labels.join(" · ") : "—";
 }
 
 function buildDrugRowKey(
@@ -306,6 +347,79 @@ function formatLabReference(row: PatientLabRow): string {
   return unit ? `${range} ${unit}` : range;
 }
 
+const UNKNOWN_LAB_GRP_KEY = "__unknown__";
+
+function labGrpFilterKey(row: PatientLabRow): string {
+  const label = String(row.LABGRP_NAME ?? "").trim();
+
+  return label || UNKNOWN_LAB_GRP_KEY;
+}
+
+function labGrpFilterDisplayLabel(key: string): string {
+  return key === UNKNOWN_LAB_GRP_KEY ? "ไม่ระบุกลุ่ม" : key;
+}
+
+function sortLabGrpFilterOptions(options: string[]): string[] {
+  return [...options].sort((a, b) => {
+    if (a === UNKNOWN_LAB_GRP_KEY) return 1;
+    if (b === UNKNOWN_LAB_GRP_KEY) return -1;
+
+    return labGrpFilterDisplayLabel(a).localeCompare(labGrpFilterDisplayLabel(b), "th");
+  });
+}
+
+type LabDayItemRef = {
+  row: PatientLabRow;
+  index: number;
+  rowKey: string;
+};
+
+type LabDayGrpSection = {
+  key: string;
+  label: string;
+  labgrp: number | null;
+  items: LabDayItemRef[];
+};
+
+function groupLabItemsByGrp(dayKey: string, items: PatientLabRow[]): LabDayGrpSection[] {
+  const map = new Map<string, LabDayGrpSection>();
+
+  items.forEach((row, index) => {
+    const key = labGrpFilterKey(row);
+    let section = map.get(key);
+
+    if (!section) {
+      section = {
+        key,
+        label: labGrpFilterDisplayLabel(key),
+        labgrp: row.LABGRP,
+        items: [],
+      };
+      map.set(key, section);
+    }
+
+    section.items.push({
+      row,
+      index,
+      rowKey: `${dayKey}-${row.LABEXM}-${row.AN ?? ""}-${index}`,
+    });
+  });
+
+  return sortLabGrpFilterOptions(Array.from(map.keys())).flatMap((key) => {
+    const section = map.get(key);
+
+    return section ? [section] : [];
+  });
+}
+
+function LabGrpBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex max-w-full items-center rounded-md bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-sky-900 ring-1 ring-inset ring-sky-200">
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
 const OPDSCAN_VIEWER_TARGET = "rpp_opdscan_viewer";
 
 const SEARCH_PROMPT = 'ระบุเงื่อนไขค้นหาแล้วกด "ค้นหา"';
@@ -319,32 +433,22 @@ type TreatmentTab = "register" | "drug" | "lab" | "history" | "diag";
 
 const TREATMENT_TABS: { id: TreatmentTab; label: string; dateLabel: string }[] = [
   { id: "register", label: "ทะเบียน", dateLabel: "" },
-  { id: "drug", label: "ยา", dateLabel: "วันที่มียา" },
+  { id: "drug", label: "ยาและเวชภัณฑ์ที่มิใช่ยา", dateLabel: "วันที่มียา" },
   { id: "lab", label: "Lab", dateLabel: "วันที่มี Lab" },
   { id: "history", label: "ซักประวัติ", dateLabel: "วันที่มา" },
   { id: "diag", label: "รหัสวินิจฉัย", dateLabel: "วันที่วินิจฉัย" },
 ];
 
+const TABLE_HEAD_CLASS =
+  "bg-slate-700 text-[11px] font-semibold uppercase tracking-wide text-white";
+
+const TAB_DAY_PANEL_MIN_HEIGHT = "min-h-[20rem]";
+
+const DRUG_DAY_TABLE_CELL = "px-3 py-2.5 align-middle text-xs leading-snug";
+const DRUG_DAY_TABLE_CELL_MUTED = `${DRUG_DAY_TABLE_CELL} text-flow-muted`;
+
 function diagDayGroupKey(hn: string, dateIso: string): string {
   return `${hn}|${dateIso}`;
-}
-
-function countDiagVisitDays(
-  rows: PatientDiagnosisRow[],
-  filterVisitType: "all" | "OPD" | "IPD",
-  groupByHn: boolean
-): number {
-  const keys = new Set<string>();
-
-  for (const row of rows) {
-    if (!rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)) continue;
-    const dateIso = apiDateToIsoLocal(row.DIAG_DATE);
-
-    if (!dateIso) continue;
-    keys.add(groupByHn ? diagDayGroupKey(String(row.HN), dateIso) : dateIso);
-  }
-
-  return keys.size;
 }
 
 function groupDiagnosisByDay(rows: PatientDiagnosisRow[], groupByHn: boolean): DiagnosisDayGroup[] {
@@ -377,15 +481,182 @@ function formatVisitTypes(types: string[]): string {
   return types.join("/");
 }
 
-function VisitTypeBadge({ visitType, an }: { visitType: string; an?: string | null }) {
+function VisitTypeBadge({ visitType, an }: { visitType: string; an?: string | number | null }) {
   return (
     <span
       className={`inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
         visitType === "IPD" ? "bg-violet-100 text-violet-800" : "bg-sky-100 text-sky-800"
       }`}
     >
-      {visitType}
-      {an ? ` · ${an}` : ""}
+      {visitTypeBadgeLabel(visitType, an)}
+    </span>
+  );
+}
+
+type MedTypeKind = "drug" | "supply" | "other" | "unknown";
+
+const UNKNOWN_MED_TYPE_KEY = "__unknown__";
+
+function medTypeFilterKey(medtype: string | null | undefined): string {
+  const label = String(medtype ?? "").trim();
+
+  return label || UNKNOWN_MED_TYPE_KEY;
+}
+
+function medTypeFilterDisplayLabel(key: string): string {
+  return key === UNKNOWN_MED_TYPE_KEY ? "ไม่ระบุ" : key;
+}
+
+function sortMedTypeFilterOptions(options: string[]): string[] {
+  return [...options].sort((a, b) => {
+    const rank = (key: string) => {
+      const info = classifyMedType(key === UNKNOWN_MED_TYPE_KEY ? null : key);
+
+      if (info.kind === "drug") return 0;
+      if (info.kind === "supply") return 1;
+      if (info.kind === "unknown") return 3;
+
+      return 2;
+    };
+    const rankDiff = rank(a) - rank(b);
+
+    if (rankDiff !== 0) return rankDiff;
+
+    return medTypeFilterDisplayLabel(a).localeCompare(medTypeFilterDisplayLabel(b), "th");
+  });
+}
+
+function classifyMedType(medtype: string | null | undefined): {
+  kind: MedTypeKind;
+  label: string;
+  shortLabel: string;
+} {
+  const label = String(medtype ?? "").trim();
+
+  if (!label) return { kind: "unknown", label: "—", shortLabel: "—" };
+  if (/เวชภัณฑ์|มิใช่ยา/i.test(label)) {
+    return { kind: "supply", label, shortLabel: "เวชภัณฑ์" };
+  }
+  if (label === "ยา" || label.startsWith("ยา")) {
+    return { kind: "drug", label, shortLabel: "ยา" };
+  }
+
+  return { kind: "other", label, shortLabel: label };
+}
+
+type MedDisplayProfile = "medication" | "supply" | "general";
+
+function getMedDisplayProfile(medtype: string | null | undefined): MedDisplayProfile {
+  const kind = classifyMedType(medtype).kind;
+
+  if (kind === "drug") return "medication";
+  if (kind === "supply") return "supply";
+
+  return "general";
+}
+
+function showMedicationColumnsForProfile(profile: MedDisplayProfile): boolean {
+  return profile === "medication";
+}
+
+function formatItemDetailText(row: PatientMedicationRow): string {
+  const parts: string[] = [];
+  const medusage = formatMedusageText(row);
+
+  if (medusage !== "—") parts.push(medusage);
+  if (row.MEDNOTE?.trim()) parts.push(row.MEDNOTE.trim());
+
+  for (const { key } of DRUG_USAGE_DETAIL_FIELDS) {
+    const value = String(row[key] ?? "").trim();
+
+    if (value) parts.push(value);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "—";
+}
+
+function hasItemDetailText(row: PatientMedicationRow): boolean {
+  return formatItemDetailText(row) !== "—";
+}
+
+type DrugDayItemRef = {
+  row: PatientMedicationRow;
+  index: number;
+  rowKey: string;
+};
+
+type DrugDayMedTypeSection = {
+  key: string;
+  label: string;
+  profile: MedDisplayProfile;
+  medtype: string | null;
+  items: DrugDayItemRef[];
+};
+
+function groupDrugItemsByMedType(dayKey: string, items: PatientMedicationRow[]): DrugDayMedTypeSection[] {
+  const map = new Map<string, DrugDayMedTypeSection>();
+
+  items.forEach((row, index) => {
+    const key = medTypeFilterKey(row.MEDTYPE);
+    let section = map.get(key);
+
+    if (!section) {
+      section = {
+        key,
+        label: medTypeFilterDisplayLabel(key),
+        profile: getMedDisplayProfile(row.MEDTYPE),
+        medtype: row.MEDTYPE,
+        items: [],
+      };
+      map.set(key, section);
+    }
+
+    section.items.push({
+      row,
+      index,
+      rowKey: buildDrugRowKey(dayKey, row, index),
+    });
+  });
+
+  return sortMedTypeFilterOptions(Array.from(map.keys())).flatMap((key) => {
+    const section = map.get(key);
+
+    return section ? [section] : [];
+  });
+}
+
+function MedTypeBadge({
+  medtype,
+  compact = false,
+}: {
+  medtype: string | null | undefined;
+  compact?: boolean;
+}) {
+  const info = classifyMedType(medtype);
+
+  if (info.kind === "unknown") {
+    return <span className="text-flow-muted">—</span>;
+  }
+
+  const styleByKind = {
+    drug: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+    supply: "bg-amber-50 text-amber-900 ring-amber-200",
+    other: "bg-slate-100 text-flow-text ring-slate-200",
+  } as const;
+
+  const Icon = info.kind === "drug" ? Pill : info.kind === "supply" ? Package2 : null;
+  const displayLabel =
+    compact || info.kind === "supply" || info.kind === "drug"
+      ? info.shortLabel
+      : info.label;
+
+  return (
+    <span
+      className={`inline-flex min-w-[4.25rem] max-w-full items-center justify-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-tight ring-1 ring-inset ${styleByKind[info.kind]}`}
+      title={info.label}
+    >
+      {Icon ? <Icon aria-hidden className="h-3 w-3 shrink-0 opacity-80" /> : null}
+      <span className="truncate">{displayLabel}</span>
     </span>
   );
 }
@@ -438,13 +709,15 @@ function DrugNameDisplay({
   row,
   tradeClassName = "text-flow-text",
   genericClassName = "text-[11px] text-flow-muted",
+  showDose = false,
 }: {
   row: Pick<
     PatientMedicationRow,
-    "DRUG_NAME" | "DRUG_GENERIC_NAME" | "DRUG_STRENGTH" | "ACCNATION"
+    "DRUG_NAME" | "DRUG_GENERIC_NAME" | "DRUG_STRENGTH" | "ACCNATION" | "DRUG_DOSE"
   >;
   tradeClassName?: string;
   genericClassName?: string;
+  showDose?: boolean;
 }) {
   const nonFormulary = isNonFormularyDrug(row.ACCNATION);
   const tradeTextClass = nonFormulary ? "text-sky-600" : tradeClassName;
@@ -455,9 +728,16 @@ function DrugNameDisplay({
     row.DRUG_GENERIC_NAME,
     row.DRUG_STRENGTH
   );
+  const dose = row.DRUG_DOSE?.trim();
   const strengthBadgeClass = nonFormulary
     ? "bg-sky-50 text-sky-700 ring-sky-200"
     : "bg-slate-100 text-flow-text ring-slate-200";
+  const doseMark =
+    showDose && dose ? (
+      <mark className="inline rounded bg-amber-200 px-1.5 py-0.5 text-xs font-semibold leading-snug text-amber-950 not-italic">
+        {dose}
+      </mark>
+    ) : null;
 
   return (
     <div className="space-y-0.5">
@@ -470,9 +750,13 @@ function DrugNameDisplay({
             {row.DRUG_STRENGTH}
           </span>
         ) : null}
+        {!showGeneric ? doseMark : null}
       </div>
       {showGeneric ? (
-        <div className={`leading-snug ${genericTextClass}`}>{row.DRUG_GENERIC_NAME}</div>
+        <div className={`flex flex-wrap items-baseline gap-x-1.5 leading-snug ${genericTextClass}`}>
+          <span>{row.DRUG_GENERIC_NAME}</span>
+          {doseMark}
+        </div>
       ) : null}
     </div>
   );
@@ -533,21 +817,28 @@ function TreatmentDayButton({
   );
 }
 
-function DrugItemCard({ row, showPatient }: { row: PatientMedicationRow; showPatient: boolean }) {
+function DrugDayItemCard({
+  row,
+  showPatient,
+  showMedicationColumns,
+}: {
+  row: PatientMedicationRow;
+  showPatient: boolean;
+  showMedicationColumns: boolean;
+}) {
   const medusageText = formatMedusageText(row);
+  const detailText = formatItemDetailText(row);
 
   return (
-    <article className="space-y-1.5 px-3 py-2">
+    <article className="space-y-1.5">
       <div className="flex items-start justify-between gap-1.5">
         <div className="min-w-0 flex-1">
           <DrugNameDisplay
             row={row}
+            showDose={showMedicationColumns}
             tradeClassName="text-xs font-semibold leading-tight text-flow-text"
             genericClassName="text-[11px] leading-snug text-flow-muted"
           />
-          {row.DRUG_DOSE?.trim() ? (
-            <p className="mt-0.5 text-[11px] text-flow-muted">โดสยา {row.DRUG_DOSE}</p>
-          ) : null}
           {showPatient ? (
             <p className="mt-0.5 truncate text-[10px] text-flow-muted">
               HN {formatHnDisplay(row.HN)}
@@ -558,50 +849,229 @@ function DrugItemCard({ row, showPatient }: { row: PatientMedicationRow; showPat
         <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
       </div>
 
-      <div className="rounded bg-slate-50 px-2 py-1">
-        <p className="mb-0.5 text-[9px] font-semibold uppercase tracking-wide text-flow-muted">
-          วิธีกินยา
-        </p>
-        {formatDrugUsageBreakdown(row, true)}
-      </div>
-
-      {medusageText !== "—" ? (
+      {showMedicationColumns && medusageText !== "—" ? (
         <p className="text-[11px] leading-snug text-flow-muted">
-          <span className="font-medium text-flow-text">วิธีใช้:</span> {medusageText}
+          <span className="font-medium text-flow-text">ข้อความวิธีใช้:</span> {medusageText}
         </p>
       ) : null}
 
-      <p className="flex flex-wrap gap-x-2 gap-y-0 text-[10px] leading-tight text-flow-muted">
-        <span>
-          <span className="font-medium text-flow-text">สิทธิ</span>{" "}
-          {row.PTTYPE_NAME?.trim() ? row.PTTYPE_NAME : "—"}
-        </span>
-        <span className="text-slate-300">·</span>
-        <span>
-          <span className="font-medium text-flow-text">จำนวน</span> {formatQty(row.TOTAL_QTY)}
-        </span>
-        <span className="text-slate-300">·</span>
-        <span>
-          <span className="font-medium text-flow-text">หมวด</span> {row.MEDTYPE ?? "—"}
-        </span>
-        <span className="text-slate-300">·</span>
-        <span className="min-w-0">
-          <span className="font-medium text-flow-text">คลินิก</span>{" "}
-          {row.CLINIC_LCT_NAME ?? row.CLINIC_LCT ?? "—"}
-        </span>
+      {!showMedicationColumns && detailText !== "—" ? (
+        <p className="rounded bg-slate-50 px-2 py-1.5 text-[11px] leading-snug text-flow-text">
+          <span className="font-medium text-flow-muted">รายละเอียด:</span> {detailText}
+        </p>
+      ) : null}
+
+      <p className="text-[10px] leading-tight text-flow-muted">
+        <span className="font-medium text-flow-text">จำนวน</span> {formatQty(row.TOTAL_QTY)}
       </p>
     </article>
+  );
+}
+
+function DrugDayMedTypePanel({
+  sections,
+  activeSectionKey,
+  onActiveSectionKeyChange,
+  showPatient,
+  selectedKeys,
+  onToggleRow,
+  onToggleSection,
+  layout,
+}: {
+  sections: DrugDayMedTypeSection[];
+  activeSectionKey: string | null;
+  onActiveSectionKeyChange: (key: string) => void;
+  showPatient: boolean;
+  selectedKeys: Set<string>;
+  onToggleRow: (rowKey: string, checked: boolean) => void;
+  onToggleSection: (rowKeys: string[], checked: boolean) => void;
+  layout: "desktop" | "mobile";
+}) {
+  const activeSection =
+    sections.find((section) => section.key === activeSectionKey) ?? sections[0] ?? null;
+
+  if (!activeSection) return null;
+
+  const sectionKeys = activeSection.items.map((item) => item.rowKey);
+  const allSectionSelected =
+    sectionKeys.length > 0 && sectionKeys.every((key) => selectedKeys.has(key));
+  const showMedicationColumns = showMedicationColumnsForProfile(activeSection.profile);
+
+  return (
+    <div>
+      {sections.length > 1 ? (
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto border-b border-flow-border bg-white px-3 py-2 scrollbar-thin">
+          {sections.map((section) => {
+            const selected = section.key === activeSection.key;
+
+            return (
+              <button
+                key={section.key}
+                className={`inline-flex shrink-0 snap-start items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium touch-manipulation ${
+                  selected
+                    ? "bg-brand-600 text-white shadow-sm"
+                    : "border border-flow-border bg-slate-50 text-flow-text hover:bg-slate-100"
+                }`}
+                type="button"
+                onClick={() => onActiveSectionKeyChange(section.key)}
+              >
+                <span className="max-w-[11rem] truncate">{section.label}</span>
+                <span className={selected ? "text-white/85" : "text-flow-muted"}>
+                  ({section.items.length})
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-flow-border bg-slate-50/80 px-3 py-1.5">
+        <div className="flex min-w-0 items-center gap-2 text-xs text-flow-text">
+          <MedTypeBadge medtype={activeSection.medtype} />
+          <span className="font-semibold">{activeSection.label}</span>
+          <span className="text-flow-muted">({activeSection.items.length} รายการ)</span>
+        </div>
+        <label className="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-flow-text">
+          <input
+            checked={allSectionSelected}
+            className="h-3.5 w-3.5 rounded border-flow-border text-brand-600"
+            type="checkbox"
+            onChange={(event) => onToggleSection(sectionKeys, event.target.checked)}
+          />
+          เลือกทั้งหมดในหมวดนี้
+        </label>
+      </div>
+
+      {layout === "desktop" ? (
+        <div className="overflow-x-auto">
+          <DrugDayItemTable
+            section={activeSection}
+            selectedKeys={selectedKeys}
+            showMedicationColumns={showMedicationColumns}
+            showPatient={showPatient}
+            onToggleRow={onToggleRow}
+          />
+        </div>
+      ) : (
+        <div className="divide-y divide-flow-border">
+          {activeSection.items.map(({ row, rowKey }) => (
+            <div key={rowKey} className="flex gap-2 px-3 py-2">
+              <input
+                aria-label={`เลือกพิมพ์ ${row.DRUG_NAME ?? "รายการ"}`}
+                checked={selectedKeys.has(rowKey)}
+                className="mt-1 h-3.5 w-3.5 shrink-0 rounded border-flow-border text-brand-600"
+                type="checkbox"
+                onChange={(event) => onToggleRow(rowKey, event.target.checked)}
+              />
+              <div className="min-w-0 flex-1">
+                <DrugDayItemCard
+                  row={row}
+                  showMedicationColumns={showMedicationColumns}
+                  showPatient={showPatient}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DrugDayItemTable({
+  section,
+  showPatient,
+  showMedicationColumns,
+  selectedKeys,
+  onToggleRow,
+}: {
+  section: DrugDayMedTypeSection;
+  showPatient: boolean;
+  showMedicationColumns: boolean;
+  selectedKeys: Set<string>;
+  onToggleRow: (rowKey: string, checked: boolean) => void;
+}) {
+  return (
+    <table className="min-w-full text-left text-xs">
+      <thead className={TABLE_HEAD_CLASS}>
+        <tr>
+          <th className="w-10 px-3 py-2.5">
+            <span className="sr-only">เลือกพิมพ์</span>
+          </th>
+          {showPatient ? <th className="px-3 py-2.5">HN</th> : null}
+          {showPatient ? <th className="px-3 py-2.5">ชื่อ</th> : null}
+          <th className="px-3 py-2.5">ประเภท</th>
+          <th className="min-w-[12rem] px-3 py-2.5">ชื่อรายการ</th>
+          <th className="px-3 py-2.5 text-right">จำนวน</th>
+          {showMedicationColumns ? (
+            <th className="min-w-[10rem] px-3 py-2.5">ข้อความวิธีใช้</th>
+          ) : (
+            <th className="min-w-[14rem] px-3 py-2.5">รายละเอียด</th>
+          )}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-flow-border">
+        {section.items.map(({ row, rowKey }) => {
+          const medusageText = formatMedusageText(row);
+          const detailText = formatItemDetailText(row);
+
+          return (
+            <tr key={rowKey} className="hover:bg-slate-50/80">
+              <td className={`w-10 ${DRUG_DAY_TABLE_CELL}`}>
+                <input
+                  aria-label={`เลือกพิมพ์ ${row.DRUG_NAME ?? "รายการ"}`}
+                  checked={selectedKeys.has(rowKey)}
+                  className="h-3.5 w-3.5 rounded border-flow-border text-brand-600"
+                  type="checkbox"
+                  onChange={(event) => onToggleRow(rowKey, event.target.checked)}
+                />
+              </td>
+              {showPatient ? (
+                <td className={`whitespace-nowrap ${DRUG_DAY_TABLE_CELL}`}>
+                  {formatHnDisplay(row.HN)}
+                </td>
+              ) : null}
+              {showPatient ? (
+                <td className={DRUG_DAY_TABLE_CELL}>{row.DSPNAME ?? "—"}</td>
+              ) : null}
+              <td className={`whitespace-nowrap ${DRUG_DAY_TABLE_CELL}`}>
+                <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
+              </td>
+              <td className={`min-w-[12rem] ${DRUG_DAY_TABLE_CELL}`}>
+                <DrugNameDisplay
+                  row={row}
+                  showDose={showMedicationColumns}
+                  tradeClassName="text-xs font-semibold leading-snug text-flow-text"
+                  genericClassName="text-xs leading-snug text-flow-muted"
+                />
+              </td>
+              <td className={`whitespace-nowrap ${DRUG_DAY_TABLE_CELL} text-right tabular-nums`}>
+                {formatQty(row.TOTAL_QTY)}
+              </td>
+              {showMedicationColumns ? (
+                <td className={`min-w-[10rem] ${DRUG_DAY_TABLE_CELL_MUTED}`}>{medusageText}</td>
+              ) : (
+                <td className={`min-w-[14rem] ${DRUG_DAY_TABLE_CELL_MUTED}`}>{detailText}</td>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
 function LabItemCard({
   row,
   showPatient,
+  showLabGrp = true,
 }: {
   row: PatientLabRow;
   showPatient: boolean;
+  showLabGrp?: boolean;
 }) {
   const reference = formatLabReference(row);
+  const labGrpLabel = labGrpFilterDisplayLabel(labGrpFilterKey(row));
 
   return (
     <article className="space-y-2 border-b border-flow-border px-4 py-3 last:border-b-0">
@@ -611,6 +1081,12 @@ function LabItemCard({
         </h3>
         <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
       </div>
+
+      {showLabGrp ? (
+        <p className="text-[11px] text-flow-muted">
+          <span className="font-medium text-flow-text">กลุ่ม Lab:</span> {labGrpLabel}
+        </p>
+      ) : null}
 
       {showPatient ? (
         <p className="text-xs text-flow-muted">
@@ -630,6 +1106,134 @@ function LabItemCard({
         </p>
       ) : null}
     </article>
+  );
+}
+
+function LabDayItemTable({
+  section,
+  showPatient,
+  showLabGrpColumn,
+}: {
+  section: LabDayGrpSection;
+  showPatient: boolean;
+  showLabGrpColumn: boolean;
+}) {
+  return (
+    <table className="min-w-full text-left text-xs">
+      <thead className={TABLE_HEAD_CLASS}>
+        <tr>
+          {showPatient ? <th className="px-3 py-2.5">HN</th> : null}
+          {showPatient ? <th className="px-3 py-2.5">ชื่อ</th> : null}
+          {showLabGrpColumn ? <th className="px-3 py-2.5">กลุ่ม Lab</th> : null}
+          <th className="px-3 py-2.5">ประเภท</th>
+          <th className="px-3 py-2.5">ชื่อการตรวจ</th>
+          <th className="px-3 py-2.5">ผล</th>
+          <th className="px-3 py-2.5">ค่าอ้างอิง</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-flow-border">
+        {section.items.map(({ row, rowKey }) => (
+          <tr key={rowKey} className="hover:bg-slate-50/80">
+            {showPatient ? (
+              <td className="whitespace-nowrap px-3 py-2">{formatHnDisplay(row.HN)}</td>
+            ) : null}
+            {showPatient ? <td className="px-3 py-2">{row.DSPNAME ?? "—"}</td> : null}
+            {showLabGrpColumn ? (
+              <td className="min-w-[8rem] px-3 py-2">
+                <LabGrpBadge label={labGrpFilterDisplayLabel(labGrpFilterKey(row))} />
+              </td>
+            ) : null}
+            <td className="whitespace-nowrap px-3 py-2">
+              <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
+            </td>
+            <td className="min-w-[14rem] px-3 py-2">{row.LAB_NAME ?? "—"}</td>
+            <td className="min-w-[8rem] px-3 py-2 font-medium text-flow-text">
+              {row.RESULT?.trim() ? row.RESULT : "—"}
+            </td>
+            <td className="whitespace-nowrap px-3 py-2 text-flow-muted">
+              {formatLabReference(row)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function LabDayGrpPanel({
+  sections,
+  activeSectionKey,
+  onActiveSectionKeyChange,
+  showPatient,
+  layout,
+}: {
+  sections: LabDayGrpSection[];
+  activeSectionKey: string | null;
+  onActiveSectionKeyChange: (key: string) => void;
+  showPatient: boolean;
+  layout: "desktop" | "mobile";
+}) {
+  const activeSection =
+    sections.find((section) => section.key === activeSectionKey) ?? sections[0] ?? null;
+
+  if (!activeSection) return null;
+
+  const showLabGrpColumn = sections.length <= 1;
+
+  return (
+    <div>
+      {sections.length > 1 ? (
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto border-b border-flow-border bg-white px-3 py-2 scrollbar-thin">
+          {sections.map((section) => {
+            const selected = section.key === activeSection.key;
+
+            return (
+              <button
+                key={section.key}
+                className={`inline-flex shrink-0 snap-start items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium touch-manipulation ${
+                  selected
+                    ? "bg-brand-600 text-white shadow-sm"
+                    : "border border-flow-border bg-slate-50 text-flow-text hover:bg-slate-100"
+                }`}
+                type="button"
+                onClick={() => onActiveSectionKeyChange(section.key)}
+              >
+                <span className="max-w-[11rem] truncate">{section.label}</span>
+                <span className={selected ? "text-white/85" : "text-flow-muted"}>
+                  ({section.items.length})
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-flow-border bg-slate-50/80 px-3 py-1.5 text-xs text-flow-text">
+        <LabGrpBadge label={activeSection.label} />
+        <span className="text-flow-muted">({activeSection.items.length} รายการ)</span>
+      </div>
+
+      {layout === "desktop" ? (
+        <div className="overflow-x-auto">
+          <LabDayItemTable
+            section={activeSection}
+            showLabGrpColumn={showLabGrpColumn}
+            showPatient={showPatient}
+          />
+        </div>
+      ) : (
+        <div className="divide-y divide-flow-border">
+          {activeSection.items.map(({ row, rowKey }) => (
+            <LabItemCard
+              key={rowKey}
+              row={row}
+              showLabGrp={showLabGrpColumn}
+              showPatient={showPatient}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -696,16 +1300,15 @@ function groupDiagnosisByVisit(rows: PatientDiagnosisRow[]): DiagnosisVisitGroup
   });
 }
 
-const TABLE_HEAD_CLASS =
-  "bg-slate-700 text-[11px] font-semibold uppercase tracking-wide text-white";
-
-function ClinicalDataBox({ text }: { text: string | null }) {
+function ClinicalDataBox({ text, className = "" }: { text: string | null; className?: string }) {
   return (
-    <div className="min-h-[7rem] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className={`${TABLE_HEAD_CLASS} border-b border-white/10 px-3 py-2`}>
+    <div
+      className={`flex min-h-[7rem] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}
+    >
+      <div className={`${TABLE_HEAD_CLASS} shrink-0 border-b border-white/10 px-3 py-2`}>
         Clinical Data
       </div>
-      <div className="max-h-48 overflow-y-auto whitespace-pre-wrap px-3 py-2.5 text-xs leading-relaxed text-flow-text">
+      <div className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap px-3 py-2.5 text-xs leading-relaxed text-flow-text">
         {text?.trim() ? text : "—"}
       </div>
     </div>
@@ -885,7 +1488,7 @@ function RegistrationPanel({ data }: { data: PatientRegistrationData }) {
 
 function DiagnosisTypeLegend() {
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-flow-muted">
+    <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-flow-muted">
       {DIAG_TYPE_LEGEND.map((item) => (
         <span key={item.code}>
           <span className="font-semibold text-flow-text">{item.code}</span> = {item.label}
@@ -895,22 +1498,31 @@ function DiagnosisTypeLegend() {
   );
 }
 
-function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
+function DiagnosisEphisTable({
+  rows,
+  embedded = false,
+}: {
+  rows: PatientDiagnosisRow[];
+  embedded?: boolean;
+}) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 shadow-sm">
+    <div className={embedded ? "min-w-0" : "overflow-hidden rounded-lg border border-slate-200 shadow-sm"}>
       <div className="overflow-x-auto">
       <table className="min-w-full text-left text-xs">
         <thead className={TABLE_HEAD_CLASS}>
           <tr>
-            <th className="w-10 border-r border-white/10 px-2 py-2.5 text-center">No.</th>
-            <th className="w-20 border-r border-white/10 px-2 py-2.5">ICD10</th>
+            <th className="w-0 whitespace-nowrap border-r border-white/10 px-1.5 py-2.5">
+              ICD10
+            </th>
             <th className="border-r border-white/10 px-2 py-2.5">Diagnosis (ICD10)</th>
             <th className="border-r border-white/10 px-2 py-2.5">ชื่อภาษาไทย</th>
-            <th className="w-16 border-r border-white/10 px-2 py-2.5">DiagType</th>
-            <th className="min-w-[10rem] border-r border-white/10 px-2 py-2.5">
+            <th className="w-0 whitespace-nowrap border-r border-white/10 px-1.5 py-2.5 text-center">
+              DiagType
+            </th>
+            <th className="w-0 whitespace-nowrap border-r border-white/10 px-1.5 py-2.5">
               แพทย์ผู้วินิจฉัย
             </th>
-            <th className="w-28 px-2 py-2.5">VN</th>
+            <th className="w-0 whitespace-nowrap px-1.5 py-2.5 text-center">VN</th>
           </tr>
         </thead>
         <tbody>
@@ -919,10 +1531,7 @@ function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
               key={`${row.VISIT_REF}-${row.ICD10}-${row.DIAGTYPE}-${index}`}
               className="border-t border-slate-200 bg-white hover:bg-slate-50/80"
             >
-              <td className="px-2 py-1.5 text-center align-top text-flow-muted">
-                {index + 1}
-              </td>
-              <td className="px-2 py-1.5 align-top font-mono text-flow-text">
+              <td className="w-0 whitespace-nowrap px-1.5 py-1.5 align-top font-mono text-flow-text">
                 {row.ICD10 ?? "—"}
               </td>
               <td className="px-2 py-1.5 align-top text-flow-text">
@@ -931,13 +1540,13 @@ function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
               <td className="px-2 py-1.5 align-top text-flow-muted">
                 {row.ICD10_NAME ?? "—"}
               </td>
-              <td className="px-2 py-1.5 text-center align-top font-medium text-flow-text">
+              <td className="w-0 whitespace-nowrap px-1.5 py-1.5 text-center align-top font-medium text-flow-text">
                 {row.DIAGTYPE ?? "—"}
               </td>
-              <td className="px-2 py-1.5 align-top text-flow-text">
+              <td className="w-0 whitespace-nowrap px-1.5 py-1.5 align-top text-flow-text">
                 {row.DOCTOR_NAME ?? "—"}
               </td>
-              <td className="whitespace-nowrap px-2 py-1.5 align-top font-mono text-flow-text">
+              <td className="w-0 whitespace-nowrap px-1.5 py-1.5 align-top text-center font-mono text-flow-text">
                 {row.VISIT_REF ?? "—"}
               </td>
             </tr>
@@ -951,10 +1560,19 @@ function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
 
 function DiagnosisVisitPanel({ visit }: { visit: DiagnosisVisitGroup }) {
   return (
-    <div className="space-y-3">
-      <ClinicalDataBox text={resolveClinicalDataText(visit)} />
-      <DiagnosisTypeLegend />
-      <DiagnosisEphisTable rows={visit.rows} />
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
+      <div className="min-w-0 lg:w-[30%] lg:shrink-0">
+        <ClinicalDataBox className="h-full" text={resolveClinicalDataText(visit)} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className={`${TABLE_HEAD_CLASS} shrink-0 border-b border-white/10 px-3 py-2`}>
+          รหัสวินิจฉัย
+        </div>
+        <DiagnosisTypeLegend />
+        <div className="min-h-0 flex-1 overflow-auto">
+          <DiagnosisEphisTable embedded rows={visit.rows} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1051,10 +1669,7 @@ function HistoryVisitCard({ row }: { row: PatientHistoryRow }) {
         </div>
         <div>
           <p className="text-[10px] uppercase tracking-wide text-flow-muted">ประเภท</p>
-          <p className="text-xs text-flow-text">
-            {row.VISIT_TYPE}
-            {row.AN ? ` · ${row.AN}` : ""}
-          </p>
+          <p className="text-xs text-flow-text">{visitTypeBadgeLabel(row.VISIT_TYPE, row.AN)}</p>
         </div>
       </div>
 
@@ -1290,6 +1905,8 @@ export default function PatientMedicationSearchPage() {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [filterVisitType, setFilterVisitType] = useState<"all" | "OPD" | "IPD">("all");
+  const [selectedDrugDayMedTypeKey, setSelectedDrugDayMedTypeKey] = useState<string | null>(null);
+  const [selectedLabDayGrpKey, setSelectedLabDayGrpKey] = useState<string | null>(null);
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [patientCandidates, setPatientCandidates] = useState<PatientCandidate[]>([]);
   const [nameSearchQuery, setNameSearchQuery] = useState("");
@@ -1309,6 +1926,7 @@ export default function PatientMedicationSearchPage() {
   const scanOpenLockRef = useRef(false);
   const scanFileLinkRef = useRef<HTMLAnchorElement>(null);
   const drugRepeatPreviewFrameRef = useRef<HTMLIFrameElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const resetResults = () => {
     setRows([]);
@@ -1328,6 +1946,7 @@ export default function PatientMedicationSearchPage() {
     setSelectedDates([]);
     setSelectedYears([]);
     setFilterVisitType("all");
+    setSelectedDrugDayMedTypeKey(null);
     setContentTab("drug");
     setResolvedHn("");
     setOpdscanNotice(null);
@@ -1432,7 +2051,7 @@ export default function PatientMedicationSearchPage() {
       drug: medData.length,
       lab: labData.length,
       history: historyData.length,
-      diag: countDiagVisitDays(diagData, "all", new Set(diagData.map((row) => row.HN)).size > 1),
+      diag: diagData.length,
     };
 
     setContentTab(pickInitialTreatmentTab(counts));
@@ -1448,7 +2067,11 @@ export default function PatientMedicationSearchPage() {
 
     if (patientHn) {
       setResolvedHn(formatHnDisplay(patientHn));
-      if (!params.hn) {
+      // อย่าเขียนทับช่องค้นหาขณะผู้ใช้ยังโฟกัสอยู่ — ทำให้เคอร์เซอร์กระโดดไปหน้าตัวเลข
+      if (
+        !params.hn &&
+        document.activeElement !== searchInputRef.current
+      ) {
         setSearchQuery(formatHnDisplay(patientHn));
       }
       setScanError(null);
@@ -1839,19 +2462,15 @@ export default function PatientMedicationSearchPage() {
   };
 
   const tabCounts = useMemo(() => {
-    const countWithVisit = <T extends { VISIT_TYPE?: string }>(items: T[]) =>
+    const countItems = <T extends { VISIT_TYPE?: string }>(items: T[]) =>
       items.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, filterVisitType)).length;
 
     return {
       register: registration ? 1 : 0,
-      drug: countWithVisit(rows),
-      lab: countWithVisit(labRows),
-      history: countWithVisit(historyRows),
-      diag: countDiagVisitDays(
-        diagRows,
-        filterVisitType,
-        new Set(diagRows.map((row) => row.HN)).size > 1
-      ),
+      drug: countItems(rows),
+      lab: countItems(labRows),
+      history: countItems(historyRows),
+      diag: countItems(diagRows),
     };
   }, [registration, rows, labRows, historyRows, diagRows, filterVisitType]);
 
@@ -1945,7 +2564,7 @@ export default function PatientMedicationSearchPage() {
       drug: rows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
       lab: labRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
       history: historyRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
-      diag: countDiagVisitDays(diagRows, type, new Set(diagRows.map((row) => row.HN)).size > 1),
+      diag: diagRows.filter((row) => rowMatchesVisitFilter(row.VISIT_TYPE, type)).length,
     };
 
     if (contentTab !== "register" && nextCounts[contentTab] === 0) {
@@ -2048,6 +2667,44 @@ export default function PatientMedicationSearchPage() {
     [groupedDrugDays, selectedDrugDayKey]
   );
 
+  const drugDayMedTypeSections = useMemo(() => {
+    if (!selectedDrugDay) return [];
+
+    return groupDrugItemsByMedType(selectedDrugDay.key, selectedDrugDay.items);
+  }, [selectedDrugDay]);
+
+  const drugDayPttypeSummary = useMemo(
+    () => uniqueDrugDayLabels(selectedDrugDay?.items ?? [], (row) => row.PTTYPE_NAME),
+    [selectedDrugDay]
+  );
+
+  const drugDayClinicSummary = useMemo(
+    () =>
+      uniqueDrugDayLabels(
+        selectedDrugDay?.items ?? [],
+        (row) => row.CLINIC_LCT_NAME ?? row.CLINIC_LCT
+      ),
+    [selectedDrugDay]
+  );
+
+  useEffect(() => {
+    setSelectedDrugDayMedTypeKey(null);
+  }, [selectedDrugDayKey]);
+
+  useEffect(() => {
+    if (drugDayMedTypeSections.length === 0) {
+      setSelectedDrugDayMedTypeKey(null);
+
+      return;
+    }
+    if (
+      !selectedDrugDayMedTypeKey ||
+      !drugDayMedTypeSections.some((section) => section.key === selectedDrugDayMedTypeKey)
+    ) {
+      setSelectedDrugDayMedTypeKey(drugDayMedTypeSections[0].key);
+    }
+  }, [drugDayMedTypeSections, selectedDrugDayMedTypeKey]);
+
   useEffect(() => {
     if (!selectedDrugDay) {
       setSelectedDrugPrintKeys(new Set());
@@ -2081,6 +2738,19 @@ export default function PatientMedicationSearchPage() {
 
       if (checked) next.add(rowKey);
       else next.delete(rowKey);
+
+      return next;
+    });
+  };
+
+  const toggleDrugPrintSectionRows = (rowKeys: string[], checked: boolean) => {
+    setSelectedDrugPrintKeys((prev) => {
+      const next = new Set(prev);
+
+      for (const rowKey of rowKeys) {
+        if (checked) next.add(rowKey);
+        else next.delete(rowKey);
+      }
 
       return next;
     });
@@ -2161,13 +2831,10 @@ export default function PatientMedicationSearchPage() {
 
       const sheet = doc.querySelector(".sheet") as HTMLElement | null;
       const contentHeight = sheet?.scrollHeight ?? doc.body.scrollHeight;
-      const width = iframe.clientWidth || iframe.getBoundingClientRect().width;
+      const maxViewport = Math.floor(window.innerHeight * 0.88);
+      const minPreviewHeight = Math.min(560, maxViewport);
 
-      if (width <= 0) return;
-
-      const maxA4Height = width * (297 / 210);
-
-      iframe.style.height = `${Math.min(contentHeight, maxA4Height)}px`;
+      iframe.style.height = `${Math.min(Math.max(contentHeight + 8, minPreviewHeight), maxViewport)}px`;
     };
 
     const handleLoad = () => {
@@ -2240,6 +2907,30 @@ export default function PatientMedicationSearchPage() {
     () => groupedLabDays.find((group) => group.key === selectedLabDayKey) ?? null,
     [groupedLabDays, selectedLabDayKey]
   );
+
+  const labDayGrpSections = useMemo(() => {
+    if (!selectedLabDay) return [];
+
+    return groupLabItemsByGrp(selectedLabDay.key, selectedLabDay.items);
+  }, [selectedLabDay]);
+
+  useEffect(() => {
+    setSelectedLabDayGrpKey(null);
+  }, [selectedLabDayKey]);
+
+  useEffect(() => {
+    if (labDayGrpSections.length === 0) {
+      setSelectedLabDayGrpKey(null);
+
+      return;
+    }
+    if (
+      !selectedLabDayGrpKey ||
+      !labDayGrpSections.some((section) => section.key === selectedLabDayGrpKey)
+    ) {
+      setSelectedLabDayGrpKey(labDayGrpSections[0].key);
+    }
+  }, [labDayGrpSections, selectedLabDayGrpKey]);
 
   const historyGroupByHn = useMemo(
     () => new Set(filteredHistoryRows.map((row) => row.HN)).size > 1,
@@ -2316,54 +3007,47 @@ export default function PatientMedicationSearchPage() {
   return (
     <>
       <main className="min-h-0 flex-1 w-full overflow-y-auto px-4 py-3 md:px-6 md:py-4">
-        <header className="-mx-4 mb-3 border-b border-flow-border bg-white px-4 py-2.5 md:-mx-6 md:px-6">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-lg font-bold text-flow-text md:text-xl">ข้อมูลการรักษา</h1>
-            {patientHeader && !patientHeader.multiple ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="text-sm font-bold tracking-tight text-brand-700 md:text-base dark:text-brand-300">
-                  {patientHeader.dspname ?? "(ไม่ระบุชื่อ)"}
-                </span>
-                <span className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-semibold text-brand-800 ring-1 ring-inset ring-brand-200">
-                  HN {formatHnDisplay(patientHeader.hn)}
-                </span>
-                {patientHeader.cardno ? (
-                  <span className="text-xs text-flow-muted">บัตร {patientHeader.cardno}</span>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-          {patientHeader?.multiple ? (
-            <p className="mt-1 text-xs text-flow-muted">
-              พบผู้ป่วย {patientHeader.patientCount} ราย — แสดงข้อมูลการรักษาที่ตรงเงื่อนไข
-            </p>
-          ) : !patientHeader ? (
-            <p className="mt-0.5 text-xs text-flow-muted">
-              ค้นหาด้วย HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล — ดูข้อมูลยา, Lab, ซักประวัติ,
-              รหัสวินิจฉัย
-            </p>
-          ) : null}
-        </header>
-
-        <section className="mb-3">
+        <section className="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-stretch">
           <form
-            className="rounded-xl border border-accent-border bg-white p-3 shadow-sm"
+            className="min-w-0 rounded-xl border border-sky-300 bg-white p-3 shadow-sm"
             onSubmit={handleSearch}
           >
             <div className="flex flex-wrap items-end gap-3">
-              <div className="flex min-w-[12rem] flex-1 flex-col gap-1">
+              <div className="flex min-w-[10rem] flex-1 flex-col gap-1">
                 <label className="text-xs font-medium text-flow-text" htmlFor="med-search">
                   ค้นหาผู้ป่วย
                 </label>
                 <input
+                  ref={searchInputRef}
+                  autoComplete="off"
                   className="ui-input w-full px-3 py-1.5 text-sm"
+                  dir="ltr"
                   id="med-search"
+                  inputMode="search"
                   placeholder="HN, เลขบัตร 13 หลัก หรือชื่อ-นามสกุล"
+                  spellCheck={false}
+                  style={{ unicodeBidi: "isolate" }}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => {
-                    setSearchQuery(e.target.value);
+                    const input = e.target;
+                    const caret = input.selectionStart;
+                    const nextValue = input.value;
+
+                    setSearchQuery(nextValue);
                     setScanError(null);
+
+                    // คงตำแหน่งเคอร์เซอร์หลัง re-render (กันกระโดดไปหน้าข้อความบน UI ไทย)
+                    if (caret != null) {
+                      requestAnimationFrame(() => {
+                        const el = searchInputRef.current;
+
+                        if (!el || document.activeElement !== el) return;
+                        const pos = Math.min(caret, el.value.length);
+
+                        el.setSelectionRange(pos, pos);
+                      });
+                    }
                   }}
                 />
               </div>
@@ -2382,24 +3066,79 @@ export default function PatientMedicationSearchPage() {
               >
                 ล้างค่าค้นหา
               </button>
-              {!opdscanNotice ? (
-                <button
-                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-amber-500 bg-amber-400 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={scanLoading || !scanHnValue}
-                  title="ไฟล์สแกน OPD"
-                  type="button"
-                  onClick={() => void openOpdscan()}
-                >
-                  <FileText aria-hidden className="h-4 w-4 shrink-0" />
-                  {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์สแกน"}
-                </button>
-              ) : null}
               {scanError ? (
                 <p className="w-full basis-full text-xs text-red-600">{scanError}</p>
               ) : null}
             </div>
           </form>
+
+          {contentTab !== "register" ? (
+            <div className="flex min-w-0 flex-wrap items-end gap-2 rounded-xl border border-sky-300 bg-white p-3 shadow-sm">
+              <div className="min-w-[9rem] flex-1">
+                <p className="mb-1 text-[11px] text-flow-muted">ปี (พ.ศ.)</p>
+                <MultiSelectFilter
+                  formatOption={(year) => {
+                    const count = activeDates.filter(
+                      (iso) => isoToBuddhistYear(iso) === Number(year)
+                    ).length;
+
+                    return `${year} (${count} วัน)`;
+                  }}
+                  label="ปี (พ.ศ.)"
+                  options={activeYears.map(String)}
+                  selected={selectedYears}
+                  onChange={setSelectedYears}
+                />
+              </div>
+              <div className="min-w-[9rem] flex-1">
+                <p className="mb-1 text-[11px] text-flow-muted">วันที่</p>
+                <MultiSelectFilter
+                  formatOption={isoToThaiInput}
+                  label="วันที่"
+                  options={datesInSelectedYears}
+                  selected={selectedDates}
+                  onChange={setSelectedDates}
+                />
+              </div>
+            </div>
+          ) : null}
         </section>
+
+        <header className="mb-3 rounded-xl border border-sky-300 bg-white p-3 shadow-sm">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-lg font-bold text-flow-text md:text-xl">ข้อมูลการรักษา</h1>
+            {patientHeader && !patientHeader.multiple ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="text-sm font-bold tracking-tight text-brand-700 md:text-base dark:text-brand-300">
+                  {patientHeader.dspname ?? "(ไม่ระบุชื่อ)"}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-semibold text-brand-800 ring-1 ring-inset ring-brand-200">
+                  HN {formatHnDisplay(patientHeader.hn)}
+                </span>
+                {patientHeader.cardno ? (
+                  <span className="text-xs text-flow-muted">บัตร {patientHeader.cardno}</span>
+                ) : null}
+                {!opdscanNotice ? (
+                  <button
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-amber-500 bg-amber-400 px-2.5 py-1 text-xs font-semibold text-amber-950 shadow-sm hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={scanLoading || !scanHnValue}
+                    title="ไฟล์สแกน OPD"
+                    type="button"
+                    onClick={() => void openOpdscan()}
+                  >
+                    <FileText aria-hidden className="h-3.5 w-3.5 shrink-0" />
+                    {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์สแกน"}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          {patientHeader?.multiple ? (
+            <p className="mt-1 text-xs text-flow-muted">
+              พบผู้ป่วย {patientHeader.patientCount} ราย — แสดงข้อมูลการรักษาที่ตรงเงื่อนไข
+            </p>
+          ) : null}
+        </header>
 
         {error ? (
           <div
@@ -2430,62 +3169,6 @@ export default function PatientMedicationSearchPage() {
         ) : null}
 
         <section className="mb-3 rounded-xl border border-flow-border bg-white p-3 shadow-sm">
-          {contentTab !== "register" ? (
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-flow-text">
-              {(["all", "OPD", "IPD"] as const).map((type) => (
-                <button
-                  key={type}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                    filterVisitType === type
-                      ? "bg-slate-800 text-white"
-                      : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
-                  }`}
-                  type="button"
-                  onClick={() => handleVisitTypeChange(type)}
-                >
-                  {type === "all" ? "ทุกประเภท" : type}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex w-full flex-wrap items-end gap-2 sm:ml-auto sm:w-auto sm:justify-end">
-              <div className="min-w-[10rem] flex-1 sm:w-44 sm:flex-none">
-                <p className="mb-1 text-[11px] text-flow-muted">ปี (พ.ศ.)</p>
-                <MultiSelectFilter
-                  formatOption={(year) => {
-                    const count = activeDates.filter(
-                      (iso) => isoToBuddhistYear(iso) === Number(year)
-                    ).length;
-
-                    return `${year} (${count} วัน)`;
-                  }}
-                  label="ปี (พ.ศ.)"
-                  options={activeYears.map(String)}
-                  selected={selectedYears}
-                  onChange={setSelectedYears}
-                />
-              </div>
-              <div className="min-w-[10rem] flex-1 sm:w-44 sm:flex-none">
-                <p className="mb-1 text-[11px] text-flow-muted">วันที่</p>
-                <MultiSelectFilter
-                  formatOption={isoToThaiInput}
-                  label="วันที่"
-                  options={datesInSelectedYears}
-                  selected={selectedDates}
-                  onChange={setSelectedDates}
-                />
-              </div>
-            </div>
-          </div>
-          ) : null}
-
-          {hasResults && contentTab !== "register" && activeDates.length === 0 ? (
-            <p className="mb-3 text-xs text-flow-muted">
-              ไม่พบข้อมูลในหมวด {activeTabMeta.label} ตามตัวกรองที่เลือก
-            </p>
-          ) : null}
-
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 snap-x snap-mandatory scrollbar-thin">
             {TREATMENT_TABS.map((tab) => (
               <Fragment key={tab.id}>
@@ -2516,7 +3199,31 @@ export default function PatientMedicationSearchPage() {
                 ) : null}
               </Fragment>
             ))}
+            {hasResults && contentTab !== "register" && activeDates.length === 0 ? (
+              <p className="shrink-0 snap-start self-center px-1 text-xs text-flow-muted">
+                ไม่พบข้อมูลในหมวด {activeTabMeta.label} ตามตัวกรองที่เลือก
+              </p>
+            ) : null}
           </div>
+
+          {contentTab !== "register" ? (
+            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm text-flow-text">
+              {(["all", "OPD", "IPD"] as const).map((type) => (
+                <button
+                  key={type}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                    filterVisitType === type
+                      ? "bg-slate-800 text-white"
+                      : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
+                  }`}
+                  type="button"
+                  onClick={() => handleVisitTypeChange(type)}
+                >
+                  {type === "all" ? "ทุกประเภท" : type}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         {contentTab === "register" && (
@@ -2535,10 +3242,10 @@ export default function PatientMedicationSearchPage() {
           <section className="overflow-hidden rounded-xl border border-flow-border bg-white shadow-sm">
             {groupedDrugDays.length === 0 ? (
               <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                {tabEmptyMessage(hasResults, "ไม่มีรายการยาในวันที่เลือก")}
+                {tabEmptyMessage(hasResults, "ไม่มีรายการสั่งในวันที่เลือก")}
               </p>
             ) : (
-              <div className="flex min-h-[16rem] flex-col md:flex-row">
+              <div className={`flex ${TAB_DAY_PANEL_MIN_HEIGHT} flex-col md:flex-row`}>
                 <div
                   className={`border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r ${
                     showDrugDayList ? "block" : "hidden md:block"
@@ -2574,18 +3281,37 @@ export default function PatientMedicationSearchPage() {
                     onBack={() => setMobileDrugPanel("days")}
                   />
                   <div className="flex flex-col gap-2 border-b border-flow-border bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                      รายการยา
-                      {selectedDrugDay ? (
-                        <span className="ml-2 font-normal normal-case text-flow-text">
-                          — {isoToThaiDisplay(selectedDrugDay.dateIso)}
-                          <span className="text-flow-muted">
-                            {" "}
-                            ({selectedDrugDay.items.length} รายการ)
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide">
+                        <span className="text-brand-800">รายการสั่ง</span>
+                        {selectedDrugDay ? (
+                          <span className="ml-2 font-normal normal-case text-flow-text">
+                            — {isoToThaiDisplay(selectedDrugDay.dateIso)}
+                            <span className="text-flow-muted">
+                              {" "}
+                              ({selectedDrugDay.items.length} รายการ
+                              {drugDayMedTypeSections.length > 1
+                                ? ` · ${drugDayMedTypeSections.length} หมวด`
+                                : ""}
+                              )
+                            </span>
                           </span>
-                        </span>
+                        ) : null}
+                      </p>
+                      {selectedDrugDay ? (
+                        <p className="text-[11px] leading-snug text-flow-muted">
+                          <span>
+                            <span className="font-medium text-brand-800">สิทธิการรักษา:</span>{" "}
+                            {formatDrugDayMeta(drugDayPttypeSummary)}
+                          </span>
+                          <span className="mx-2 text-slate-300">·</span>
+                          <span>
+                            <span className="font-medium text-brand-800">คลินิก:</span>{" "}
+                            {formatDrugDayMeta(drugDayClinicSummary)}
+                          </span>
+                        </p>
                       ) : null}
-                    </p>
+                    </div>
                     {selectedDrugDay ? (
                       <div className="flex flex-wrap items-center gap-3">
                         <label className="inline-flex items-center gap-1.5 text-xs text-flow-text">
@@ -2611,115 +3337,34 @@ export default function PatientMedicationSearchPage() {
                   </div>
                   {selectedDrugDay ? (
                     <>
-                      <div className="hidden overflow-x-auto md:block">
-                        <table className="min-w-full text-left text-xs">
-                          <thead className={TABLE_HEAD_CLASS}>
-                            <tr>
-                              <th className="w-10 px-3 py-2.5">
-                                <span className="sr-only">เลือกพิมพ์</span>
-                              </th>
-                              {patientHeader?.multiple ? <th className="px-3 py-2.5">HN</th> : null}
-                              {patientHeader?.multiple ? <th className="px-3 py-2.5">ชื่อ</th> : null}
-                              <th className="px-3 py-2.5">ประเภท</th>
-                              <th className="px-3 py-2.5">ชื่อยา</th>
-                              <th className="px-3 py-2.5 text-right">จำนวน</th>
-                              <th className="min-w-[14rem] px-3 py-2.5">วิธีกินยา</th>
-                              <th className="min-w-[10rem] px-3 py-2.5">ข้อความวิธีใช้</th>
-                              <th className="px-3 py-2.5">โดสยา</th>
-                              <th className="px-3 py-2.5">สิทธิการรักษา</th>
-                              <th className="px-3 py-2.5">หมวด</th>
-                              <th className="px-3 py-2.5">คลินิก</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-flow-border">
-                            {selectedDrugDay.items.map((row, index) => {
-                              const rowKey = buildDrugRowKey(selectedDrugDay.key, row, index);
-                              const checked = selectedDrugPrintKeys.has(rowKey);
-
-                              return (
-                                <tr key={rowKey} className="hover:bg-slate-50/80">
-                                  <td className="px-3 py-2">
-                                    <input
-                                      aria-label={`เลือกพิมพ์ ${row.DRUG_NAME ?? "รายการยา"}`}
-                                      checked={checked}
-                                      className="h-3.5 w-3.5 rounded border-flow-border text-brand-600"
-                                      type="checkbox"
-                                      onChange={(event) =>
-                                        toggleDrugPrintRow(rowKey, event.target.checked)
-                                      }
-                                    />
-                                  </td>
-                                  {patientHeader?.multiple ? (
-                                    <td className="whitespace-nowrap px-3 py-2">
-                                      {formatHnDisplay(row.HN)}
-                                    </td>
-                                  ) : null}
-                                  {patientHeader?.multiple ? (
-                                    <td className="px-3 py-2">{row.DSPNAME ?? "—"}</td>
-                                  ) : null}
-                                  <td className="whitespace-nowrap px-3 py-2">
-                                    <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
-                                  </td>
-                                  <td className="min-w-[12rem] px-3 py-2">
-                                    <DrugNameDisplay row={row} />
-                                  </td>
-                                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                                    {formatQty(row.TOTAL_QTY)}
-                                  </td>
-                                  <td className="min-w-[14rem] px-3 py-2 align-top">
-                                    {formatDrugUsageBreakdown(row)}
-                                  </td>
-                                  <td className="min-w-[10rem] px-3 py-2 align-top text-flow-muted">
-                                    {formatMedusageText(row)}
-                                  </td>
-                                  <td className="whitespace-nowrap px-3 py-2 text-flow-text">
-                                    {row.DRUG_DOSE?.trim() ? row.DRUG_DOSE : "—"}
-                                  </td>
-                                  <td className="px-3 py-2 text-flow-muted">
-                                    {row.PTTYPE_NAME?.trim() ? row.PTTYPE_NAME : "—"}
-                                  </td>
-                                  <td className="px-3 py-2 text-flow-muted">
-                                    {row.MEDTYPE ?? "—"}
-                                  </td>
-                                  <td className="px-3 py-2 text-flow-muted">
-                                    {row.CLINIC_LCT_NAME ?? row.CLINIC_LCT ?? "—"}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                      <div className="hidden md:block">
+                        <DrugDayMedTypePanel
+                          activeSectionKey={selectedDrugDayMedTypeKey}
+                          layout="desktop"
+                          sections={drugDayMedTypeSections}
+                          selectedKeys={selectedDrugPrintKeys}
+                          showPatient={Boolean(patientHeader?.multiple)}
+                          onActiveSectionKeyChange={setSelectedDrugDayMedTypeKey}
+                          onToggleRow={toggleDrugPrintRow}
+                          onToggleSection={toggleDrugPrintSectionRows}
+                        />
                       </div>
-                      <div className="divide-y divide-flow-border md:hidden">
-                        {selectedDrugDay.items.map((row, index) => {
-                          const rowKey = buildDrugRowKey(selectedDrugDay.key, row, index);
-                          const checked = selectedDrugPrintKeys.has(rowKey);
-
-                          return (
-                            <div key={rowKey} className="flex gap-2 px-3 py-2">
-                              <input
-                                aria-label={`เลือกพิมพ์ ${row.DRUG_NAME ?? "รายการยา"}`}
-                                checked={checked}
-                                className="mt-1 h-3.5 w-3.5 shrink-0 rounded border-flow-border text-brand-600"
-                                type="checkbox"
-                                onChange={(event) =>
-                                  toggleDrugPrintRow(rowKey, event.target.checked)
-                                }
-                              />
-                              <div className="min-w-0 flex-1">
-                                <DrugItemCard
-                                  row={row}
-                                  showPatient={Boolean(patientHeader?.multiple)}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
+                      <div className="md:hidden">
+                        <DrugDayMedTypePanel
+                          activeSectionKey={selectedDrugDayMedTypeKey}
+                          layout="mobile"
+                          sections={drugDayMedTypeSections}
+                          selectedKeys={selectedDrugPrintKeys}
+                          showPatient={Boolean(patientHeader?.multiple)}
+                          onActiveSectionKeyChange={setSelectedDrugDayMedTypeKey}
+                          onToggleRow={toggleDrugPrintRow}
+                          onToggleSection={toggleDrugPrintSectionRows}
+                        />
                       </div>
                     </>
                   ) : (
                     <p className="px-4 py-6 text-center text-xs text-flow-muted">
-                      {isMobile ? "แตะวันที่เพื่อดูรายการยา" : "เลือกวันที่จากรายการด้านซ้าย"}
+                      {isMobile ? "แตะวันที่เพื่อดูรายการสั่ง" : "เลือกวันที่จากรายการด้านซ้าย"}
                     </p>
                   )}
                 </div>
@@ -2735,7 +3380,7 @@ export default function PatientMedicationSearchPage() {
                 {tabEmptyMessage(hasResults, "ไม่มีรายการ Lab ในวันที่เลือก")}
               </p>
             ) : (
-              <div className="flex min-h-[16rem] flex-col md:flex-row">
+              <div className={`flex ${TAB_DAY_PANEL_MIN_HEIGHT} flex-col md:flex-row`}>
                 <div
                   className={`border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r ${
                     showLabDayList ? "block" : "hidden md:block"
@@ -2784,60 +3429,23 @@ export default function PatientMedicationSearchPage() {
                   </p>
                   {selectedLabDay ? (
                     <>
-                      <div className="hidden overflow-x-auto md:block">
-                        <table className="min-w-full text-left text-xs">
-                          <thead className={TABLE_HEAD_CLASS}>
-                            <tr>
-                              {patientHeader?.multiple ? <th className="px-3 py-2.5">HN</th> : null}
-                              {patientHeader?.multiple ? <th className="px-3 py-2.5">ชื่อ</th> : null}
-                              <th className="px-3 py-2.5">ประเภท</th>
-                              <th className="px-3 py-2.5">ชื่อการตรวจ</th>
-                              <th className="px-3 py-2.5">ผล</th>
-                              <th className="px-3 py-2.5">ค่าอ้างอิง</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-flow-border">
-                            {selectedLabDay.items.map((row, index) => {
-                              const rowKey = `${selectedLabDay.key}-${row.LABEXM}-${row.AN ?? ""}-${index}`;
-
-                              return (
-                                <tr key={rowKey} className="hover:bg-slate-50/80">
-                                  {patientHeader?.multiple ? (
-                                    <td className="whitespace-nowrap px-3 py-2">
-                                      {formatHnDisplay(row.HN)}
-                                    </td>
-                                  ) : null}
-                                  {patientHeader?.multiple ? (
-                                    <td className="px-3 py-2">{row.DSPNAME ?? "—"}</td>
-                                  ) : null}
-                                  <td className="whitespace-nowrap px-3 py-2">
-                                    <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
-                                  </td>
-                                  <td className="min-w-[14rem] px-3 py-2">{row.LAB_NAME ?? "—"}</td>
-                                  <td className="min-w-[8rem] px-3 py-2 font-medium text-flow-text">
-                                    {row.RESULT?.trim() ? row.RESULT : "—"}
-                                  </td>
-                                  <td className="whitespace-nowrap px-3 py-2 text-flow-muted">
-                                    {formatLabReference(row)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                      <div className="hidden md:block">
+                        <LabDayGrpPanel
+                          activeSectionKey={selectedLabDayGrpKey}
+                          layout="desktop"
+                          sections={labDayGrpSections}
+                          showPatient={Boolean(patientHeader?.multiple)}
+                          onActiveSectionKeyChange={setSelectedLabDayGrpKey}
+                        />
                       </div>
-                      <div className="divide-y divide-flow-border md:hidden">
-                        {selectedLabDay.items.map((row, index) => {
-                          const rowKey = `${selectedLabDay.key}-${row.LABEXM}-${row.AN ?? ""}-${index}`;
-
-                          return (
-                            <LabItemCard
-                              key={rowKey}
-                              row={row}
-                              showPatient={Boolean(patientHeader?.multiple)}
-                            />
-                          );
-                        })}
+                      <div className="md:hidden">
+                        <LabDayGrpPanel
+                          activeSectionKey={selectedLabDayGrpKey}
+                          layout="mobile"
+                          sections={labDayGrpSections}
+                          showPatient={Boolean(patientHeader?.multiple)}
+                          onActiveSectionKeyChange={setSelectedLabDayGrpKey}
+                        />
                       </div>
                     </>
                   ) : (
@@ -2858,7 +3466,7 @@ export default function PatientMedicationSearchPage() {
                 {tabEmptyMessage(hasResults, "ไม่มีข้อมูลการซักประวัติในวันที่เลือก")}
               </p>
             ) : (
-              <div className="flex min-h-[16rem] flex-col md:flex-row">
+              <div className={`flex ${TAB_DAY_PANEL_MIN_HEIGHT} flex-col md:flex-row`}>
                 <div
                   className={`border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r ${
                     showHistoryDayList ? "block" : "hidden md:block"
@@ -2938,7 +3546,7 @@ export default function PatientMedicationSearchPage() {
                 {tabEmptyMessage(hasResults, "ไม่มีรหัสวินิจฉัยในวันที่เลือก")}
               </p>
             ) : (
-              <div className="flex min-h-[16rem] flex-col md:flex-row">
+              <div className={`flex ${TAB_DAY_PANEL_MIN_HEIGHT} flex-col md:flex-row`}>
                 <div
                   className={`border-b border-flow-border md:w-72 md:shrink-0 md:border-b-0 md:border-r ${
                     showDiagDayList ? "block" : "hidden md:block"
@@ -2986,27 +3594,9 @@ export default function PatientMedicationSearchPage() {
                     ) : null}
                   </p>
                   {selectedDiagDay ? (
-                    <>
-                      <div className="hidden md:block">
-                        <div className="p-3">
-                          {selectedDiagPanel ? <DiagnosisVisitPanel visit={selectedDiagPanel} /> : null}
-                        </div>
-                      </div>
-                      <div className="space-y-3 p-3 md:hidden">
-                        {selectedDiagPanel ? (
-                          <>
-                            <ClinicalDataBox text={resolveClinicalDataText(selectedDiagPanel)} />
-                            <DiagnosisTypeLegend />
-                            {selectedDiagPanel.rows.map((row, index) => (
-                              <DiagnosisItemCard
-                                key={`${row.VISIT_REF}-${row.ICD10}-${row.DIAGTYPE}-${index}`}
-                                row={row}
-                              />
-                            ))}
-                          </>
-                        ) : null}
-                      </div>
-                    </>
+                    <div className="p-3">
+                      {selectedDiagPanel ? <DiagnosisVisitPanel visit={selectedDiagPanel} /> : null}
+                    </div>
                   ) : (
                     <p className="px-4 py-6 text-center text-xs text-flow-muted">
                       {isMobile ? "แตะวันที่เพื่อดูรหัสวินิจฉัย" : "เลือกวันที่จากรายการด้านซ้าย"}
@@ -3023,24 +3613,24 @@ export default function PatientMedicationSearchPage() {
         <div
           aria-labelledby="drug-repeat-preview-title"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 sm:p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4"
           role="dialog"
           onClick={closeDrugRepeatPreview}
         >
           <div
-            className="flex max-h-[94vh] w-[min(210mm,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-flow-border bg-white shadow-2xl"
+            className="flex max-h-[96vh] w-[min(98vw,60rem)] flex-col overflow-hidden rounded-xl border border-flow-border bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-flow-border bg-slate-50 px-4 py-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-flow-border bg-slate-50 px-4 py-3 sm:px-5">
               <div className="min-w-0">
                 <h2
-                  className="flex items-center gap-2 text-sm font-semibold text-flow-text"
+                  className="flex items-center gap-2 text-base font-semibold text-flow-text"
                   id="drug-repeat-preview-title"
                 >
-                  <Printer aria-hidden className="h-4 w-4 shrink-0 text-brand-600" />
+                  <Printer aria-hidden className="h-5 w-5 shrink-0 text-brand-600" />
                   ตัวอย่างใบรายการยาเดิม
                 </h2>
-                <p className="mt-0.5 truncate text-xs text-flow-muted">
+                <p className="mt-1 truncate text-sm text-flow-muted">
                   HN {drugRepeatPreview.hn}
                   {drugRepeatPreview.patientName ? ` · ${drugRepeatPreview.patientName}` : ""}
                   {" · "}
@@ -3049,14 +3639,14 @@ export default function PatientMedicationSearchPage() {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
-                  className="rounded-lg border border-flow-border bg-white px-3 py-1.5 text-sm font-medium text-flow-text hover:bg-slate-50"
+                  className="rounded-lg border border-flow-border bg-white px-4 py-2 text-sm font-medium text-flow-text hover:bg-slate-50"
                   type="button"
                   onClick={closeDrugRepeatPreview}
                 >
                   ปิด
                 </button>
                 <button
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
+                  className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
                   type="button"
                   onClick={handleDrugRepeatPreviewPrint}
                 >
@@ -3065,10 +3655,10 @@ export default function PatientMedicationSearchPage() {
                 </button>
               </div>
             </div>
-            <div className="min-h-0 overflow-y-auto overflow-x-hidden bg-white">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-slate-100 p-4 sm:p-6">
               <iframe
                 ref={drugRepeatPreviewFrameRef}
-                className="block w-full border-0 bg-white"
+                className="mx-auto block w-full max-w-[210mm] border-0 bg-transparent"
                 scrolling="no"
                 srcDoc={drugRepeatPreviewHtml ?? undefined}
                 title="ตัวอย่างใบรายการยาเดิมของผู้ป่วย"
@@ -3090,18 +3680,18 @@ export default function PatientMedicationSearchPage() {
             className="relative max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-xl border border-flow-border bg-white shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-flow-border bg-flow-input px-4 py-3">
+            <div className="flex items-center justify-between border-b border-flow-border bg-flow-input px-3 py-2">
               <div>
                 <h2 className="text-sm font-semibold text-flow-text" id="patient-picker-title">
                   เลือกผู้ป่วย
                 </h2>
-                <p className="mt-0.5 text-xs text-flow-muted">
+                <p className="mt-0.5 text-[11px] text-flow-muted">
                   พบ {patientCandidates.length} รายการที่ตรงกับ &quot;{nameSearchQuery}&quot;
-                  {patientCandidates.length >= 50 ? " (แสดงสูงสุด 50 รายการ)" : ""}
+                  {patientCandidates.length >= 100 ? " (แสดงสูงสุด 100 รายการ)" : ""}
                 </p>
               </div>
               <button
-                className="rounded-lg border border-flow-border bg-white px-3 py-1 text-xs font-medium text-flow-text hover:bg-brand-50"
+                className="rounded-lg border border-flow-border bg-white px-2.5 py-1 text-xs font-medium text-flow-text hover:bg-brand-50"
                 type="button"
                 onClick={closePatientModal}
               >
@@ -3109,11 +3699,11 @@ export default function PatientMedicationSearchPage() {
               </button>
             </div>
             {patientPickerNotice ? (
-              <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+              <div className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
                 {patientPickerNotice}
               </div>
             ) : null}
-            <div className="relative max-h-[calc(85vh-4rem)] overflow-auto">
+            <div className="relative max-h-[calc(85vh-3.5rem)] overflow-auto">
               {patientPickerLoading ? (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70">
                   <p className="text-sm text-flow-muted">กำลังโหลด...</p>
@@ -3122,10 +3712,10 @@ export default function PatientMedicationSearchPage() {
               <table className="min-w-full text-left text-xs">
                 <thead className={`sticky top-0 ${TABLE_HEAD_CLASS}`}>
                   <tr>
-                    <th className="px-4 py-2.5">ชื่อ-นามสกุล</th>
-                    <th className="px-4 py-2.5">HN</th>
-                    <th className="px-4 py-2.5">เลขบัตรประชาชน</th>
-                    <th className="px-4 py-2.5 text-right" />
+                    <th className="px-3 py-1.5">ชื่อ-นามสกุล</th>
+                    <th className="px-3 py-1.5">HN</th>
+                    <th className="px-3 py-1.5">เลขบัตรประชาชน</th>
+                    <th className="w-16 px-3 py-1.5 text-right" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-flow-border">
@@ -3135,16 +3725,18 @@ export default function PatientMedicationSearchPage() {
                       className={`cursor-pointer hover:bg-brand-50/60 ${patientPickerLoading ? "pointer-events-none opacity-60" : ""}`}
                       onClick={() => void handlePatientSelect(patient)}
                     >
-                      <td className="px-4 py-3 font-medium text-flow-text">
-                        {patient.DSPNAME ?? "(ไม่ระบุชื่อ)"}
+                      <td className="px-3 py-1.5 font-medium leading-snug text-flow-text">
+                        {highlightQueryText(patient.DSPNAME, nameSearchQuery)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3">{formatHnDisplay(patient.HN)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-flow-muted">
+                      <td className="whitespace-nowrap px-3 py-1.5 leading-snug">
+                        {formatHnDisplay(patient.HN)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-1.5 leading-snug text-flow-muted">
                         {patient.CARDNO ?? "—"}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right">
                         <button
-                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="rounded-md bg-brand-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
                           disabled={patientPickerLoading}
                           type="button"
                           onClick={(event) => {

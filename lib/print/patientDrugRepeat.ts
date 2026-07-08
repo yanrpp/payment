@@ -88,7 +88,14 @@ export function isoToThaiSlashDate(iso: string): string {
   return `${dayStr}/${monthStr}/${year + 543}`;
 }
 
-function resolveDrugRepeatDensity(itemCount: number): string {
+function resolveDrugRepeatDensity(itemCount: number, preview = false): string {
+  if (preview) {
+    if (itemCount > 20) return "density-compact";
+    if (itemCount > 14) return "density-snug";
+
+    return "density-comfortable";
+  }
+
   if (itemCount > 14) return "density-dense";
   if (itemCount > 10) return "density-compact";
   if (itemCount > 7) return "density-snug";
@@ -111,7 +118,7 @@ export function buildPatientDrugRepeatPrintHtml(
   const visitDate = isoToThaiSlashDate(payload.prscDateIso);
   const logoSrc = payload.logoUrl ?? HOSPITAL_LOGO;
   const allergy = payload.drugAllergy?.trim() || "NDA(NO DRUG ALLERGY)";
-  const densityClass = resolveDrugRepeatDensity(payload.items.length);
+  const densityClass = resolveDrugRepeatDensity(payload.items.length, preview);
 
   const rowsHtml = payload.items
     .map((row, index) => {
@@ -163,18 +170,54 @@ export function buildPatientDrugRepeatPrintHtml(
       margin: 0;
       padding: 0;
       background: #fff;
+      font-size: 16px;
+      line-height: 1.55;
     }
     body.preview-doc .sheet {
-      width: 100%;
+      width: 210mm;
       max-width: 100%;
       min-height: 0;
-      margin: 0;
-      border: none;
-      border-radius: 0;
-      box-shadow: none;
+      margin: 0 auto;
+      padding: 12mm 14mm 13mm;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.1);
     }
     body.preview-doc .meta {
       white-space: normal;
+      font-size: 13px;
+    }
+    body.preview-doc .title {
+      font-size: 22px;
+    }
+    body.preview-doc .title-sub {
+      font-size: 16px;
+    }
+    body.preview-doc .patient {
+      font-size: 15px;
+      padding: 9px 12px;
+    }
+    body.preview-doc table {
+      font-size: 15px;
+    }
+    body.preview-doc th {
+      font-size: 13px;
+      padding: 7px 9px;
+    }
+    body.preview-doc th,
+    body.preview-doc td {
+      padding: 7px 9px;
+      line-height: 1.5;
+    }
+    body.preview-doc .qty-col {
+      min-height: 28px;
+    }
+    body.preview-doc .footer {
+      font-size: 13px;
+    }
+    body.preview-doc .note {
+      font-size: 12px;
+      line-height: 1.45;
     }
     @media print {
       body.preview-doc {

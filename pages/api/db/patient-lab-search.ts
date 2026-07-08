@@ -11,6 +11,8 @@ export type PatientLabRow = {
   AN: string | null;
   VISIT_TYPE: string;
   LABEXM: number | null;
+  LABGRP: number | null;
+  LABGRP_NAME: string | null;
   LAB_NAME: string | null;
   RESULT: string | null;
   MIN_NRM: string | null;
@@ -134,6 +136,8 @@ export default async function handler(
       l.an                                AS AN,
       CASE WHEN l.an IS NOT NULL THEN 'IPD' ELSE 'OPD' END AS VISIT_TYPE,
       l.labexm                            AS LABEXM,
+      le.labgrp                           AS LABGRP,
+      lg.name                             AS LABGRP_NAME,
       le.name                             AS LAB_NAME,
       l.result                            AS RESULT,
       l.minnrm                            AS MIN_NRM,
@@ -143,6 +147,7 @@ export default async function handler(
       INNER JOIN pt ON pt.hn = l.hn
       LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
       LEFT JOIN labexm le ON le.labexm = l.labexm
+      LEFT JOIN labgrp lg ON lg.labgrp = le.labgrp
     WHERE 1 = 1
       ${whereDate}
       ${whereHn}
@@ -152,6 +157,7 @@ export default async function handler(
       l.lvstdate DESC,
       l.hn,
       le.name,
+      lg.name,
       l.labexm
   `;
 
