@@ -694,17 +694,24 @@ function groupDiagnosisByVisit(rows: PatientDiagnosisRow[]): DiagnosisVisitGroup
   });
 }
 
+const TABLE_HEAD_CLASS =
+  "bg-slate-700 text-[11px] font-semibold uppercase tracking-wide text-white";
+
 function ClinicalDataBox({ text }: { text: string | null }) {
   return (
-    <div className="min-h-[7rem] rounded border border-slate-300 bg-white">
-      <div className="border-b border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+    <div className="min-h-[7rem] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className={`${TABLE_HEAD_CLASS} border-b border-white/10 px-3 py-2`}>
         Clinical Data
       </div>
-      <div className="max-h-48 overflow-y-auto whitespace-pre-wrap px-2 py-2 text-xs leading-relaxed text-flow-text">
+      <div className="max-h-48 overflow-y-auto whitespace-pre-wrap px-3 py-2.5 text-xs leading-relaxed text-flow-text">
         {text?.trim() ? text : "—"}
       </div>
     </div>
   );
+}
+
+function resolveClinicalDataText(visit: DiagnosisVisitGroup): string | null {
+  return joinUniqueClinicalTexts([visit.clinicalLeft, visit.clinicalRight]);
 }
 
 function DiagnosisTypeLegend() {
@@ -721,49 +728,54 @@ function DiagnosisTypeLegend() {
 
 function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
   return (
-    <div className="overflow-x-auto border border-slate-300">
+    <div className="overflow-hidden rounded-lg border border-slate-200 shadow-sm">
+      <div className="overflow-x-auto">
       <table className="min-w-full text-left text-xs">
-        <thead className="bg-slate-100 text-[11px] text-slate-700">
+        <thead className={TABLE_HEAD_CLASS}>
           <tr>
-            <th className="w-10 border border-slate-300 px-2 py-1.5 text-center font-semibold">No.</th>
-            <th className="w-20 border border-slate-300 px-2 py-1.5 font-semibold">ICD10</th>
-            <th className="border border-slate-300 px-2 py-1.5 font-semibold">Diagnosis (ICD10)</th>
-            <th className="border border-slate-300 px-2 py-1.5 font-semibold">ชื่อภาษาไทย</th>
-            <th className="w-16 border border-slate-300 px-2 py-1.5 font-semibold">DiagType</th>
-            <th className="min-w-[10rem] border border-slate-300 px-2 py-1.5 font-semibold">
+            <th className="w-10 border-r border-white/10 px-2 py-2.5 text-center">No.</th>
+            <th className="w-20 border-r border-white/10 px-2 py-2.5">ICD10</th>
+            <th className="border-r border-white/10 px-2 py-2.5">Diagnosis (ICD10)</th>
+            <th className="border-r border-white/10 px-2 py-2.5">ชื่อภาษาไทย</th>
+            <th className="w-16 border-r border-white/10 px-2 py-2.5">DiagType</th>
+            <th className="min-w-[10rem] border-r border-white/10 px-2 py-2.5">
               แพทย์ผู้วินิจฉัย
             </th>
-            <th className="w-28 border border-slate-300 px-2 py-1.5 font-semibold">VN</th>
+            <th className="w-28 px-2 py-2.5">VN</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`${row.VISIT_REF}-${row.ICD10}-${row.DIAGTYPE}-${index}`} className="bg-white">
-              <td className="border border-slate-300 px-2 py-1.5 text-center align-top text-flow-muted">
+            <tr
+              key={`${row.VISIT_REF}-${row.ICD10}-${row.DIAGTYPE}-${index}`}
+              className="border-t border-slate-200 bg-white hover:bg-slate-50/80"
+            >
+              <td className="px-2 py-1.5 text-center align-top text-flow-muted">
                 {index + 1}
               </td>
-              <td className="border border-slate-300 px-2 py-1.5 align-top font-mono text-flow-text">
+              <td className="px-2 py-1.5 align-top font-mono text-flow-text">
                 {row.ICD10 ?? "—"}
               </td>
-              <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-text">
+              <td className="px-2 py-1.5 align-top text-flow-text">
                 {row.ICD10_NAME_EN ?? row.ICD10_NAME ?? "—"}
               </td>
-              <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-muted">
+              <td className="px-2 py-1.5 align-top text-flow-muted">
                 {row.ICD10_NAME ?? "—"}
               </td>
-              <td className="border border-slate-300 px-2 py-1.5 align-top text-center font-medium text-flow-text">
+              <td className="px-2 py-1.5 text-center align-top font-medium text-flow-text">
                 {row.DIAGTYPE ?? "—"}
               </td>
-              <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-text">
+              <td className="px-2 py-1.5 align-top text-flow-text">
                 {row.DOCTOR_NAME ?? "—"}
               </td>
-              <td className="whitespace-nowrap border border-slate-300 px-2 py-1.5 align-top font-mono text-flow-text">
+              <td className="whitespace-nowrap px-2 py-1.5 align-top font-mono text-flow-text">
                 {row.VISIT_REF ?? "—"}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -771,18 +783,9 @@ function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
 function DiagnosisVisitPanel({ visit }: { visit: DiagnosisVisitGroup }) {
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 lg:grid-cols-2">
-        <ClinicalDataBox text={visit.clinicalLeft} />
-        <ClinicalDataBox text={visit.clinicalRight} />
-      </div>
+      <ClinicalDataBox text={resolveClinicalDataText(visit)} />
       <DiagnosisTypeLegend />
       <DiagnosisEphisTable rows={visit.rows} />
-      {visit.diagnosisNote ? (
-        <div className="rounded border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-flow-muted">
-          <span className="font-semibold text-flow-text">Diagnosis (จากบัตร): </span>
-          <span className="whitespace-pre-wrap">{visit.diagnosisNote}</span>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -2169,14 +2172,16 @@ export default function PatientMedicationSearchPage() {
             <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-flow-text">
               {patientHeader && !patientHeader.multiple ? (
                 <>
-                  <span className="font-semibold">{patientHeader.dspname ?? "(ไม่ระบุชื่อ)"}</span>
-                  <span className="text-flow-muted">·</span>
-                  <span>HN {formatHnDisplay(patientHeader.hn)}</span>
+                  <span className="text-base font-bold tracking-tight text-brand-700 md:text-lg dark:text-brand-300">
+                    {patientHeader.dspname ?? "(ไม่ระบุชื่อ)"}
+                  </span>
+                  <span
+                    className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-semibold text-brand-800 ring-1 ring-inset ring-brand-200"
+                  >
+                    HN {formatHnDisplay(patientHeader.hn)}
+                  </span>
                   {patientHeader.cardno ? (
-                    <>
-                      <span className="text-flow-muted">·</span>
-                      <span>บัตร {patientHeader.cardno}</span>
-                    </>
+                    <span className="text-xs text-flow-muted">บัตร {patientHeader.cardno}</span>
                   ) : null}
                 </>
               ) : patientHeader?.multiple ? (
@@ -2352,22 +2357,22 @@ export default function PatientMedicationSearchPage() {
                     <>
                       <div className="hidden overflow-x-auto md:block">
                         <table className="min-w-full text-left text-xs">
-                          <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wide text-flow-muted">
+                          <thead className={TABLE_HEAD_CLASS}>
                             <tr>
-                              <th className="w-10 px-3 py-2">
+                              <th className="w-10 px-3 py-2.5">
                                 <span className="sr-only">เลือกพิมพ์</span>
                               </th>
-                              {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
-                              {patientHeader?.multiple ? <th className="px-3 py-2">ชื่อ</th> : null}
-                              <th className="px-3 py-2">ประเภท</th>
-                              <th className="px-3 py-2">ชื่อยา</th>
-                              <th className="px-3 py-2 text-right">จำนวน</th>
-                              <th className="min-w-[14rem] px-3 py-2">วิธีกินยา</th>
-                              <th className="min-w-[10rem] px-3 py-2">ข้อความวิธีใช้</th>
-                              <th className="px-3 py-2">โดสยา</th>
-                              <th className="px-3 py-2">สิทธิการรักษา</th>
-                              <th className="px-3 py-2">หมวด</th>
-                              <th className="px-3 py-2">คลินิก</th>
+                              {patientHeader?.multiple ? <th className="px-3 py-2.5">HN</th> : null}
+                              {patientHeader?.multiple ? <th className="px-3 py-2.5">ชื่อ</th> : null}
+                              <th className="px-3 py-2.5">ประเภท</th>
+                              <th className="px-3 py-2.5">ชื่อยา</th>
+                              <th className="px-3 py-2.5 text-right">จำนวน</th>
+                              <th className="min-w-[14rem] px-3 py-2.5">วิธีกินยา</th>
+                              <th className="min-w-[10rem] px-3 py-2.5">ข้อความวิธีใช้</th>
+                              <th className="px-3 py-2.5">โดสยา</th>
+                              <th className="px-3 py-2.5">สิทธิการรักษา</th>
+                              <th className="px-3 py-2.5">หมวด</th>
+                              <th className="px-3 py-2.5">คลินิก</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-flow-border">
@@ -2525,14 +2530,14 @@ export default function PatientMedicationSearchPage() {
                     <>
                       <div className="hidden overflow-x-auto md:block">
                         <table className="min-w-full text-left text-xs">
-                          <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wide text-flow-muted">
+                          <thead className={TABLE_HEAD_CLASS}>
                             <tr>
-                              {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
-                              {patientHeader?.multiple ? <th className="px-3 py-2">ชื่อ</th> : null}
-                              <th className="px-3 py-2">ประเภท</th>
-                              <th className="px-3 py-2">ชื่อการตรวจ</th>
-                              <th className="px-3 py-2">ผล</th>
-                              <th className="px-3 py-2">ค่าอ้างอิง</th>
+                              {patientHeader?.multiple ? <th className="px-3 py-2.5">HN</th> : null}
+                              {patientHeader?.multiple ? <th className="px-3 py-2.5">ชื่อ</th> : null}
+                              <th className="px-3 py-2.5">ประเภท</th>
+                              <th className="px-3 py-2.5">ชื่อการตรวจ</th>
+                              <th className="px-3 py-2.5">ผล</th>
+                              <th className="px-3 py-2.5">ค่าอ้างอิง</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-flow-border">
@@ -2734,10 +2739,7 @@ export default function PatientMedicationSearchPage() {
                       <div className="space-y-3 p-3 md:hidden">
                         {selectedDiagPanel ? (
                           <>
-                            <div className="grid gap-2">
-                              <ClinicalDataBox text={selectedDiagPanel.clinicalLeft} />
-                              <ClinicalDataBox text={selectedDiagPanel.clinicalRight} />
-                            </div>
+                            <ClinicalDataBox text={resolveClinicalDataText(selectedDiagPanel)} />
                             <DiagnosisTypeLegend />
                             {selectedDiagPanel.rows.map((row, index) => (
                               <DiagnosisItemCard
@@ -2862,12 +2864,12 @@ export default function PatientMedicationSearchPage() {
                 </div>
               ) : null}
               <table className="min-w-full text-left text-xs">
-                <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-flow-muted">
+                <thead className={`sticky top-0 ${TABLE_HEAD_CLASS}`}>
                   <tr>
-                    <th className="px-4 py-2">ชื่อ-นามสกุล</th>
-                    <th className="px-4 py-2">HN</th>
-                    <th className="px-4 py-2">เลขบัตรประชาชน</th>
-                    <th className="px-4 py-2 text-right" />
+                    <th className="px-4 py-2.5">ชื่อ-นามสกุล</th>
+                    <th className="px-4 py-2.5">HN</th>
+                    <th className="px-4 py-2.5">เลขบัตรประชาชน</th>
+                    <th className="px-4 py-2.5 text-right" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-flow-border">

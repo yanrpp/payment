@@ -33,7 +33,7 @@ export function AppHeaderBar({ onOpenSidebar, sidebarHidden = false }: AppHeader
   const isDark = mounted && theme === "dark";
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-brand-100 bg-brand-50/95 px-4 backdrop-blur dark:border-brand-800/40 dark:bg-brand-900/30 md:px-6">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-brand-200 bg-brand-100 px-4 backdrop-blur dark:border-brand-700/50 dark:bg-brand-900/50 md:px-6">
       <button
         aria-label="เปิดเมนู"
         className={`grid h-9 w-9 place-items-center rounded-lg text-flow-muted hover:bg-flow-input ${sidebarHidden ? "" : "md:hidden"}`}
