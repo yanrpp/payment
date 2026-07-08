@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight, FileText, Printer } from "lucide-react";
 
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import {
@@ -9,10 +9,20 @@ import {
   type OpdscanFileEntry,
 } from "@/components/opdscan/OpdscanExplorerModal";
 import { isoToThaiDisplay, isoToThaiInput } from "@/lib/date/thaiDate";
+import {
+  DIAG_TYPE_LEGEND,
+  formatDiagTypeLabel,
+  parseCnopdcardDiag,
+} from "@/lib/db/cnopdcardDiag";
 import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import { normalizeHnInput } from "@/lib/hn/normalize";
 import { buildOpdscanUncPath } from "@/lib/opdscan/path";
 import { parsePatientSearchQuery, scanHnFromSearchQuery } from "@/lib/patient/parseSearchQuery";
+import {
+  buildPatientDrugRepeatPrintHtml,
+  formatPrescriptionNo,
+  type PatientDrugRepeatPrintPayload,
+} from "@/lib/print/patientDrugRepeat";
 
 type PatientMedicationRow = {
   HN: string;
@@ -27,6 +37,8 @@ type PatientMedicationRow = {
   MEDTYPE: string | null;
   ACCNATION: string | null;
   DRUG_NAME: string | null;
+  DRUG_GENERIC_NAME: string | null;
+  DRUG_STRENGTH: string | null;
   TOTAL_QTY: number;
   TOTAL_COST: number;
   TOTAL_SALE: number;
@@ -44,6 +56,9 @@ type PatientMedicationRow = {
   MEDLBLHLP2_NAME: string | null;
   MEDNOTE: string | null;
   PRSCDTEXT_MEDUSAGE: string | null;
+  TPUCODE: string | null;
+  PRSCNO: string | null;
+  DOCTOR_NAME: string | null;
 };
 
 type PatientLabRow = {
@@ -99,8 +114,22 @@ type PatientDiagnosisRow = {
   VISIT_TYPE: string;
   ICD10: string | null;
   ICD10_NAME: string | null;
+  ICD10_NAME_EN: string | null;
   DIAGTYPE: string | null;
   VISIT_REF: string | null;
+  DIAG_AID: string | null;
+  DOCTOR_NAME: string | null;
+  CNOPDCARD_DIAG: string | null;
+  CNOPDCARD_DIAG1: string | null;
+  CNOPDCARD_DIAG2: string | null;
+};
+
+type DiagnosisVisitGroup = {
+  vn: string;
+  rows: PatientDiagnosisRow[];
+  clinicalLeft: string | null;
+  clinicalRight: string | null;
+  diagnosisNote: string | null;
 };
 
 type DiagnosisDayGroup = {
@@ -257,6 +286,14 @@ function formatQty(value: unknown): string {
   return Number.isInteger(n) ? String(n) : n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
 }
 
+function buildDrugRowKey(
+  dayKey: string,
+  row: PatientMedicationRow,
+  index: number
+): string {
+  return `${dayKey}-${row.MEDITEM}-${row.CLINIC_LCT}-${row.AN ?? ""}-${row.DRUG_USAGE ?? ""}-${index}`;
+}
+
 function formatLabReference(row: PatientLabRow): string {
   const min = row.MIN_NRM?.trim();
   const max = row.MAX_NRM?.trim();
@@ -351,6 +388,94 @@ function VisitTypeBadge({ visitType, an }: { visitType: string; an?: string | nu
   );
 }
 
+function isNonFormularyDrug(accnation: string | null | undefined): boolean {
+  const name = String(accnation ?? "").trim();
+
+  return name.startsWith("ยานอก");
+}
+
+function normalizeDrugLabel(value: string | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleUpperCase("th-TH");
+}
+
+function shouldShowGenericName(
+  tradeName: string | null | undefined,
+  genericName: string | null | undefined
+): boolean {
+  const generic = String(genericName ?? "").trim();
+
+  if (!generic) return false;
+
+  return normalizeDrugLabel(generic) !== normalizeDrugLabel(tradeName);
+}
+
+function shouldShowDrugStrength(
+  tradeName: string | null | undefined,
+  genericName: string | null | undefined,
+  strength: string | null | undefined
+): boolean {
+  const value = String(strength ?? "").trim();
+
+  if (!value) return false;
+
+  const normalizedStrength = normalizeDrugLabel(value);
+  const trade = normalizeDrugLabel(tradeName);
+  const generic = normalizeDrugLabel(genericName);
+
+  if (trade.includes(normalizedStrength) || generic.includes(normalizedStrength)) {
+    return false;
+  }
+
+  return true;
+}
+
+function DrugNameDisplay({
+  row,
+  tradeClassName = "text-flow-text",
+  genericClassName = "text-[11px] text-flow-muted",
+}: {
+  row: Pick<
+    PatientMedicationRow,
+    "DRUG_NAME" | "DRUG_GENERIC_NAME" | "DRUG_STRENGTH" | "ACCNATION"
+  >;
+  tradeClassName?: string;
+  genericClassName?: string;
+}) {
+  const nonFormulary = isNonFormularyDrug(row.ACCNATION);
+  const tradeTextClass = nonFormulary ? "text-sky-600" : tradeClassName;
+  const genericTextClass = nonFormulary ? "text-sky-600" : genericClassName;
+  const showGeneric = shouldShowGenericName(row.DRUG_NAME, row.DRUG_GENERIC_NAME);
+  const showStrength = shouldShowDrugStrength(
+    row.DRUG_NAME,
+    row.DRUG_GENERIC_NAME,
+    row.DRUG_STRENGTH
+  );
+  const strengthBadgeClass = nonFormulary
+    ? "bg-sky-50 text-sky-700 ring-sky-200"
+    : "bg-slate-100 text-flow-text ring-slate-200";
+
+  return (
+    <div className="space-y-0.5">
+      <div className={`flex flex-wrap items-center gap-1.5 ${tradeTextClass}`}>
+        <span>{row.DRUG_NAME?.trim() ? row.DRUG_NAME : "—"}</span>
+        {showStrength ? (
+          <span
+            className={`inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${strengthBadgeClass}`}
+          >
+            {row.DRUG_STRENGTH}
+          </span>
+        ) : null}
+      </div>
+      {showGeneric ? (
+        <div className={`leading-snug ${genericTextClass}`}>{row.DRUG_GENERIC_NAME}</div>
+      ) : null}
+    </div>
+  );
+}
+
 function MobileBackBar({
   label,
   onBack,
@@ -413,9 +538,11 @@ function DrugItemCard({ row, showPatient }: { row: PatientMedicationRow; showPat
     <article className="space-y-1.5 px-3 py-2">
       <div className="flex items-start justify-between gap-1.5">
         <div className="min-w-0 flex-1">
-          <h3 className="text-xs font-semibold leading-tight text-flow-text">
-            {row.DRUG_NAME ?? "—"}
-          </h3>
+          <DrugNameDisplay
+            row={row}
+            tradeClassName="text-xs font-semibold leading-tight text-flow-text"
+            genericClassName="text-[11px] leading-snug text-flow-muted"
+          />
           {row.DRUG_DOSE?.trim() ? (
             <p className="mt-0.5 text-[11px] text-flow-muted">โดสยา {row.DRUG_DOSE}</p>
           ) : null}
@@ -504,22 +631,193 @@ function LabItemCard({
   );
 }
 
+function joinUniqueClinicalTexts(parts: (string | null | undefined)[]): string | null {
+  const seen = new Set<string>();
+  const items: string[] = [];
+
+  for (const part of parts) {
+    const text = part?.trim();
+
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    items.push(text);
+  }
+
+  return items.length > 0 ? items.join("\n\n—\n\n") : null;
+}
+
+function mergeDiagnosisVisits(visits: DiagnosisVisitGroup[]): DiagnosisVisitGroup {
+  if (visits.length === 0) {
+    return { vn: "—", rows: [], clinicalLeft: null, clinicalRight: null, diagnosisNote: null };
+  }
+
+  if (visits.length === 1) return visits[0];
+
+  return {
+    vn: visits.map((visit) => visit.vn).join(", "),
+    rows: visits.flatMap((visit) => visit.rows),
+    clinicalLeft: joinUniqueClinicalTexts(visits.map((visit) => visit.clinicalLeft)),
+    clinicalRight: joinUniqueClinicalTexts(visits.map((visit) => visit.clinicalRight)),
+    diagnosisNote: joinUniqueClinicalTexts(visits.map((visit) => visit.diagnosisNote)),
+  };
+}
+
+function buildDiagnosisDayPanel(rows: PatientDiagnosisRow[]): DiagnosisVisitGroup {
+  return mergeDiagnosisVisits(groupDiagnosisByVisit(rows));
+}
+
+function groupDiagnosisByVisit(rows: PatientDiagnosisRow[]): DiagnosisVisitGroup[] {
+  const map = new Map<string, PatientDiagnosisRow[]>();
+
+  for (const row of rows) {
+    const vn = String(row.VISIT_REF ?? row.AN ?? "—");
+    const bucket = map.get(vn);
+
+    if (bucket) bucket.push(row);
+    else map.set(vn, [row]);
+  }
+
+  return Array.from(map.entries()).map(([vn, visitRows]) => {
+    const primary = visitRows[0];
+    const parsed = parseCnopdcardDiag(primary?.CNOPDCARD_DIAG);
+
+    return {
+      vn,
+      rows: visitRows,
+      clinicalLeft: primary?.CNOPDCARD_DIAG1?.trim() || null,
+      clinicalRight:
+        parsed.clinicalData ||
+        primary?.CNOPDCARD_DIAG2?.trim() ||
+        null,
+      diagnosisNote: parsed.diagnosisText,
+    };
+  });
+}
+
+function ClinicalDataBox({ text }: { text: string | null }) {
+  return (
+    <div className="min-h-[7rem] rounded border border-slate-300 bg-white">
+      <div className="border-b border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+        Clinical Data
+      </div>
+      <div className="max-h-48 overflow-y-auto whitespace-pre-wrap px-2 py-2 text-xs leading-relaxed text-flow-text">
+        {text?.trim() ? text : "—"}
+      </div>
+    </div>
+  );
+}
+
+function DiagnosisTypeLegend() {
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-flow-muted">
+      {DIAG_TYPE_LEGEND.map((item) => (
+        <span key={item.code}>
+          <span className="font-semibold text-flow-text">{item.code}</span> = {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DiagnosisEphisTable({ rows }: { rows: PatientDiagnosisRow[] }) {
+  return (
+    <div className="overflow-x-auto border border-slate-300">
+      <table className="min-w-full text-left text-xs">
+        <thead className="bg-slate-100 text-[11px] text-slate-700">
+          <tr>
+            <th className="w-10 border border-slate-300 px-2 py-1.5 text-center font-semibold">No.</th>
+            <th className="w-28 border border-slate-300 px-2 py-1.5 font-semibold">VN</th>
+            <th className="border border-slate-300 px-2 py-1.5 font-semibold">Diagnosis (ICD10)</th>
+            <th className="border border-slate-300 px-2 py-1.5 font-semibold">Diagnosis (Text)</th>
+            <th className="w-20 border border-slate-300 px-2 py-1.5 font-semibold">ICD10</th>
+            <th className="w-16 border border-slate-300 px-2 py-1.5 font-semibold">ลำดับ</th>
+            <th className="min-w-[10rem] border border-slate-300 px-2 py-1.5 font-semibold">
+              แพทย์ผู้วินิจฉัย
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${row.VISIT_REF}-${row.ICD10}-${row.DIAGTYPE}-${index}`} className="bg-white">
+              <td className="border border-slate-300 px-2 py-1.5 text-center align-top text-flow-muted">
+                {index + 1}
+              </td>
+              <td className="whitespace-nowrap border border-slate-300 px-2 py-1.5 align-top font-mono text-flow-text">
+                {row.VISIT_REF ?? "—"}
+              </td>
+              <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-text">
+                {row.ICD10_NAME_EN ?? row.ICD10_NAME ?? "—"}
+              </td>
+              <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-muted">
+                {row.ICD10_NAME ?? "—"}
+              </td>
+              <td className="border border-slate-300 px-2 py-1.5 align-top font-mono text-flow-text">
+                {row.ICD10 ?? "—"}
+              </td>
+              <td className="border border-slate-300 px-2 py-1.5 align-top text-center font-medium text-flow-text">
+                {row.DIAGTYPE ?? "—"}
+              </td>
+              <td className="border border-slate-300 px-2 py-1.5 align-top text-flow-text">
+                {row.DOCTOR_NAME ?? "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DiagnosisVisitPanel({ visit }: { visit: DiagnosisVisitGroup }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ClinicalDataBox text={visit.clinicalLeft} />
+        <ClinicalDataBox text={visit.clinicalRight} />
+      </div>
+      <DiagnosisTypeLegend />
+      <DiagnosisEphisTable rows={visit.rows} />
+      {visit.diagnosisNote ? (
+        <div className="rounded border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-flow-muted">
+          <span className="font-semibold text-flow-text">Diagnosis (จากบัตร): </span>
+          <span className="whitespace-pre-wrap">{visit.diagnosisNote}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DiagnosisItemCard({ row }: { row: PatientDiagnosisRow }) {
   return (
-    <article className="space-y-1.5 border-b border-flow-border px-4 py-3 last:border-b-0">
+    <article className="space-y-2 border-b border-flow-border px-4 py-3 last:border-b-0">
       <div className="flex items-start justify-between gap-2">
         <p className="font-mono text-sm font-semibold text-flow-text">{row.ICD10 ?? "—"}</p>
         <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-flow-muted">
-          {row.DIAGTYPE ?? "—"}
+          {formatDiagTypeLabel(row.DIAGTYPE)}
         </span>
       </div>
-      <p className="text-sm leading-snug text-flow-text">{row.ICD10_NAME ?? "—"}</p>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-flow-muted">
+      <p className="text-sm font-medium leading-snug text-flow-text">
+        {row.ICD10_NAME_EN ?? row.ICD10_NAME ?? "—"}
+      </p>
+      {row.ICD10_NAME_EN && row.ICD10_NAME ? (
+        <p className="text-xs text-flow-muted">{row.ICD10_NAME}</p>
+      ) : null}
+      <div className="grid gap-1 text-xs text-flow-muted sm:grid-cols-2">
+        <span>
+          <span className="font-medium text-flow-text">คำช่วย:</span> {row.DIAG_AID ?? "—"}
+        </span>
+        <span>
+          <span className="font-medium text-flow-text">แพทย์:</span> {row.DOCTOR_NAME ?? "—"}
+        </span>
         <span>
           <span className="font-medium text-flow-text">VN/AN:</span>{" "}
           <span className="font-mono">{row.VISIT_REF ?? "—"}</span>
         </span>
-        {row.VISIT_TYPE ? <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} /> : null}
+        {row.VISIT_TYPE ? (
+          <span>
+            <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
+          </span>
+        ) : null}
       </div>
     </article>
   );
@@ -801,6 +1099,10 @@ export default function PatientMedicationSearchPage() {
   const [diagRows, setDiagRows] = useState<PatientDiagnosisRow[]>([]);
   const [selectedDiagDayKey, setSelectedDiagDayKey] = useState<string | null>(null);
   const [selectedDrugDayKey, setSelectedDrugDayKey] = useState<string | null>(null);
+  const [selectedDrugPrintKeys, setSelectedDrugPrintKeys] = useState<Set<string>>(() => new Set());
+  const [drugRepeatPreview, setDrugRepeatPreview] = useState<PatientDrugRepeatPrintPayload | null>(
+    null
+  );
   const [mobileDrugPanel, setMobileDrugPanel] = useState<"days" | "items">("days");
   const [mobileLabPanel, setMobileLabPanel] = useState<"days" | "items">("days");
   const [mobileHistoryPanel, setMobileHistoryPanel] = useState<"days" | "items">("days");
@@ -830,6 +1132,7 @@ export default function PatientMedicationSearchPage() {
   const [labScanSubPath, setLabScanSubPath] = useState<string | null>(null);
   const scanOpenLockRef = useRef(false);
   const scanFileLinkRef = useRef<HTMLAnchorElement>(null);
+  const drugRepeatPreviewFrameRef = useRef<HTMLIFrameElement>(null);
 
   const resetResults = () => {
     setRows([]);
@@ -838,6 +1141,7 @@ export default function PatientMedicationSearchPage() {
     setDiagRows([]);
     setSelectedDiagDayKey(null);
     setSelectedDrugDayKey(null);
+    setSelectedDrugPrintKeys(new Set());
     setMobileDrugPanel("days");
     setMobileLabPanel("days");
     setMobileHistoryPanel("days");
@@ -852,6 +1156,7 @@ export default function PatientMedicationSearchPage() {
     setOpdscanNotice(null);
     setLabResultTodayNotice(false);
     setLabScanSubPath(null);
+    setDrugRepeatPreview(null);
   };
 
   const fetchPatientDetails = async (params: {
@@ -1023,8 +1328,6 @@ export default function PatientMedicationSearchPage() {
           await probeOpdscanNotice(resolveHnForOpdscanCheck(parsed, result.patientHn));
         } else {
           setOpdscanNotice(null);
-          setLabResultTodayNotice(false);
-          setLabScanSubPath(null);
           await probeLabResultToday(resolveHnForOpdscanCheck(parsed, result.patientHn));
           if (result.errors.length > 0) {
             setError(`โหลดบางส่วนไม่สำเร็จ: ${result.errors.join(" · ")}`);
@@ -1092,6 +1395,18 @@ export default function PatientMedicationSearchPage() {
 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [showPatientModal]);
+
+  useEffect(() => {
+    if (!drugRepeatPreview) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeDrugRepeatPreview();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [drugRepeatPreview]);
 
   const closeScanModal = () => {
     setShowScanModal(false);
@@ -1470,6 +1785,11 @@ export default function PatientMedicationSearchPage() {
     [groupedDiagDays, selectedDiagDayKey]
   );
 
+  const selectedDiagPanel = useMemo(
+    () => (selectedDiagDay ? buildDiagnosisDayPanel(selectedDiagDay.codes) : null),
+    [selectedDiagDay]
+  );
+
   const drugGroupByHn = useMemo(
     () => new Set(filteredRows.map((row) => row.HN)).size > 1,
     [filteredRows]
@@ -1496,6 +1816,105 @@ export default function PatientMedicationSearchPage() {
   const selectedDrugDay = useMemo(
     () => groupedDrugDays.find((group) => group.key === selectedDrugDayKey) ?? null,
     [groupedDrugDays, selectedDrugDayKey]
+  );
+
+  useEffect(() => {
+    if (!selectedDrugDay) {
+      setSelectedDrugPrintKeys(new Set());
+
+      return;
+    }
+
+    setSelectedDrugPrintKeys(
+      new Set(
+        selectedDrugDay.items.map((row, index) => buildDrugRowKey(selectedDrugDay.key, row, index))
+      )
+    );
+  }, [selectedDrugDay]);
+
+  const selectedDrugPrintItems = useMemo(() => {
+    if (!selectedDrugDay) return [];
+
+    return selectedDrugDay.items.filter((row, index) =>
+      selectedDrugPrintKeys.has(buildDrugRowKey(selectedDrugDay.key, row, index))
+    );
+  }, [selectedDrugDay, selectedDrugPrintKeys]);
+
+  const allDrugPrintSelected =
+    selectedDrugDay != null &&
+    selectedDrugDay.items.length > 0 &&
+    selectedDrugPrintItems.length === selectedDrugDay.items.length;
+
+  const toggleDrugPrintRow = (rowKey: string, checked: boolean) => {
+    setSelectedDrugPrintKeys((prev) => {
+      const next = new Set(prev);
+
+      if (checked) next.add(rowKey);
+      else next.delete(rowKey);
+
+      return next;
+    });
+  };
+
+  const toggleAllDrugPrintRows = (checked: boolean) => {
+    if (!selectedDrugDay) return;
+
+    setSelectedDrugPrintKeys(
+      checked
+        ? new Set(
+            selectedDrugDay.items.map((row, index) =>
+              buildDrugRowKey(selectedDrugDay.key, row, index)
+            )
+          )
+        : new Set()
+    );
+  };
+
+  const handlePrintDrugRepeat = () => {
+    if (!selectedDrugDay || selectedDrugPrintItems.length === 0) {
+      window.alert("กรุณาเลือกรายการยาที่ต้องการพิมพ์");
+
+      return;
+    }
+
+    const first = selectedDrugPrintItems[0];
+    const prscDateIso = apiDateToIsoLocal(first.PRSCDATE) || selectedDrugDay.dateIso;
+
+    setDrugRepeatPreview({
+      hn: formatHnDisplay(first.HN),
+      patientName: first.DSPNAME,
+      pttypeName: first.PTTYPE_NAME,
+      prscDateIso,
+      prescriptionNo: formatPrescriptionNo(first.PRSCNO, prscDateIso),
+      doctorName: first.DOCTOR_NAME,
+      clinicName: first.CLINIC_LCT_NAME ?? first.CLINIC_LCT,
+      items: selectedDrugPrintItems,
+      logoUrl: `${window.location.origin}/images/ratchaphiphat_logo.png`,
+    });
+  };
+
+  const closeDrugRepeatPreview = () => {
+    setDrugRepeatPreview(null);
+  };
+
+  const handleDrugRepeatPreviewPrint = () => {
+    const frameWindow = drugRepeatPreviewFrameRef.current?.contentWindow;
+
+    if (!frameWindow) return;
+
+    frameWindow.focus();
+    frameWindow.print();
+  };
+
+  const drugRepeatPreviewHtml = useMemo(
+    () =>
+      drugRepeatPreview
+        ? buildPatientDrugRepeatPrintHtml(drugRepeatPreview, {
+            autoPrint: false,
+            preview: true,
+          })
+        : null,
+    [drugRepeatPreview]
   );
 
   const showDrugDayList = !isMobile || mobileDrugPanel === "days";
@@ -1786,47 +2205,34 @@ export default function PatientMedicationSearchPage() {
             </p>
           ) : null}
 
-          {labResultTodayNotice && hasResults ? (
-            <div className="mb-3 flex flex-col gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
-              <p className="font-medium">ผลแลปออกแล้ว — พบไฟล์ใหม่ในโฟลเดอร์ lab วันนี้</p>
-              <button
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-emerald-500 bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-950 hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={scanLoading || !scanHnValue}
-                type="button"
-                onClick={() => void openOpdscan(labScanSubPath ?? "lab")}
-              >
-                <FileText aria-hidden className="h-3.5 w-3.5 shrink-0" />
-                {scanLoading ? "กำลังเปิด..." : "เปิดไฟล์ lab"}
-              </button>
-            </div>
-          ) : null}
-
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 snap-x snap-mandatory scrollbar-thin">
-            {TREATMENT_TABS.map((tab) => {
-              const showLabBadge = tab.id === "lab" && labResultTodayNotice;
-
-              return (
+            {TREATMENT_TABS.map((tab) => (
+              <Fragment key={tab.id}>
                 <button
-                  key={tab.id}
                   className={`shrink-0 snap-start rounded-lg px-3 py-2 text-xs font-medium touch-manipulation ${
                     contentTab === tab.id
                       ? "bg-brand-600 text-white"
-                      : showLabBadge
-                        ? "border border-emerald-400 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
-                        : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
+                      : "border border-flow-border bg-white text-flow-text hover:bg-slate-50"
                   }`}
                   type="button"
                   onClick={() => handleContentTabChange(tab.id)}
                 >
                   {tab.label} ({tabCounts[tab.id]})
-                  {showLabBadge ? (
-                    <span className="ml-1.5 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                      ผลแลปออกแล้ว
-                    </span>
-                  ) : null}
                 </button>
-              );
-            })}
+                {tab.id === "diag" && labResultTodayNotice && hasResults ? (
+                  <button
+                    className="inline-flex shrink-0 snap-start animate-pulse items-center gap-1.5 rounded-lg border border-emerald-500 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 shadow-sm ring-2 ring-emerald-300/60 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
+                    disabled={scanLoading || !scanHnValue}
+                    title="เปิดไฟล์ lab ที่อัปโหลดวันนี้"
+                    type="button"
+                    onClick={() => void openOpdscan(labScanSubPath ?? "lab")}
+                  >
+                    <FileText aria-hidden className="h-3.5 w-3.5 shrink-0" />
+                    {scanLoading ? "กำลังเปิด..." : "ผลแลปออกแล้ว"}
+                  </button>
+                ) : null}
+              </Fragment>
+            ))}
           </div>
         </section>
 
@@ -1872,24 +2278,51 @@ export default function PatientMedicationSearchPage() {
                     show={isMobile && mobileDrugPanel === "items"}
                     onBack={() => setMobileDrugPanel("days")}
                   />
-                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                    รายการยา
-                    {selectedDrugDay ? (
-                      <span className="ml-2 font-normal normal-case text-flow-text">
-                        — {isoToThaiDisplay(selectedDrugDay.dateIso)}
-                        <span className="text-flow-muted">
-                          {" "}
-                          ({selectedDrugDay.items.length} รายการ)
+                  <div className="flex flex-col gap-2 border-b border-flow-border bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                      รายการยา
+                      {selectedDrugDay ? (
+                        <span className="ml-2 font-normal normal-case text-flow-text">
+                          — {isoToThaiDisplay(selectedDrugDay.dateIso)}
+                          <span className="text-flow-muted">
+                            {" "}
+                            ({selectedDrugDay.items.length} รายการ)
+                          </span>
                         </span>
-                      </span>
+                      ) : null}
+                    </p>
+                    {selectedDrugDay ? (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="inline-flex items-center gap-1.5 text-xs text-flow-text">
+                          <input
+                            checked={allDrugPrintSelected}
+                            className="h-3.5 w-3.5 rounded border-flow-border text-brand-600"
+                            type="checkbox"
+                            onChange={(event) => toggleAllDrugPrintRows(event.target.checked)}
+                          />
+                          เลือกทั้งหมด
+                        </label>
+                        <button
+                          className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-md ring-2 ring-brand-500/30 transition hover:bg-brand-700 hover:shadow-lg disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:ring-0"
+                          disabled={selectedDrugPrintItems.length === 0}
+                          type="button"
+                          onClick={handlePrintDrugRepeat}
+                        >
+                          <Printer aria-hidden className="h-4 w-4" />
+                          พิมพ์ใบยาเดิม ({selectedDrugPrintItems.length})
+                        </button>
+                      </div>
                     ) : null}
-                  </p>
+                  </div>
                   {selectedDrugDay ? (
                     <>
                       <div className="hidden overflow-x-auto md:block">
                         <table className="min-w-full text-left text-xs">
                           <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wide text-flow-muted">
                             <tr>
+                              <th className="w-10 px-3 py-2">
+                                <span className="sr-only">เลือกพิมพ์</span>
+                              </th>
                               {patientHeader?.multiple ? <th className="px-3 py-2">HN</th> : null}
                               {patientHeader?.multiple ? <th className="px-3 py-2">ชื่อ</th> : null}
                               <th className="px-3 py-2">ประเภท</th>
@@ -1905,10 +2338,22 @@ export default function PatientMedicationSearchPage() {
                           </thead>
                           <tbody className="divide-y divide-flow-border">
                             {selectedDrugDay.items.map((row, index) => {
-                              const rowKey = `${selectedDrugDay.key}-${row.MEDITEM}-${row.CLINIC_LCT}-${row.AN ?? ""}-${row.DRUG_USAGE ?? ""}-${index}`;
+                              const rowKey = buildDrugRowKey(selectedDrugDay.key, row, index);
+                              const checked = selectedDrugPrintKeys.has(rowKey);
 
                               return (
                                 <tr key={rowKey} className="hover:bg-slate-50/80">
+                                  <td className="px-3 py-2">
+                                    <input
+                                      aria-label={`เลือกพิมพ์ ${row.DRUG_NAME ?? "รายการยา"}`}
+                                      checked={checked}
+                                      className="h-3.5 w-3.5 rounded border-flow-border text-brand-600"
+                                      type="checkbox"
+                                      onChange={(event) =>
+                                        toggleDrugPrintRow(rowKey, event.target.checked)
+                                      }
+                                    />
+                                  </td>
                                   {patientHeader?.multiple ? (
                                     <td className="whitespace-nowrap px-3 py-2">
                                       {formatHnDisplay(row.HN)}
@@ -1921,7 +2366,7 @@ export default function PatientMedicationSearchPage() {
                                     <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
                                   </td>
                                   <td className="min-w-[12rem] px-3 py-2">
-                                    {row.DRUG_NAME ?? "—"}
+                                    <DrugNameDisplay row={row} />
                                   </td>
                                   <td className="whitespace-nowrap px-3 py-2 text-flow-text">
                                     {row.DRUG_DOSE?.trim() ? row.DRUG_DOSE : "—"}
@@ -1952,14 +2397,27 @@ export default function PatientMedicationSearchPage() {
                       </div>
                       <div className="divide-y divide-flow-border md:hidden">
                         {selectedDrugDay.items.map((row, index) => {
-                          const rowKey = `${selectedDrugDay.key}-${row.MEDITEM}-${row.CLINIC_LCT}-${row.AN ?? ""}-${row.DRUG_USAGE ?? ""}-${index}`;
+                          const rowKey = buildDrugRowKey(selectedDrugDay.key, row, index);
+                          const checked = selectedDrugPrintKeys.has(rowKey);
 
                           return (
-                            <DrugItemCard
-                              key={rowKey}
-                              row={row}
-                              showPatient={Boolean(patientHeader?.multiple)}
-                            />
+                            <div key={rowKey} className="flex gap-2 px-3 py-2">
+                              <input
+                                aria-label={`เลือกพิมพ์ ${row.DRUG_NAME ?? "รายการยา"}`}
+                                checked={checked}
+                                className="mt-1 h-3.5 w-3.5 shrink-0 rounded border-flow-border text-brand-600"
+                                type="checkbox"
+                                onChange={(event) =>
+                                  toggleDrugPrintRow(rowKey, event.target.checked)
+                                }
+                              />
+                              <div className="min-w-0 flex-1">
+                                <DrugItemCard
+                                  row={row}
+                                  showPatient={Boolean(patientHeader?.multiple)}
+                                />
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
@@ -2234,42 +2692,27 @@ export default function PatientMedicationSearchPage() {
                   </p>
                   {selectedDiagDay ? (
                     <>
-                      <div className="hidden overflow-x-auto md:block">
-                        <table className="min-w-full text-left text-xs">
-                          <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wide text-flow-muted">
-                            <tr>
-                              <th className="px-3 py-2">ICD-10</th>
-                              <th className="px-3 py-2">ชื่อโรค</th>
-                              <th className="px-3 py-2">Diag type</th>
-                              <th className="px-3 py-2">VN/AN</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-flow-border">
-                            {selectedDiagDay.codes.map((row, index) => (
-                              <tr
-                                key={`${selectedDiagDay.key}-${row.ICD10}-${row.VISIT_REF}-${index}`}
-                                className="hover:bg-slate-50/80"
-                              >
-                                <td className="whitespace-nowrap px-3 py-2 font-mono">
-                                  {row.ICD10 ?? "—"}
-                                </td>
-                                <td className="min-w-[14rem] px-3 py-2">{row.ICD10_NAME ?? "—"}</td>
-                                <td className="whitespace-nowrap px-3 py-2">{row.DIAGTYPE ?? "—"}</td>
-                                <td className="whitespace-nowrap px-3 py-2 font-mono">
-                                  {row.VISIT_REF ?? "—"}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="hidden md:block">
+                        <div className="p-3">
+                          {selectedDiagPanel ? <DiagnosisVisitPanel visit={selectedDiagPanel} /> : null}
+                        </div>
                       </div>
-                      <div className="divide-y divide-flow-border md:hidden">
-                        {selectedDiagDay.codes.map((row, index) => (
-                          <DiagnosisItemCard
-                            key={`${selectedDiagDay.key}-${row.ICD10}-${row.VISIT_REF}-${index}`}
-                            row={row}
-                          />
-                        ))}
+                      <div className="space-y-3 p-3 md:hidden">
+                        {selectedDiagPanel ? (
+                          <>
+                            <div className="grid gap-2">
+                              <ClinicalDataBox text={selectedDiagPanel.clinicalLeft} />
+                              <ClinicalDataBox text={selectedDiagPanel.clinicalRight} />
+                            </div>
+                            <DiagnosisTypeLegend />
+                            {selectedDiagPanel.rows.map((row, index) => (
+                              <DiagnosisItemCard
+                                key={`${row.VISIT_REF}-${row.ICD10}-${row.DIAGTYPE}-${index}`}
+                                row={row}
+                              />
+                            ))}
+                          </>
+                        ) : null}
                       </div>
                     </>
                   ) : (
@@ -2283,6 +2726,63 @@ export default function PatientMedicationSearchPage() {
           </section>
         )}
       </main>
+
+      {drugRepeatPreview ? (
+        <div
+          aria-labelledby="drug-repeat-preview-title"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex flex-col bg-white"
+          role="dialog"
+        >
+          <div
+            className="flex h-full w-full flex-col overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-flow-border bg-gradient-to-r from-slate-50 to-white px-4 py-3 sm:px-6 sm:py-4">
+              <div className="min-w-0">
+                <h2
+                  className="flex items-center gap-2 text-base font-semibold text-flow-text"
+                  id="drug-repeat-preview-title"
+                >
+                  <Printer aria-hidden className="h-4 w-4 shrink-0 text-brand-600" />
+                  ตัวอย่างใบรายการยาเดิมของผู้ป่วย
+                </h2>
+                <p className="mt-1 truncate text-xs text-flow-muted sm:whitespace-normal">
+                  ตรวจสอบรายการก่อนสั่งพิมพ์ — HN {drugRepeatPreview.hn}
+                  {drugRepeatPreview.patientName ? ` · ${drugRepeatPreview.patientName}` : ""}
+                  {" · "}
+                  {drugRepeatPreview.items.length} รายการ
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  className="rounded-lg border border-flow-border bg-white px-4 py-2 text-sm font-medium text-flow-text hover:bg-slate-50"
+                  type="button"
+                  onClick={closeDrugRepeatPreview}
+                >
+                  ปิด
+                </button>
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-md hover:bg-brand-700"
+                  type="button"
+                  onClick={handleDrugRepeatPreviewPrint}
+                >
+                  <Printer aria-hidden className="h-4 w-4" />
+                  พิมพ์
+                </button>
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-200/80 p-3 sm:p-4">
+              <iframe
+                ref={drugRepeatPreviewFrameRef}
+                className="block aspect-[210/297] h-full w-auto max-h-full max-w-full min-h-0 border border-slate-300/80 bg-white shadow-lg"
+                srcDoc={drugRepeatPreviewHtml ?? undefined}
+                title="ตัวอย่างใบรายการยาเดิมของผู้ป่วย"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showPatientModal ? (
         <div

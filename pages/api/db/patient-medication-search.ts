@@ -10,6 +10,7 @@ import {
   sqlPrscdtextJoin,
   sqlPrscdtextMedusageColumn,
 } from "@/lib/db/drugUsageSql";
+import { sqlDrugStrength } from "@/lib/db/meditemSql";
 import { sqlUnitCost, sqlUnitSale } from "@/lib/db/meditemRateSql";
 
 export type PatientMedicationRow = {
@@ -25,6 +26,8 @@ export type PatientMedicationRow = {
   MEDTYPE: string | null;
   ACCNATION: string | null;
   DRUG_NAME: string | null;
+  DRUG_GENERIC_NAME: string | null;
+  DRUG_STRENGTH: string | null;
   TOTAL_QTY: number;
   TOTAL_COST: number;
   TOTAL_SALE: number;
@@ -42,6 +45,9 @@ export type PatientMedicationRow = {
   MEDLBLHLP2_NAME: string | null;
   MEDNOTE: string | null;
   PRSCDTEXT_MEDUSAGE: string | null;
+  TPUCODE: string | null;
+  PRSCNO: string | null;
+  DOCTOR_NAME: string | null;
 };
 
 type SuccessResponse = {
@@ -169,6 +175,11 @@ export default async function handler(
         t.name                              AS MEDTYPE,
         a.name                              AS ACCNATION,
         m.medname                           AS DRUG_NAME,
+        TRIM(COALESCE(NULLIF(TRIM(gpu.name), ''), NULLIF(TRIM(dc.drugname), ''))) AS DRUG_GENERIC_NAME,
+        ${sqlDrugStrength("m")}             AS DRUG_STRENGTH,
+        m.tpucode                           AS TPUCODE,
+        p.prscno                            AS PRSCNO,
+        CAST(NULL AS VARCHAR2(250))         AS DOCTOR_NAME,
         d.qty                               AS QTY,
         pty.name                            AS PTTYPE_NAME,
         ${sqlDrugUsageReadable("d")}        AS DRUG_USAGE,
@@ -184,6 +195,8 @@ export default async function handler(
         INNER JOIN meditem m ON m.meditem = d.meditem
         LEFT JOIN medtype t ON t.medtype = m.medtype
         LEFT JOIN medaccnation a ON a.accnation = m.accnation
+        LEFT JOIN medgpucode gpu ON gpu.gpucode = m.gpucode
+        LEFT JOIN drugcode dc ON dc.meditem = m.meditem
         LEFT JOIN lct ON lct.lct = d.sphmlct
         LEFT JOIN pttype pty ON pty.pttype = p.pttype
         ${sqlDrugUsageJoins("d")}
@@ -207,6 +220,8 @@ export default async function handler(
       MEDTYPE,
       ACCNATION,
       DRUG_NAME,
+      DRUG_GENERIC_NAME,
+      DRUG_STRENGTH,
       SUM(QTY) AS TOTAL_QTY,
       SUM(QTY * UNIT_COST) AS TOTAL_COST,
       SUM(QTY * UNIT_SALE) AS TOTAL_SALE,
@@ -223,7 +238,10 @@ export default async function handler(
       MEDLBLHLP_NAME,
       MEDLBLHLP2_NAME,
       MEDNOTE,
-      PRSCDTEXT_MEDUSAGE
+      PRSCDTEXT_MEDUSAGE,
+      TPUCODE,
+      PRSCNO,
+      DOCTOR_NAME
     FROM base
     GROUP BY
       HN,
@@ -238,6 +256,8 @@ export default async function handler(
       MEDTYPE,
       ACCNATION,
       DRUG_NAME,
+      DRUG_GENERIC_NAME,
+      DRUG_STRENGTH,
       PTTYPE_NAME,
       DRUG_USAGE,
       DRUG_DOSE,
@@ -250,7 +270,10 @@ export default async function handler(
       MEDLBLHLP_NAME,
       MEDLBLHLP2_NAME,
       MEDNOTE,
-      PRSCDTEXT_MEDUSAGE
+      PRSCDTEXT_MEDUSAGE,
+      TPUCODE,
+      PRSCNO,
+      DOCTOR_NAME
     ORDER BY
       PRSCDATE DESC,
       HN,

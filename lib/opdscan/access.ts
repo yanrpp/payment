@@ -178,6 +178,11 @@ function isLocalCalendarToday(date: Date, reference = new Date()): boolean {
   );
 }
 
+/** ไฟล์ระบบ/ค้างหลังลบผล lab — ไม่นับเป็นผล lab อัปโหลดวันนี้ */
+function isIgnoredLabTodayFile(name: string): boolean {
+  return /\.db$/i.test(name);
+}
+
 async function countFilesModifiedTodayInDir(dirPath: string): Promise<number> {
   let entries;
 
@@ -191,6 +196,7 @@ async function countFilesModifiedTodayInDir(dirPath: string): Promise<number> {
 
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
+    if (!entry.isDirectory() && isIgnoredLabTodayFile(entry.name)) continue;
 
     const fullPath = path.win32.join(dirPath, entry.name);
 

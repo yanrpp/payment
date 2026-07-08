@@ -13,8 +13,14 @@ export type PatientDiagnosisRow = {
   VISIT_TYPE: string;
   ICD10: string | null;
   ICD10_NAME: string | null;
+  ICD10_NAME_EN: string | null;
   DIAGTYPE: string | null;
   VISIT_REF: string | null;
+  DIAG_AID: string | null;
+  DOCTOR_NAME: string | null;
+  CNOPDCARD_DIAG: string | null;
+  CNOPDCARD_DIAG1: string | null;
+  CNOPDCARD_DIAG2: string | null;
 };
 
 type SuccessResponse = {
@@ -29,10 +35,9 @@ type ErrorResponse = {
   error?: string;
 };
 
-/** ชื่อ ICD-10 จาก icd10 (schema RPP) */
-const ICD10_NAME_EXPR = "COALESCE(ic.thainame, ic.name)";
+const ICD10_NAME_TH = "COALESCE(ic.thainame, ic.name)";
+const ICD10_NAME_EN = "ic.name";
 
-/** ตาราง/คอลัมน์ไม่มีใน schema บางโรงพยาบาล — ใช้ fallback แทน ไม่ต้อง log error */
 function isOptionalSchemaError(error: unknown): boolean {
   if (typeof error !== "object" || error === null || !("errorNum" in error)) return false;
   const code = Number((error as { errorNum: number }).errorNum);
@@ -54,6 +59,60 @@ async function tryOptionalDiagQuery(
   }
 }
 
+function buildPtdiagSql(
+  whereDate: string,
+  whereHn: string,
+  whereCardno: string,
+  whereName: string,
+  withCnopdcard: boolean,
+  withPhisuser: boolean
+): string {
+  const cnopdcardJoin = withCnopdcard
+    ? "LEFT JOIN cnopdcard c ON c.hn = ptdiag.hn AND c.vn = ptdiag.vn"
+    : "";
+  const cnopdcardSelect = withCnopdcard
+    ? `
+      c.diag                              AS CNOPDCARD_DIAG,
+      c.diag1                             AS CNOPDCARD_DIAG1,
+      c.diag2                             AS CNOPDCARD_DIAG2`
+    : `
+      CAST(NULL AS VARCHAR2(4000))        AS CNOPDCARD_DIAG,
+      CAST(NULL AS VARCHAR2(4000))      AS CNOPDCARD_DIAG1,
+      CAST(NULL AS VARCHAR2(4000))      AS CNOPDCARD_DIAG2`;
+  const phisuserJoin = withPhisuser ? "LEFT JOIN phisuser pu ON pu.staff = ptdiag.dct" : "";
+  const doctorSelect = withPhisuser
+    ? "NULLIF(TRIM(pu.dspname), '')"
+    : "CAST(NULL AS VARCHAR2(250))";
+
+  return `
+    SELECT
+      ptdiag.hn                           AS HN,
+      ptno.cardno                         AS CARDNO,
+      pt.dspname                          AS DSPNAME,
+      TRUNC(ptdiag.vstdate)               AS DIAG_DATE,
+      ptdiag.an                           AS AN,
+      CASE WHEN ptdiag.an IS NOT NULL THEN 'IPD' ELSE 'OPD' END AS VISIT_TYPE,
+      ptdiag.icd10                        AS ICD10,
+      ${ICD10_NAME_TH}                    AS ICD10_NAME,
+      ${ICD10_NAME_EN}                    AS ICD10_NAME_EN,
+      TO_CHAR(ptdiag.diagtype)            AS DIAGTYPE,
+      COALESCE(TO_CHAR(ptdiag.vn), TO_CHAR(ptdiag.an)) AS VISIT_REF,
+      NULLIF(TRIM(ptdiag.diagtxt), '')    AS DIAG_AID,
+      ${doctorSelect}                     AS DOCTOR_NAME,${cnopdcardSelect}
+    FROM ptdiag
+      INNER JOIN pt ON pt.hn = ptdiag.hn
+      LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
+      LEFT JOIN icd10 ic ON ic.icd10 = ptdiag.icd10
+      ${cnopdcardJoin}
+      ${phisuserJoin}
+    WHERE ptdiag.icd10 IS NOT NULL
+      ${whereDate}
+      ${whereHn}
+      ${whereCardno}
+      ${whereName}
+  `;
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<SuccessResponse | ErrorResponse>
@@ -68,83 +127,8 @@ export default async function handler(
     return res.status(parsed.status).json({ success: false, message: parsed.message });
   }
 
-  const { bind, sql } = parsed;
-  const wherePtdiagDate = sql.whereDate || buildWhereDateClause("TRUNC(ptdiag.vstdate)", bind);
-  const whereOpdDate = buildWhereDateClause("TRUNC(ov.vstdate)", bind);
-  const whereIpdDate = buildWhereDateClause("TRUNC(ipt.rgtdate)", bind);
-
-  /** รหัสวินิจฉัยหลักของ RPP — อยู่ใน ptdiag (hn + vstdate + icd10) */
-  const ptdiagSql = `
-    SELECT
-      ptdiag.hn                           AS HN,
-      ptno.cardno                         AS CARDNO,
-      pt.dspname                          AS DSPNAME,
-      TRUNC(ptdiag.vstdate)               AS DIAG_DATE,
-      ptdiag.an                           AS AN,
-      CASE WHEN ptdiag.an IS NOT NULL THEN 'IPD' ELSE 'OPD' END AS VISIT_TYPE,
-      ptdiag.icd10                        AS ICD10,
-      ${ICD10_NAME_EXPR}                  AS ICD10_NAME,
-      TO_CHAR(ptdiag.diagtype)            AS DIAGTYPE,
-      COALESCE(TO_CHAR(ptdiag.vn), TO_CHAR(ptdiag.an)) AS VISIT_REF
-    FROM ptdiag
-      INNER JOIN pt ON pt.hn = ptdiag.hn
-      LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
-      LEFT JOIN icd10 ic ON ic.icd10 = ptdiag.icd10
-    WHERE ptdiag.icd10 IS NOT NULL
-      ${wherePtdiagDate}
-      ${sql.whereHn}
-      ${sql.whereCardno}
-      ${sql.whereName}
-  `;
-
-  const opdSql = `
-    SELECT
-      ov.hn                               AS HN,
-      ptno.cardno                         AS CARDNO,
-      pt.dspname                          AS DSPNAME,
-      TRUNC(ov.vstdate)                   AS DIAG_DATE,
-      ov.an                               AS AN,
-      'OPD'                               AS VISIT_TYPE,
-      od.icd10                            AS ICD10,
-      ${ICD10_NAME_EXPR}                  AS ICD10_NAME,
-      od.diagtype                         AS DIAGTYPE,
-      od.vn                               AS VISIT_REF
-    FROM ovstdiag od
-      INNER JOIN ovst ov ON ov.vn = od.vn
-      INNER JOIN pt ON pt.hn = ov.hn
-      LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
-      LEFT JOIN icd10 ic ON ic.icd10 = od.icd10
-    WHERE ov.canceldate IS NULL
-      AND ov.an IS NULL
-      ${whereOpdDate}
-      ${sql.whereHn}
-      ${sql.whereCardno}
-      ${sql.whereName}
-  `;
-
-  const ipdSql = `
-    SELECT
-      ipt.hn                              AS HN,
-      ptno.cardno                         AS CARDNO,
-      pt.dspname                          AS DSPNAME,
-      TRUNC(ipt.rgtdate)                  AS DIAG_DATE,
-      ipt.an                              AS AN,
-      'IPD'                               AS VISIT_TYPE,
-      id.icd10                            AS ICD10,
-      ${ICD10_NAME_EXPR}                  AS ICD10_NAME,
-      id.diagtype                         AS DIAGTYPE,
-      id.an                               AS VISIT_REF
-    FROM iptdiag id
-      INNER JOIN ipt ON ipt.an = id.an
-      INNER JOIN pt ON pt.hn = ipt.hn
-      LEFT JOIN ptno ON pt.hn = ptno.hn AND ptno.notype = 10
-      LEFT JOIN icd10 ic ON ic.icd10 = id.icd10
-    WHERE 1 = 1
-      ${whereIpdDate}
-      ${sql.whereHn}
-      ${sql.whereCardno}
-      ${sql.whereName}
-  `;
+  const { sql } = parsed;
+  const wherePtdiagDate = sql.whereDate || buildWhereDateClause("TRUNC(ptdiag.vstdate)", parsed.bind);
 
   try {
     const rows: PatientDiagnosisRow[] = [];
@@ -160,9 +144,45 @@ export default async function handler(
       }
     };
 
-    appendRows(await tryOptionalDiagQuery(ptdiagSql, sql.params));
-    appendRows(await tryOptionalDiagQuery(opdSql, sql.params));
-    appendRows(await tryOptionalDiagQuery(ipdSql, sql.params));
+    const fullSql = buildPtdiagSql(
+      wherePtdiagDate,
+      sql.whereHn,
+      sql.whereCardno,
+      sql.whereName,
+      true,
+      true
+    );
+    let batch = await tryOptionalDiagQuery(fullSql, sql.params);
+
+    if (batch.length === 0) {
+      batch = await tryOptionalDiagQuery(
+        buildPtdiagSql(
+          wherePtdiagDate,
+          sql.whereHn,
+          sql.whereCardno,
+          sql.whereName,
+          true,
+          false
+        ),
+        sql.params
+      );
+    }
+
+    if (batch.length === 0) {
+      batch = await tryOptionalDiagQuery(
+        buildPtdiagSql(
+          wherePtdiagDate,
+          sql.whereHn,
+          sql.whereCardno,
+          sql.whereName,
+          false,
+          false
+        ),
+        sql.params
+      );
+    }
+
+    appendRows(batch);
 
     rows.sort((a, b) => {
       const dateCmp = String(b.DIAG_DATE).localeCompare(String(a.DIAG_DATE));
