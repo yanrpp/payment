@@ -8,7 +8,21 @@ import {
   OpdscanExplorerModal,
   type OpdscanFileEntry,
 } from "@/components/opdscan/OpdscanExplorerModal";
-import { isoToThaiDisplay, isoToThaiInput } from "@/lib/date/thaiDate";
+import { isoToThaiDisplay, isoToThaiInput, localTodayIso } from "@/lib/date/thaiDate";
+import {
+  buildLabHistoryByTest,
+  buildLabTestTimeline,
+  buildLabTrendMatrix,
+  classifyLabResult,
+  compareLabNumericTrend,
+  formatLabReference as formatLabReferenceFromRow,
+  labTestKey,
+  labTimelineSupportsNumericCompare,
+  labTrendDatesForGroup,
+  type LabResultFlag,
+  type LabTrendGroup,
+} from "@/lib/lab/trend";
+import { formatLabNameDisplay } from "@/lib/lab/formatName";
 import {
   DIAG_TYPE_LEGEND,
   formatDiagTypeLabel,
@@ -337,14 +351,33 @@ function buildDrugRowKey(
 }
 
 function formatLabReference(row: PatientLabRow): string {
-  const min = row.MIN_NRM?.trim();
-  const max = row.MAX_NRM?.trim();
-  const unit = row.NRM_UNIT?.trim();
+  return formatLabReferenceFromRow(row);
+}
 
-  if (!min && !max) return "—";
-  const range = min && max ? `${min} - ${max}` : (min ?? max ?? "");
+function labResultFlagClass(flag: LabResultFlag): string {
+  switch (flag) {
+    case "high":
+      return "bg-red-50 text-red-800 ring-1 ring-inset ring-red-200";
+    case "low":
+      return "bg-sky-50 text-sky-900 ring-1 ring-inset ring-sky-200";
+    case "normal":
+      return "bg-emerald-50 text-emerald-900 ring-1 ring-inset ring-emerald-200";
+    default:
+      return "text-flow-text";
+  }
+}
 
-  return unit ? `${range} ${unit}` : range;
+function labTrendArrow(trend: ReturnType<typeof compareLabNumericTrend>): string {
+  switch (trend) {
+    case "up":
+      return "↑";
+    case "down":
+      return "↓";
+    case "flat":
+      return "→";
+    default:
+      return "";
+  }
 }
 
 const UNKNOWN_LAB_GRP_KEY = "__unknown__";
@@ -1065,19 +1098,40 @@ function LabItemCard({
   row,
   showPatient,
   showLabGrp = true,
+  onOpenItemTrend,
 }: {
   row: PatientLabRow;
   showPatient: boolean;
   showLabGrp?: boolean;
+  onOpenItemTrend?: (row: PatientLabRow) => void;
 }) {
   const reference = formatLabReference(row);
   const labGrpLabel = labGrpFilterDisplayLabel(labGrpFilterKey(row));
 
   return (
-    <article className="space-y-2 border-b border-flow-border px-4 py-3 last:border-b-0">
+    <article
+      className={`space-y-2 border-b border-flow-border px-4 py-3 last:border-b-0 ${
+        onOpenItemTrend ? "cursor-pointer hover:bg-brand-50/40 active:bg-brand-50/60" : ""
+      }`}
+      title={onOpenItemTrend ? "แตะเพื่อเทียบผลย้อนหลัง" : undefined}
+      onClick={onOpenItemTrend ? () => onOpenItemTrend(row) : undefined}
+      onKeyDown={
+        onOpenItemTrend
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onOpenItemTrend(row);
+              }
+            }
+          : undefined
+      }
+      {...(onOpenItemTrend
+        ? { role: "button" as const, tabIndex: 0 }
+        : {})}
+    >
       <div className="flex items-start justify-between gap-2">
         <h3 className="min-w-0 flex-1 text-sm font-semibold leading-snug text-flow-text">
-          {row.LAB_NAME ?? "—"}
+          {formatLabNameDisplay(row.LAB_NAME)}
         </h3>
         <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
       </div>
@@ -1097,7 +1151,7 @@ function LabItemCard({
 
       <p className="text-sm font-medium text-flow-text">
         <span className="text-xs font-medium text-flow-muted">ผล:</span>{" "}
-        {row.RESULT?.trim() ? row.RESULT : "—"}
+        <LabResultBadge row={row} />
       </p>
 
       {reference !== "—" ? (
@@ -1109,14 +1163,170 @@ function LabItemCard({
   );
 }
 
+function labTrendLabel(trend: ReturnType<typeof compareLabNumericTrend>, priorResult: string): string {
+  const arrow = labTrendArrow(trend);
+
+  if (!arrow) return "—";
+
+  return `${arrow} จาก ${priorResult}`;
+}
+
+function LabResultBadge({ row }: { row: PatientLabRow }) {
+  const result = row.RESULT?.trim() ? row.RESULT : "—";
+  const flag = classifyLabResult(row);
+
+  return (
+    <span
+      className={`inline-flex rounded px-1.5 py-0.5 font-medium ${result === "—" ? "text-flow-muted" : labResultFlagClass(flag)}`}
+    >
+      {result}
+    </span>
+  );
+}
+
+function LabItemTrendModal({
+  anchorRow,
+  historyByTest,
+  onClose,
+}: {
+  anchorRow: PatientLabRow;
+  historyByTest: Map<string, PatientLabRow[]>;
+  onClose: () => void;
+}) {
+  const todayIso = localTodayIso();
+  const timeline = useMemo(
+    () =>
+      buildLabTestTimeline(historyByTest.get(labTestKey(anchorRow)) ?? [], (row) =>
+        apiDateToIsoLocal(row.LAB_DATE)
+      ),
+    [anchorRow, historyByTest]
+  );
+  const showCompareColumn = useMemo(
+    () => labTimelineSupportsNumericCompare(timeline),
+    [timeline]
+  );
+
+  return (
+    <div
+      aria-labelledby="lab-item-trend-title"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4"
+      role="dialog"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[90vh] w-[min(98vw,42rem)] flex-col overflow-hidden rounded-xl border border-flow-border bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="shrink-0 border-b border-flow-border bg-slate-50 px-4 py-3 sm:px-5">
+          <h2 className="text-base font-semibold text-flow-text" id="lab-item-trend-title">
+            เทียบผลย้อนหลัง
+          </h2>
+          <p className="mt-1 text-sm font-medium text-brand-700">
+            {formatLabNameDisplay(anchorRow.LAB_NAME)}
+          </p>
+          <p className="mt-0.5 text-xs text-flow-muted">
+            {labGrpFilterDisplayLabel(labGrpFilterKey(anchorRow))}
+            {" · "}
+            ค่าอ้างอิง {formatLabReference(anchorRow)}
+          </p>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          {timeline.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-flow-muted">ไม่มีประวัติผลตรวจ</p>
+          ) : (
+            <table className="min-w-full text-left text-xs">
+              <thead className={`${TABLE_HEAD_CLASS} sticky top-0 z-10`}>
+                <tr>
+                  <th className="px-3 py-2.5">วันที่</th>
+                  <th className="px-3 py-2.5">ประเภท</th>
+                  <th className="px-3 py-2.5">ผล</th>
+                  {showCompareColumn ? (
+                    <th className="px-3 py-2.5">เทียบครั้งก่อน</th>
+                  ) : null}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-flow-border">
+                {timeline.map((entry, index) => {
+                  const isToday = entry.dateIso === todayIso;
+                  const prior = timeline[index + 1]?.row;
+                  const priorResult = prior?.RESULT?.trim();
+                  const trend = compareLabNumericTrend(prior?.RESULT, entry.row.RESULT);
+                  const result = entry.row.RESULT?.trim() ? entry.row.RESULT : "—";
+                  const flag = classifyLabResult(entry.row);
+
+                  return (
+                    <tr
+                      key={entry.dateIso}
+                      className={isToday ? "bg-brand-50/80" : "hover:bg-slate-50/80"}
+                    >
+                      <td className="whitespace-nowrap px-3 py-2.5 font-medium text-flow-text">
+                        {isoToThaiDisplay(entry.dateIso)}
+                        {isToday ? (
+                          <span className="ml-1.5 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-800">
+                            วันนี้
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <VisitTypeBadge
+                          an={(entry.row as PatientLabRow).AN}
+                          visitType={(entry.row as PatientLabRow).VISIT_TYPE}
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span
+                          className={`inline-flex rounded px-1.5 py-0.5 font-medium ${
+                            result === "—" ? "text-flow-muted" : labResultFlagClass(flag)
+                          }`}
+                        >
+                          {result}
+                        </span>
+                      </td>
+                      {showCompareColumn ? (
+                        <td className="px-3 py-2.5 text-flow-muted">
+                          {priorResult && trend !== "unknown" ? (
+                            <span className="font-medium text-flow-text">
+                              {labTrendLabel(trend, priorResult)}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-flow-border bg-slate-50 px-4 py-3 text-right">
+          <button
+            className="rounded-lg border border-flow-border bg-white px-4 py-2 text-sm font-medium text-flow-text hover:bg-slate-50"
+            type="button"
+            onClick={onClose}
+          >
+            ปิด
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LabDayItemTable({
   section,
   showPatient,
   showLabGrpColumn,
+  onOpenItemTrend,
 }: {
   section: LabDayGrpSection;
   showPatient: boolean;
   showLabGrpColumn: boolean;
+  onOpenItemTrend: (row: PatientLabRow) => void;
 }) {
   return (
     <table className="min-w-full text-left text-xs">
@@ -1133,7 +1343,12 @@ function LabDayItemTable({
       </thead>
       <tbody className="divide-y divide-flow-border">
         {section.items.map(({ row, rowKey }) => (
-          <tr key={rowKey} className="hover:bg-slate-50/80">
+          <tr
+            key={rowKey}
+            className="cursor-pointer hover:bg-brand-50/50"
+            title="คลิกเพื่อเทียบผลย้อนหลัง"
+            onClick={() => onOpenItemTrend(row)}
+          >
             {showPatient ? (
               <td className="whitespace-nowrap px-3 py-2">{formatHnDisplay(row.HN)}</td>
             ) : null}
@@ -1146,9 +1361,9 @@ function LabDayItemTable({
             <td className="whitespace-nowrap px-3 py-2">
               <VisitTypeBadge an={row.AN} visitType={row.VISIT_TYPE} />
             </td>
-            <td className="min-w-[14rem] px-3 py-2">{row.LAB_NAME ?? "—"}</td>
-            <td className="min-w-[8rem] px-3 py-2 font-medium text-flow-text">
-              {row.RESULT?.trim() ? row.RESULT : "—"}
+            <td className="min-w-[14rem] px-3 py-2">{formatLabNameDisplay(row.LAB_NAME)}</td>
+            <td className="min-w-[8rem] px-3 py-2">
+              <LabResultBadge row={row} />
             </td>
             <td className="whitespace-nowrap px-3 py-2 text-flow-muted">
               {formatLabReference(row)}
@@ -1166,12 +1381,14 @@ function LabDayGrpPanel({
   onActiveSectionKeyChange,
   showPatient,
   layout,
+  onOpenItemTrend,
 }: {
   sections: LabDayGrpSection[];
   activeSectionKey: string | null;
   onActiveSectionKeyChange: (key: string) => void;
   showPatient: boolean;
   layout: "desktop" | "mobile";
+  onOpenItemTrend: (row: PatientLabRow) => void;
 }) {
   const activeSection =
     sections.find((section) => section.key === activeSectionKey) ?? sections[0] ?? null;
@@ -1216,6 +1433,7 @@ function LabDayGrpPanel({
       {layout === "desktop" ? (
         <div className="overflow-x-auto">
           <LabDayItemTable
+            onOpenItemTrend={onOpenItemTrend}
             section={activeSection}
             showLabGrpColumn={showLabGrpColumn}
             showPatient={showPatient}
@@ -1229,10 +1447,161 @@ function LabDayGrpPanel({
               row={row}
               showLabGrp={showLabGrpColumn}
               showPatient={showPatient}
+              onOpenItemTrend={onOpenItemTrend}
             />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function LabTrendTable({
+  group,
+  dates,
+  highlightDateIso,
+}: {
+  group: LabTrendGroup;
+  dates: string[];
+  highlightDateIso: string | null;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-left text-xs">
+        <thead className={TABLE_HEAD_CLASS}>
+          <tr>
+            <th className="sticky left-0 z-10 min-w-[12rem] border-r border-white/10 bg-slate-700 px-3 py-2.5">
+              ชื่อการตรวจ
+            </th>
+            <th className="sticky left-[12rem] z-10 w-0 whitespace-nowrap border-r border-white/10 bg-slate-700 px-2 py-2.5">
+              ค่าอ้างอิง
+            </th>
+            {dates.map((dateIso) => (
+              <th
+                key={dateIso}
+                className={`w-0 whitespace-nowrap px-2 py-2.5 text-center ${
+                  highlightDateIso === dateIso ? "bg-brand-700" : ""
+                }`}
+              >
+                {isoToThaiDisplay(dateIso)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-flow-border">
+          {group.tests.map((test) => (
+            <tr key={test.key} className="hover:bg-slate-50/80">
+              <td className="sticky left-0 z-[1] min-w-[12rem] border-r border-flow-border bg-white px-3 py-2 font-medium text-flow-text">
+                {formatLabNameDisplay(test.labName)}
+              </td>
+              <td className="sticky left-[12rem] z-[1] w-0 whitespace-nowrap border-r border-flow-border bg-white px-2 py-2 text-flow-muted">
+                {test.reference}
+              </td>
+              {dates.map((dateIso) => {
+                const cell = test.resultsByDate.get(dateIso);
+                const result = cell?.RESULT?.trim() ? cell.RESULT : "—";
+                const flag = cell ? classifyLabResult(cell) : "unknown";
+                const highlighted = highlightDateIso === dateIso;
+
+                return (
+                  <td
+                    key={`${test.key}-${dateIso}`}
+                    className={`w-0 whitespace-nowrap px-2 py-2 text-center ${
+                      highlighted ? "bg-brand-50/80" : ""
+                    }`}
+                  >
+                    <span
+                      className={`inline-flex rounded px-1.5 py-0.5 font-medium ${
+                        result === "—" ? "text-flow-muted" : labResultFlagClass(flag)
+                      }`}
+                    >
+                      {result}
+                    </span>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function LabTrendPanel({
+  matrix,
+  activeGroupKey,
+  onActiveGroupKeyChange,
+  highlightDateIso,
+}: {
+  matrix: ReturnType<typeof buildLabTrendMatrix>;
+  activeGroupKey: string | null;
+  onActiveGroupKeyChange: (key: string) => void;
+  highlightDateIso: string | null;
+}) {
+  const activeGroup =
+    matrix.groups.find((group) => group.key === activeGroupKey) ?? matrix.groups[0] ?? null;
+
+  if (!activeGroup) {
+    return (
+      <p className="px-4 py-6 text-center text-xs text-flow-muted">ไม่มีข้อมูล Lab สำหรับเทียบย้อนหลัง</p>
+    );
+  }
+
+  const visibleDates = labTrendDatesForGroup(matrix.dates, activeGroup);
+
+  return (
+    <div>
+      {matrix.groups.length > 1 ? (
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto border-b border-flow-border bg-white px-3 py-2 scrollbar-thin">
+          {matrix.groups.map((group) => {
+            const selected = group.key === activeGroup.key;
+
+            return (
+              <button
+                key={group.key}
+                className={`inline-flex shrink-0 snap-start items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium touch-manipulation ${
+                  selected
+                    ? "bg-brand-600 text-white shadow-sm"
+                    : "border border-flow-border bg-slate-50 text-flow-text hover:bg-slate-100"
+                }`}
+                type="button"
+                onClick={() => onActiveGroupKeyChange(group.key)}
+              >
+                <span className="max-w-[11rem] truncate">{group.label}</span>
+                <span className={selected ? "text-white/85" : "text-flow-muted"}>
+                  ({group.tests.length})
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-flow-border bg-slate-50/80 px-3 py-1.5 text-[11px] text-flow-muted">
+        <span>
+          <span className="font-semibold text-flow-text">{activeGroup.label}</span>{" "}
+          ({activeGroup.tests.length} รายการ)
+        </span>
+        <span>{visibleDates.length} วันที่</span>
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-flex rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-900 ring-1 ring-inset ring-emerald-200">
+            ปกติ
+          </span>
+          <span className="inline-flex rounded bg-red-50 px-1.5 py-0.5 text-red-800 ring-1 ring-inset ring-red-200">
+            สูง
+          </span>
+          <span className="inline-flex rounded bg-sky-50 px-1.5 py-0.5 text-sky-900 ring-1 ring-inset ring-sky-200">
+            ต่ำ
+          </span>
+        </span>
+      </div>
+
+      <LabTrendTable
+        dates={visibleDates}
+        group={activeGroup}
+        highlightDateIso={highlightDateIso}
+      />
     </div>
   );
 }
@@ -1907,6 +2276,9 @@ export default function PatientMedicationSearchPage() {
   const [filterVisitType, setFilterVisitType] = useState<"all" | "OPD" | "IPD">("all");
   const [selectedDrugDayMedTypeKey, setSelectedDrugDayMedTypeKey] = useState<string | null>(null);
   const [selectedLabDayGrpKey, setSelectedLabDayGrpKey] = useState<string | null>(null);
+  const [labViewMode, setLabViewMode] = useState<"day" | "trend">("day");
+  const [selectedLabTrendGrpKey, setSelectedLabTrendGrpKey] = useState<string | null>(null);
+  const [labItemTrendModal, setLabItemTrendModal] = useState<PatientLabRow | null>(null);
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [patientCandidates, setPatientCandidates] = useState<PatientCandidate[]>([]);
   const [nameSearchQuery, setNameSearchQuery] = useState("");
@@ -2857,7 +3229,7 @@ export default function PatientMedicationSearchPage() {
   };
 
   const showLabDayList = !isMobile || mobileLabPanel === "days";
-  const showLabItems = !isMobile || mobileLabPanel === "items";
+  const showLabItems = labViewMode === "trend" || !isMobile || mobileLabPanel === "items";
 
   const handleLabDaySelect = (key: string) => {
     setSelectedLabDayKey(key);
@@ -2931,6 +3303,36 @@ export default function PatientMedicationSearchPage() {
       setSelectedLabDayGrpKey(labDayGrpSections[0].key);
     }
   }, [labDayGrpSections, selectedLabDayGrpKey]);
+
+  const labHistoryByTest = useMemo(
+    () => buildLabHistoryByTest(filteredLabRows, (row) => apiDateToIsoLocal(row.LAB_DATE)),
+    [filteredLabRows]
+  );
+
+  const labTrendMatrix = useMemo(
+    () => buildLabTrendMatrix(filteredLabRows, (row) => apiDateToIsoLocal(row.LAB_DATE)),
+    [filteredLabRows]
+  );
+
+  useEffect(() => {
+    if (labTrendMatrix.groups.length === 0) {
+      setSelectedLabTrendGrpKey(null);
+
+      return;
+    }
+    if (
+      !selectedLabTrendGrpKey ||
+      !labTrendMatrix.groups.some((group) => group.key === selectedLabTrendGrpKey)
+    ) {
+      const preferred =
+        selectedLabDayGrpKey &&
+        labTrendMatrix.groups.some((group) => group.key === selectedLabDayGrpKey)
+          ? selectedLabDayGrpKey
+          : labTrendMatrix.groups[0].key;
+
+      setSelectedLabTrendGrpKey(preferred);
+    }
+  }, [labTrendMatrix, selectedLabTrendGrpKey, selectedLabDayGrpKey]);
 
   const historyGroupByHn = useMemo(
     () => new Set(filteredHistoryRows.map((row) => row.HN)).size > 1,
@@ -3415,19 +3817,56 @@ export default function PatientMedicationSearchPage() {
                     show={isMobile && mobileLabPanel === "items"}
                     onBack={() => setMobileLabPanel("days")}
                   />
-                  <p className="border-b border-flow-border bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
-                    ผล Lab
-                    {selectedLabDay ? (
-                      <span className="ml-2 font-normal normal-case text-flow-text">
-                        — {isoToThaiDisplay(selectedLabDay.dateIso)}
-                        <span className="text-flow-muted">
-                          {" "}
-                          ({selectedLabDay.items.length} รายการ)
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-flow-border bg-slate-50 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-flow-muted">
+                      ผล Lab
+                      {labViewMode === "day" && selectedLabDay ? (
+                        <span className="ml-2 font-normal normal-case text-flow-text">
+                          — {isoToThaiDisplay(selectedLabDay.dateIso)}
+                          <span className="text-flow-muted">
+                            {" "}
+                            ({selectedLabDay.items.length} รายการ)
+                          </span>
                         </span>
-                      </span>
-                    ) : null}
-                  </p>
-                  {selectedLabDay ? (
+                      ) : labViewMode === "trend" ? (
+                        <span className="ml-2 font-normal normal-case text-flow-text">
+                          — เทียบย้อนหลัง ({labTrendMatrix.dates.length} วัน)
+                        </span>
+                      ) : null}
+                    </p>
+                    <div className="inline-flex rounded-lg border border-flow-border bg-white p-0.5 text-xs">
+                      <button
+                        className={`rounded-md px-3 py-1 font-medium touch-manipulation ${
+                          labViewMode === "day"
+                            ? "bg-brand-600 text-white shadow-sm"
+                            : "text-flow-text hover:bg-slate-50"
+                        }`}
+                        type="button"
+                        onClick={() => setLabViewMode("day")}
+                      >
+                        รายวัน
+                      </button>
+                      <button
+                        className={`rounded-md px-3 py-1 font-medium touch-manipulation ${
+                          labViewMode === "trend"
+                            ? "bg-brand-600 text-white shadow-sm"
+                            : "text-flow-text hover:bg-slate-50"
+                        }`}
+                        type="button"
+                        onClick={() => setLabViewMode("trend")}
+                      >
+                        เทียบย้อนหลัง
+                      </button>
+                    </div>
+                  </div>
+                  {labViewMode === "trend" ? (
+                    <LabTrendPanel
+                      activeGroupKey={selectedLabTrendGrpKey}
+                      highlightDateIso={selectedLabDay?.dateIso ?? null}
+                      matrix={labTrendMatrix}
+                      onActiveGroupKeyChange={setSelectedLabTrendGrpKey}
+                    />
+                  ) : selectedLabDay ? (
                     <>
                       <div className="hidden md:block">
                         <LabDayGrpPanel
@@ -3436,6 +3875,7 @@ export default function PatientMedicationSearchPage() {
                           sections={labDayGrpSections}
                           showPatient={Boolean(patientHeader?.multiple)}
                           onActiveSectionKeyChange={setSelectedLabDayGrpKey}
+                          onOpenItemTrend={(row) => setLabItemTrendModal(row)}
                         />
                       </div>
                       <div className="md:hidden">
@@ -3445,6 +3885,7 @@ export default function PatientMedicationSearchPage() {
                           sections={labDayGrpSections}
                           showPatient={Boolean(patientHeader?.multiple)}
                           onActiveSectionKeyChange={setSelectedLabDayGrpKey}
+                          onOpenItemTrend={(row) => setLabItemTrendModal(row)}
                         />
                       </div>
                     </>
@@ -3608,6 +4049,14 @@ export default function PatientMedicationSearchPage() {
           </section>
         )}
       </main>
+
+      {labItemTrendModal ? (
+        <LabItemTrendModal
+          anchorRow={labItemTrendModal}
+          historyByTest={labHistoryByTest}
+          onClose={() => setLabItemTrendModal(null)}
+        />
+      ) : null}
 
       {drugRepeatPreview ? (
         <div
