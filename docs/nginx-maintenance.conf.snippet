@@ -1,0 +1,13 @@
+# คัดลอกส่วนนี้ไปใส่ในบล็อก server { ... } ของไซต์ payment ใน Nginx UI
+# แล้วคัดลอกไฟล์ maintenance.html จากรากโปรเจกต์ไปที่ /var/www/html/maintenance.html
+#
+# บนเซิร์ฟเวอร์:
+#   sudo cp /path/to/payment/maintenance.html /var/www/html/maintenance.html
+
+# ส่ง HTTP 503 เมื่อเปิดโหมด Maintenance
+error_page 503 /maintenance.html;
+
+location = /maintenance.html {
+    root /var/www/html;
+    internal;
+}
